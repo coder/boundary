@@ -1,0 +1,45 @@
+@startuml Isolation Flow
+participant "User" as U
+participant "squeeze (parent)" as P
+participant "squeeze (child)" as C
+participant "target command" as T
+
+U -> P: squeeze -- command args
+activate P
+
+note over P: Parse config, setup proxy
+
+P -> P: fork()
+activate C
+
+note over C: Child process starts\nin parent's namespaces
+
+C -> C: unshare(CLONE_NEWUSER)
+note over C: Create user namespace\n(enables root inside)
+
+C -> C: unshare(CLONE_NEWNS) 
+note over C: Create mount namespace\n(isolate filesystem view)
+
+C -> C: unshare(CLONE_NEWNET)
+note over C: Create network namespace\n(isolate network)
+
+note over C: Setup mount binds\nfor allowed paths
+
+note over C: Setup network interfaces\nand iptables rules
+
+C -> T: exec(target command)
+deactivate C
+activate T
+
+note over T: Target runs in\nisolated namespaces
+
+P -> P: wait for child
+note over P: Parent monitors child\nand manages proxy
+
+T -> C: exit
+deactivate T
+C -> P: child exit status
+P -> U: return exit status
+deactivate P
+
+@enduml
