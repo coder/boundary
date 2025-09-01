@@ -9,7 +9,27 @@ import (
 	"github.com/coder/squeeze/squeeze"
 )
 
+// runChildProcess handles the child process execution in isolated namespaces
+func runChildProcess() {
+	// TODO: We need to pass config data from parent to child
+	// For now, just create namespaces and exit to test
+	
+	if err := squeeze.CreateNamespaces(); err != nil {
+		fmt.Fprintf(os.Stderr, "Child: failed to create namespaces: %v\n", err)
+		os.Exit(1)
+	}
+	
+	fmt.Printf("Child: successfully created namespaces\n")
+	os.Exit(0)
+}
+
 func main() {
+	// Check if we're running as the child process for namespace setup
+	if len(os.Args) > 1 && os.Args[1] == "squeeze-child" {
+		runChildProcess()
+		return
+	}
+
 	var configFile = flag.String("config", "", "path to configuration file")
 	
 	flag.Usage = func() {

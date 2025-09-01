@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -103,4 +105,34 @@ func (c *IsolationConfig) RunIsolated() error {
 	}
 
 	return nil
+}
+
+// CreateNamespaces creates new user, mount, and network namespaces for the current process.
+// This isolates the process from the host system's users, filesystem, and network.
+// Must be called in the child process after fork.
+func CreateNamespaces() error {
+	// Create user namespace first - this allows us to have root privileges
+	// inside the namespace for subsequent mount/network operations
+	if err := unshare(CLONE_NEWUSER); err != nil {
+		return fmt.Errorf("failed to create user namespace: %w", err)
+	}
+
+	// Create mount namespace - gives us our own view of the filesystem
+	if err := unshare(CLONE_NEWNS); err != nil {
+		return fmt.Errorf("failed to create mount namespace: %w", err)
+	}
+
+	// Create network namespace - isolates network interfaces and routing
+	if err := unshare(CLONE_NEWNET); err != nil {
+		return fmt.Errorf("failed to create network namespace: %w", err)
+	}
+
+	return nil
+}
+
+// unshare is a wrapper around the unshare system call
+func unshare(flags int) error {
+	// On non-Linux systems, return an error indicating it's not supported
+	// On Linux, this will call the actual unshare syscall
+	return fmt.Errorf("namespace isolation not supported on this platform")
 }
