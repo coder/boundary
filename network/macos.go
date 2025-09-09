@@ -114,13 +114,14 @@ func (m *MacOSNetJail) Execute(command []string, extraEnv map[string]string) err
 				if err != nil {
 					m.logger.Warn("Invalid SUDO_GID, subprocess will run as root", "sudo_gid", sudoGID, "error", err)
 				} else {
+					// Use original user ID but KEEP the jail group for network isolation
 					cmd.SysProcAttr = &syscall.SysProcAttr{
 						Credential: &syscall.Credential{
 							Uid: uint32(uid),
-							Gid: uint32(gid),
+							Gid: uint32(m.groupID), // Keep jail group, not original user's group
 						},
 					}
-					m.logger.Debug("Dropping privileges to original user", "uid", uid, "gid", gid)
+					m.logger.Debug("Dropping privileges to original user with jail group", "uid", uid, "jail_gid", m.groupID)
 				}
 			}
 		}
