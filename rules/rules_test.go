@@ -240,12 +240,12 @@ func TestRuleEngine(t *testing.T) {
 		name     string
 		method   string
 		url      string
-		expected Action
+		expected bool
 	}{
-		{"allow github", "GET", "https://github.com/user/repo", Allow},
-		{"allow api GET", "GET", "https://api.example.com", Allow},
-		{"deny api POST", "POST", "https://api.example.com", Deny},
-		{"deny other", "GET", "https://example.com", Deny},
+		{"allow github", "GET", "https://github.com/user/repo", true},
+		{"allow api GET", "GET", "https://api.example.com", true},
+		{"deny api POST", "POST", "https://api.example.com", false},
+		{"deny other", "GET", "https://example.com", false},
 	}
 
 	for _, tt := range tests {
@@ -275,13 +275,13 @@ func TestRuleEngineWildcardRules(t *testing.T) {
 		name     string
 		method   string
 		url      string
-		expected Action
+		expected bool
 	}{
-		{"allow github", "GET", "https://github.com", Allow},
-		{"allow github subdomain", "POST", "https://github.io", Allow},
-		{"allow api GET", "GET", "https://api.example.com", Allow},
-		{"deny api POST", "POST", "https://api.example.com", Deny},
-		{"deny unmatched", "GET", "https://example.org", Deny},
+		{"allow github", "GET", "https://github.com", true},
+		{"allow github subdomain", "POST", "https://github.io", true},
+		{"allow api GET", "GET", "https://api.example.com", true},
+		{"deny api POST", "POST", "https://api.example.com", false},
+		{"deny unmatched", "GET", "https://example.org", false},
 	}
 
 	for _, tt := range tests {

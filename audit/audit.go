@@ -3,17 +3,15 @@ package audit
 import (
 	"log/slog"
 	"net/http"
-
-	"github.com/coder/jail/rules"
 )
 
 // Request represents information about an HTTP request for auditing
 type Request struct {
-	Method string
-	URL    string
-	Action rules.Action
-	Rule   string // The rule that matched (if any)
-	Reason string // Reason for the action (e.g., "no matching allow rules")
+	Method  string
+	URL     string
+	Allowed bool
+	Rule    string // The rule that matched (if any)
+	Reason  string // Reason for the action (e.g., "no matching allow rules")
 }
 
 // Auditor handles audit logging for HTTP requests
@@ -36,13 +34,12 @@ func NewLoggingAuditor(logger *slog.Logger) *LoggingAuditor {
 
 // AuditRequest logs the request using structured logging
 func (a *LoggingAuditor) AuditRequest(req *Request) {
-	switch req.Action {
-	case rules.Allow:
+	if req.Allowed {
 		a.logger.Info("ALLOW", 
 			"method", req.Method, 
 			"url", req.URL, 
 			"rule", req.Rule)
-	case rules.Deny:
+	} else {
 		a.logger.Warn("DENY", 
 			"method", req.Method, 
 			"url", req.URL, 

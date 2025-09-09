@@ -110,11 +110,11 @@ func (p *ProxyServer) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	
 	// Audit the request
 	auditReq := audit.HTTPRequestToAuditRequest(r)
-	auditReq.Action = result.Action
+	auditReq.Allowed = result.Allowed
 	auditReq.Rule = result.Rule
 	p.auditRequest(auditReq)
 	
-	if result.Action == rules.Deny {
+	if !result.Allowed {
 		p.writeBlockedResponse(w, r)
 		return
 	}
@@ -136,14 +136,14 @@ func (p *ProxyServer) handleHTTPS(w http.ResponseWriter, r *http.Request) {
 	
 	// Audit the request
 	auditReq := &audit.Request{
-		Method: r.Method,
-		URL:    fullURL,
-		Action: result.Action,
-		Rule:   result.Rule,
+		Method:  r.Method,
+		URL:     fullURL,
+		Allowed: result.Allowed,
+		Rule:    result.Rule,
 	}
 	p.auditRequest(auditReq)
 	
-	if result.Action == rules.Deny {
+	if !result.Allowed {
 		p.writeBlockedResponse(w, r)
 		return
 	}
@@ -292,7 +292,7 @@ For more help: https://github.com/coder/jail
 
 // auditRequest handles auditing of requests
 func (p *ProxyServer) auditRequest(req *audit.Request) {
-	if req.Action == rules.Deny {
+	if !req.Allowed {
 		req.Reason = "no matching allow rules"
 	}
 	p.auditor.AuditRequest(req)

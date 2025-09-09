@@ -4,8 +4,6 @@ import (
 	"log/slog"
 	"net/http"
 	"testing"
-
-	"github.com/coder/jail/rules"
 )
 
 func TestLoggingAuditor(t *testing.T) {
@@ -23,19 +21,19 @@ func TestLoggingAuditor(t *testing.T) {
 		{
 			name: "allow request",
 			request: &Request{
-				Method: "GET",
-				URL:    "https://github.com",
-				Action: rules.Allow,
-				Rule:   "allow github.com",
+				Method:  "GET",
+				URL:     "https://github.com",
+				Allowed: true,
+				Rule:    "allow github.com",
 			},
 		},
 		{
 			name: "deny request",
 			request: &Request{
-				Method: "POST",
-				URL:    "https://example.com",
-				Action: rules.Deny,
-				Reason: "no matching allow rules",
+				Method:  "POST",
+				URL:     "https://example.com",
+				Allowed: false,
+				Reason:  "no matching allow rules",
 			},
 		},
 	}

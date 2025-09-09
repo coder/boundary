@@ -6,22 +6,6 @@ import (
 	"strings"
 )
 
-// Action represents whether to allow a request
-type Action int
-
-const (
-	Allow Action = iota
-	Deny  // Default deny when no allow rules match
-)
-
-func (a Action) String() string {
-	switch a {
-	case Allow:
-		return "ALLOW"
-	default:
-		return "DENY"
-	}
-}
 
 // Rule represents an allow rule with optional HTTP method restrictions
 type Rule struct {
@@ -139,39 +123,39 @@ func NewRuleEngine(rules []*Rule, logger *slog.Logger) *RuleEngine {
 
 // EvaluationResult contains the result of rule evaluation
 type EvaluationResult struct {
-	Action Action
-	Rule   string // The rule that matched (if any)
+	Allowed bool
+	Rule    string // The rule that matched (if any)
 }
 
-// Evaluate evaluates a request against all allow rules and returns the action to take
-func (re *RuleEngine) Evaluate(method, url string) Action {
+// Evaluate evaluates a request against all allow rules and returns true if allowed
+func (re *RuleEngine) Evaluate(method, url string) bool {
 	// Check if any allow rule matches
 	for _, rule := range re.rules {
 		if rule.Matches(method, url) {
-			return Allow
+			return true
 		}
 	}
 
 	// Default deny if no allow rules match
-	return Deny
+	return false
 }
 
-// EvaluateWithRule evaluates a request and returns both action and matching rule
+// EvaluateWithRule evaluates a request and returns both result and matching rule
 func (re *RuleEngine) EvaluateWithRule(method, url string) EvaluationResult {
 	// Check if any allow rule matches
 	for _, rule := range re.rules {
 		if rule.Matches(method, url) {
 			return EvaluationResult{
-				Action: Allow,
-				Rule:   rule.Raw,
+				Allowed: true,
+				Rule:    rule.Raw,
 			}
 		}
 	}
 
 	// Default deny if no allow rules match
 	return EvaluationResult{
-		Action: Deny,
-		Rule:   "",
+		Allowed: false,
+		Rule:    "",
 	}
 }
 
