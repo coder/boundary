@@ -65,44 +65,71 @@ func RestoreOriginalUserEnvironment(logger *slog.Logger) map[string]string {
 
 // restoreUserPath attempts to construct a reasonable PATH for the original user
 func restoreUserPath(originalUser *user.User, logger *slog.Logger) string {
-	// Start with common system paths
+	// Start with comprehensive system paths (in order of preference)
 	systemPaths := []string{
 		"/usr/local/bin",
 		"/usr/bin",
 		"/bin",
+		"/usr/local/sbin",
+		"/usr/sbin",
+		"/sbin",
 	}
 
 	// Add user-specific paths
 	userPaths := []string{
 		filepath.Join(originalUser.HomeDir, ".local", "bin"),
 		filepath.Join(originalUser.HomeDir, "bin"),
+		filepath.Join(originalUser.HomeDir, ".cargo", "bin"),     // Rust tools
+		filepath.Join(originalUser.HomeDir, "go", "bin"),         // Go tools
+		filepath.Join(originalUser.HomeDir, ".npm-global", "bin"), // npm global tools
 	}
 
 	// Check if user paths exist and add them
-	var validPaths []string
+	var validUserPaths []string
 	for _, path := range userPaths {
 		if _, err := os.Stat(path); err == nil {
-			validPaths = append(validPaths, path)
+			validUserPaths = append(validUserPaths, path)
+			logger.Debug("Found user path", "path", path)
 		}
 	}
 
-	// Combine user paths + system paths
-	allPaths := append(validPaths, systemPaths...)
-
-	// Also try to preserve some paths from current PATH that might be user-specific
+	// Try to preserve paths from current PATH that might be user-specific or important
+	var preservedPaths []string
 	currentPath := os.Getenv("PATH")
 	if currentPath != "" {
 		for _, path := range strings.Split(currentPath, ":") {
 			// Include paths that contain the user's home directory
 			if strings.Contains(path, originalUser.HomeDir) {
 				if _, err := os.Stat(path); err == nil {
-					allPaths = append([]string{path}, allPaths...)
+					preservedPaths = append(preservedPaths, path)
+					logger.Debug("Preserved user-specific path from current PATH", "path", path)
+				}
+			}
+			// Also preserve common tool paths that might not be in system paths
+			if strings.Contains(path, "/opt/") || strings.Contains(path, "/snap/bin") {
+				if _, err := os.Stat(path); err == nil {
+					preservedPaths = append(preservedPaths, path)
+					logger.Debug("Preserved tool path from current PATH", "path", path)
 				}
 			}
 		}
 	}
 
-	restoredPath := strings.Join(allPaths, ":")
+	// Combine all paths: preserved user paths + valid user paths + system paths
+	allPaths := append(preservedPaths, validUserPaths...)
+	allPaths = append(allPaths, systemPaths...)
+
+	// Remove duplicates while preserving order
+	seen := make(map[string]bool)
+	var uniquePaths []string
+	for _, path := range allPaths {
+		if !seen[path] {
+			seen[path] = true
+			uniquePaths = append(uniquePaths, path)
+		}
+	}
+
+	restoredPath := strings.Join(uniquePaths, ":")
 	logger.Debug("Restored PATH for user", "user", originalUser.Username, "path", restoredPath)
 	return restoredPath
 }
