@@ -256,11 +256,10 @@ func (p *ProxyServer) writeBlockedResponse(w http.ResponseWriter, r *http.Reques
 		host = r.Host
 	}
 
-	fmt.Fprintf(w, `🚫 Request Blocked by Jail
+	fmt.Fprintf(w, `🚫 Request Blocked by Coder Jail
 
 Request: %s %s
 Host: %s
-Reason: No matching allow rules (default deny-all policy)
 
 To allow this request, restart jail with:
   --allow "%s"                    # Allow all methods to this host
