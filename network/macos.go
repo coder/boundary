@@ -40,7 +40,7 @@ func newMacOSJail(config JailConfig, logger *slog.Logger) (*MacOSNetJail, error)
 	}, nil
 }
 
-// Setup configures PF rules and creates the network jail group
+// Setup creates the network jail group and configures PF rules
 func (m *MacOSNetJail) Setup(httpPort, httpsPort int) error {
 	m.logger.Debug("Setup called", "httpPort", httpPort, "httpsPort", httpsPort)
 	m.config.HTTPPort = httpPort
@@ -48,14 +48,16 @@ func (m *MacOSNetJail) Setup(httpPort, httpsPort int) error {
 
 	// Create or get network jail group
 	m.logger.Debug("Creating or ensuring network jail group")
-	if err := m.ensureGroup(); err != nil {
+	err := m.ensureGroup()
+	if err != nil {
 		return fmt.Errorf("failed to ensure group: %v", err)
 	}
 	m.logger.Debug("Network jail group ready", "groupID", m.groupID)
 
 	// Setup PF rules
 	m.logger.Debug("Setting up PF rules")
-	if err := m.setupPFRules(); err != nil {
+	err = m.setupPFRules()
+	if err != nil {
 		return fmt.Errorf("failed to setup PF rules: %v", err)
 	}
 	m.logger.Debug("PF rules setup completed")
@@ -165,7 +167,8 @@ func (m *MacOSNetJail) Cleanup() error {
 
 	// Remove PF rules
 	m.logger.Debug("Removing PF rules")
-	if err := m.removePFRules(); err != nil {
+	err := m.removePFRules()
+	if err != nil {
 		return fmt.Errorf("failed to remove PF rules: %v", err)
 	}
 
@@ -201,7 +204,8 @@ func (m *MacOSNetJail) ensureGroup() error {
 
 	// Group doesn't exist, create it
 	cmd := exec.Command("dseditgroup", "-o", "create", GROUP_NAME)
-	if err := cmd.Run(); err != nil {
+	err = cmd.Run()
+	if err != nil {
 		return fmt.Errorf("failed to create group: %v", err)
 	}
 
@@ -299,13 +303,15 @@ func (m *MacOSNetJail) setupPFRules() error {
 	}
 
 	// Write rules to temp file
-	if err := os.WriteFile(m.pfRulesPath, []byte(rules), 0644); err != nil {
+	err = os.WriteFile(m.pfRulesPath, []byte(rules), 0644)
+	if err != nil {
 		return fmt.Errorf("failed to write PF rules file: %v", err)
 	}
 
 	// Load rules into anchor
 	cmd := exec.Command("pfctl", "-a", PF_ANCHOR_NAME, "-f", m.pfRulesPath)
-	if err := cmd.Run(); err != nil {
+	err = cmd.Run()
+	if err != nil {
 		return fmt.Errorf("failed to load PF rules: %v", err)
 	}
 
@@ -330,12 +336,14 @@ anchor "%s"
 `, PF_ANCHOR_NAME, PF_ANCHOR_NAME)
 
 	// Write and load the main ruleset
-	if err := os.WriteFile(m.mainRulesPath, []byte(mainRules), 0644); err != nil {
+	err = os.WriteFile(m.mainRulesPath, []byte(mainRules), 0644)
+	if err != nil {
 		return fmt.Errorf("failed to write main PF rules: %v", err)
 	}
 
 	cmd = exec.Command("pfctl", "-f", m.mainRulesPath)
-	if err := cmd.Run(); err != nil {
+	err = cmd.Run()
+	if err != nil {
 		// Don't fail if main rules can't be loaded, but warn
 		fmt.Fprintf(os.Stderr, "Warning: failed to load main PF rules: %v\n", err)
 	}

@@ -38,7 +38,8 @@ func NewCertificateManager(configDir string, logger *slog.Logger) (*CertificateM
 	}
 
 	// Load or generate CA certificate
-	if err := cm.loadOrGenerateCA(); err != nil {
+	err := cm.loadOrGenerateCA()
+	if err != nil {
 		return nil, fmt.Errorf("failed to load or generate CA: %v", err)
 	}
 
@@ -139,7 +140,8 @@ func (cm *CertificateManager) loadExistingCA(keyPath, certPath string) bool {
 // generateCA generates a new CA certificate and key
 func (cm *CertificateManager) generateCA(keyPath, certPath string) error {
 	// Create config directory if it doesn't exist
-	if err := os.MkdirAll(cm.configDir, 0700); err != nil {
+	err := os.MkdirAll(cm.configDir, 0700)
+	if err != nil {
 		return fmt.Errorf("failed to create config directory: %v", err)
 	}
 
@@ -151,7 +153,8 @@ func (cm *CertificateManager) generateCA(keyPath, certPath string) error {
 				gid, err2 := strconv.Atoi(sudoGID)
 				if err1 == nil && err2 == nil {
 					// Change ownership of the config directory to the original user
-					if err := os.Chown(cm.configDir, uid, gid); err != nil {
+					err := os.Chown(cm.configDir, uid, gid)
+					if err != nil {
 						cm.logger.Warn("Failed to change config directory ownership", "error", err)
 					}
 				}
