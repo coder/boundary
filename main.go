@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/coder/jail/netjail"
+	"github.com/coder/jail/network"
 	"github.com/coder/jail/proxy"
 	"github.com/coder/jail/rules"
 	"github.com/coder/jail/tls"
@@ -181,7 +181,7 @@ func runJail(inv *serpent.Invocation) error {
 	}
 
 	// Create network jail configuration
-	netjailConfig := netjail.Config{
+	networkConfig := network.JailConfig{
 		HTTPPort:    8040,
 		HTTPSPort:   8043,
 		NetJailName: "jail",
@@ -189,7 +189,7 @@ func runJail(inv *serpent.Invocation) error {
 	}
 
 	// Create network jail
-	netjailInstance, err := netjail.NewNetJail(netjailConfig, logger)
+	networkInstance, err := network.NewJail(networkConfig, logger)
 	if err != nil {
 		logger.Error("Failed to create network jail", "error", err)
 		return fmt.Errorf("failed to create network jail: %v", err)
@@ -203,7 +203,7 @@ func runJail(inv *serpent.Invocation) error {
 	go func() {
 		sig := <-sigChan
 		logger.Info("Received signal during setup, cleaning up...", "signal", sig)
-		if err := netjailInstance.Cleanup(); err != nil {
+		if err := networkInstance.Cleanup(); err != nil {
 			logger.Error("Emergency cleanup failed", "error", err)
 		}
 		os.Exit(1)
@@ -212,7 +212,7 @@ func runJail(inv *serpent.Invocation) error {
 	// Ensure cleanup happens no matter what
 	defer func() {
 		logger.Debug("Starting cleanup process")
-		if err := netjailInstance.Cleanup(); err != nil {
+		if err := networkInstance.Cleanup(); err != nil {
 			logger.Error("Failed to cleanup network jail", "error", err)
 		} else {
 			logger.Debug("Cleanup completed successfully")
@@ -220,15 +220,15 @@ func runJail(inv *serpent.Invocation) error {
 	}()
 
 	// Setup network jail
-	if err := netjailInstance.Setup(netjailConfig.HTTPPort, netjailConfig.HTTPSPort); err != nil {
+	if err := networkInstance.Setup(networkConfig.HTTPPort, networkConfig.HTTPSPort); err != nil {
 		logger.Error("Failed to setup network jail", "error", err)
 		return fmt.Errorf("failed to setup network jail: %v", err)
 	}
 
 	// Create proxy server
 	proxyConfig := proxy.Config{
-		HTTPPort:   netjailConfig.HTTPPort,
-		HTTPSPort:  netjailConfig.HTTPSPort,
+		HTTPPort:   networkConfig.HTTPPort,
+		HTTPSPort:  networkConfig.HTTPSPort,
 		RuleEngine: ruleEngine,
 		Logger:     logger,
 		TLSConfig:  tlsConfig,
@@ -253,7 +253,7 @@ func runJail(inv *serpent.Invocation) error {
 	// Execute command in network jail
 	go func() {
 		defer cancel()
-		if err := netjailInstance.Execute(args, extraEnv); err != nil {
+		if err := networkInstance.Execute(args, extraEnv); err != nil {
 			logger.Error("Command execution failed", "error", err)
 		}
 	}()

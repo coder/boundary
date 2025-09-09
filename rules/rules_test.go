@@ -5,70 +5,64 @@ import (
 	"testing"
 )
 
-func TestNewRule(t *testing.T) {
+func TestNewAllowRule(t *testing.T) {
 	tests := []struct {
 		name        string
-		ruleStr     string
+		spec        string
 		expectError bool
-		expAction   Action
 		expMethods  map[string]bool
 		expPattern  string
 	}{
 		{
 			name:        "simple allow rule",
-			ruleStr:     "allow: github.com",
+			spec:        "github.com",
 			expectError: false,
-			expAction:   Allow,
 			expMethods:  nil,
 			expPattern:  "github.com",
 		},
 		{
-			name:        "simple deny rule with wildcard",
-			ruleStr:     "deny: telemetry.*",
+			name:        "wildcard pattern",
+			spec:        "api.*",
 			expectError: false,
-			expAction:   Deny,
 			expMethods:  nil,
-			expPattern:  "telemetry.*",
+			expPattern:  "api.*",
 		},
 		{
 			name:        "method-specific allow rule",
-			ruleStr:     "allow-get: api.github.com",
+			spec:        "GET api.github.com",
 			expectError: false,
-			expAction:   Allow,
 			expMethods:  map[string]bool{"GET": true},
 			expPattern:  "api.github.com",
 		},
 		{
-			name:        "multiple methods deny rule",
-			ruleStr:     "deny-post-put: upload.*",
+			name:        "multiple methods rule",
+			spec:        "GET,POST,PUT api.*",
 			expectError: false,
-			expAction:   Deny,
-			expMethods:  map[string]bool{"POST": true, "PUT": true},
-			expPattern:  "upload.*",
+			expMethods:  map[string]bool{"GET": true, "POST": true, "PUT": true},
+			expPattern:  "api.*",
 		},
 		{
-			name:        "wildcard allow all",
-			ruleStr:     "allow: *",
+			name:        "allow all wildcard",
+			spec:        "*",
 			expectError: false,
-			expAction:   Allow,
 			expMethods:  nil,
 			expPattern:  "*",
 		},
 		{
-			name:        "invalid format",
-			ruleStr:     "invalid rule",
+			name:        "empty spec",
+			spec:        "",
 			expectError: true,
 		},
 		{
-			name:        "invalid action",
-			ruleStr:     "invalid: pattern",
+			name:        "only spaces",
+			spec:        "   ",
 			expectError: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rule, err := newRule(tt.ruleStr)
+			rule, err := newAllowRule(tt.spec)
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("expected error but got none")
@@ -79,10 +73,6 @@ func TestNewRule(t *testing.T) {
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 				return
-			}
-
-			if rule.Action != tt.expAction {
-				t.Errorf("expected action %v, got %v", tt.expAction, rule.Action)
 			}
 
 			if rule.Pattern != tt.expPattern {
@@ -98,6 +88,60 @@ func TestNewRule(t *testing.T) {
 				if !rule.Methods[method] {
 					t.Errorf("expected method %s to be allowed", method)
 				}
+			}
+		})
+	}
+}
+
+func TestParseAllowSpecs(t *testing.T) {
+	tests := []struct {
+		name         string
+		allowStrings []string
+		expectError  bool
+		expRuleCount int
+	}{
+		{
+			name:         "single allow rule",
+			allowStrings: []string{"github.com"},
+			expectError:  false,
+			expRuleCount: 1,
+		},
+		{
+			name:         "multiple allow rules",
+			allowStrings: []string{"github.com", "GET api.*", "POST,PUT upload.*"},
+			expectError:  false,
+			expRuleCount: 3,
+		},
+		{
+			name:         "empty list",
+			allowStrings: []string{},
+			expectError:  false,
+			expRuleCount: 0,
+		},
+		{
+			name:         "invalid rule in list",
+			allowStrings: []string{"github.com", ""},
+			expectError:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rules, err := ParseAllowSpecs(tt.allowStrings)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			if len(rules) != tt.expRuleCount {
+				t.Errorf("expected %d rules, got %d", tt.expRuleCount, len(rules))
 			}
 		})
 	}
@@ -150,7 +194,7 @@ func TestWildcardMatch(t *testing.T) {
 }
 
 func TestRuleMatches(t *testing.T) {
-	rule, err := newRule("allow-get-post: api.github.*")
+	rule, err := newAllowRule("GET,POST api.github.*")
 	if err != nil {
 		t.Fatalf("failed to create rule: %v", err)
 	}
@@ -181,8 +225,8 @@ func TestRuleMatches(t *testing.T) {
 
 func TestRuleEngine(t *testing.T) {
 	rules := []*Rule{
-		{Action: Allow, Pattern: "github.com", Methods: nil, Raw: "allow: github.com"},
-		{Action: Deny, Pattern: "*", Methods: nil, Raw: "deny: *"},
+		{Pattern: "github.com", Methods: nil, Raw: "allow github.com"},
+		{Pattern: "api.*", Methods: map[string]bool{"GET": true}, Raw: "allow GET api.*"},
 	}
 
 	// Create a logger that discards output during tests
@@ -199,6 +243,8 @@ func TestRuleEngine(t *testing.T) {
 		expected Action
 	}{
 		{"allow github", "GET", "https://github.com/user/repo", Allow},
+		{"allow api GET", "GET", "https://api.example.com", Allow},
+		{"deny api POST", "POST", "https://api.example.com", Deny},
 		{"deny other", "GET", "https://example.com", Deny},
 	}
 
@@ -214,8 +260,8 @@ func TestRuleEngine(t *testing.T) {
 
 func TestRuleEngineWildcardRules(t *testing.T) {
 	rules := []*Rule{
-		{Action: Deny, Pattern: "telemetry.*", Methods: nil, Raw: "deny: telemetry.*"},
-		{Action: Allow, Pattern: "*", Methods: nil, Raw: "allow: *"},
+		{Pattern: "github.*", Methods: nil, Raw: "allow github.*"},
+		{Pattern: "api.*.com", Methods: map[string]bool{"GET": true}, Raw: "allow GET api.*.com"},
 	}
 
 	// Create a logger that discards output during tests
@@ -231,9 +277,11 @@ func TestRuleEngineWildcardRules(t *testing.T) {
 		url      string
 		expected Action
 	}{
-		{"deny telemetry", "GET", "https://telemetry.example.com", Deny},
-		{"allow other", "GET", "https://api.github.com", Allow},
-		{"deny telemetry subdomain", "POST", "https://telemetry.analytics.com", Deny},
+		{"allow github", "GET", "https://github.com", Allow},
+		{"allow github subdomain", "POST", "https://github.io", Allow},
+		{"allow api GET", "GET", "https://api.example.com", Allow},
+		{"deny api POST", "POST", "https://api.example.com", Deny},
+		{"deny unmatched", "GET", "https://example.org", Deny},
 	}
 
 	for _, tt := range tests {

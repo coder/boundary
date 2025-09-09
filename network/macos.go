@@ -1,10 +1,9 @@
 //go:build darwin
 
-package netjail
+package network
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -14,21 +13,21 @@ import (
 )
 
 const (
-	PF_ANCHOR_NAME = "boundary"
-	GROUP_NAME     = "boundary"
+	PF_ANCHOR_NAME = "network"
+	GROUP_NAME     = "network"
 )
 
 // MacOSNetJail implements network jail using macOS PF (Packet Filter) and group-based isolation
 type MacOSNetJail struct {
-	config        Config
+	config        JailConfig
 	groupID       int
 	pfRulesPath   string
 	mainRulesPath string
 	logger        *slog.Logger
 }
 
-// newMacOSNetJail creates a new macOS network jail instance
-func newMacOSNetJail(config Config, logger *slog.Logger) (*MacOSNetJail, error) {
+// newMacOSJail creates a new macOS network jail instance
+func newMacOSJail(config JailConfig, logger *slog.Logger) (*MacOSNetJail, error) {
 	pfRulesPath := fmt.Sprintf("/tmp/%s.pf", config.NetJailName)
 	mainRulesPath := fmt.Sprintf("/tmp/%s_main.pf", config.NetJailName)
 
@@ -266,7 +265,7 @@ func (m *MacOSNetJail) setupPFRules() error {
 	}
 
 	// Write rules to temp file
-	if err := ioutil.WriteFile(m.pfRulesPath, []byte(rules), 0644); err != nil {
+	if err := os.WriteFile(m.pfRulesPath, []byte(rules), 0644); err != nil {
 		return fmt.Errorf("failed to write PF rules file: %v", err)
 	}
 
@@ -297,7 +296,7 @@ anchor "%s"
 `, PF_ANCHOR_NAME, PF_ANCHOR_NAME)
 
 	// Write and load the main ruleset
-	if err := ioutil.WriteFile(m.mainRulesPath, []byte(mainRules), 0644); err != nil {
+	if err := os.WriteFile(m.mainRulesPath, []byte(mainRules), 0644); err != nil {
 		return fmt.Errorf("failed to write main PF rules: %v", err)
 	}
 
