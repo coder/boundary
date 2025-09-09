@@ -5,6 +5,10 @@ import (
 	"net/http"
 )
 
+const (
+	ReasonNoMatchingRules = "no matching allow rules"
+)
+
 // Request represents information about an HTTP request for auditing
 type Request struct {
 	Method  string

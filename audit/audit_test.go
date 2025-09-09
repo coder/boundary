@@ -1,22 +1,19 @@
 package audit
 
 import (
+	"bytes"
 	"log/slog"
 	"net/http"
+	"strings"
 	"testing"
 )
 
 func TestLoggingAuditor(t *testing.T) {
-	// Create a logger that discards output during tests
-	logger := slog.New(slog.NewTextHandler(nil, &slog.HandlerOptions{
-		Level: slog.LevelError + 1, // Higher than any level to suppress all logs
-	}))
-
-	auditor := NewLoggingAuditor(logger)
-
 	tests := []struct {
-		name    string
-		request *Request
+		name           string
+		request        *Request
+		expectedLevel  string
+		expectedFields []string
 	}{
 		{
 			name: "allow request",
@@ -26,6 +23,8 @@ func TestLoggingAuditor(t *testing.T) {
 				Allowed: true,
 				Rule:    "allow github.com",
 			},
+			expectedLevel: "INFO",
+			expectedFields: []string{"ALLOW", "GET", "https://github.com", "allow github.com"},
 		},
 		{
 			name: "deny request",
@@ -33,15 +32,37 @@ func TestLoggingAuditor(t *testing.T) {
 				Method:  "POST",
 				URL:     "https://example.com",
 				Allowed: false,
-				Reason:  "no matching allow rules",
+				Reason:  ReasonNoMatchingRules,
 			},
+			expectedLevel: "WARN",
+			expectedFields: []string{"DENY", "POST", "https://example.com", ReasonNoMatchingRules},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Should not panic
+			var buf bytes.Buffer
+			logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
+				Level: slog.LevelDebug,
+			}))
+
+			auditor := NewLoggingAuditor(logger)
 			auditor.AuditRequest(tt.request)
+
+			logOutput := buf.String()
+			if logOutput == "" {
+				t.Fatalf("expected log output, got empty string")
+			}
+
+			if !strings.Contains(logOutput, tt.expectedLevel) {
+				t.Errorf("expected log level %s, got: %s", tt.expectedLevel, logOutput)
+			}
+
+			for _, field := range tt.expectedFields {
+				if !strings.Contains(logOutput, field) {
+					t.Errorf("expected log to contain %q, got: %s", field, logOutput)
+				}
+			}
 		})
 	}
 }
