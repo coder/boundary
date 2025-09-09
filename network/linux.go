@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"os/user"
+	"strconv"
 	"syscall"
 	"time"
 )
@@ -97,10 +99,46 @@ func (l *LinuxJail) Execute(command []string, extraEnv map[string]string) error 
 		env = append(env, fmt.Sprintf("%s=%s", key, value))
 	}
 
+	// When running under sudo, restore essential user environment variables
+	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
+		if user, err := user.Lookup(sudoUser); err == nil {
+			// Set HOME to original user's home directory
+			env = append(env, fmt.Sprintf("HOME=%s", user.HomeDir))
+			// Set USER to original username
+			env = append(env, fmt.Sprintf("USER=%s", sudoUser))
+			// Set LOGNAME to original username (some tools check this instead of USER)
+			env = append(env, fmt.Sprintf("LOGNAME=%s", sudoUser))
+			l.logger.Debug("Restored user environment", "home", user.HomeDir, "user", sudoUser)
+		}
+	}
+
 	cmd.Env = env
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+
+	// Drop privileges to original user if running under sudo
+	if sudoUID := os.Getenv("SUDO_UID"); sudoUID != "" {
+		if sudoGID := os.Getenv("SUDO_GID"); sudoGID != "" {
+			uid, err := strconv.Atoi(sudoUID)
+			if err != nil {
+				l.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", sudoUID, "error", err)
+			} else {
+				gid, err := strconv.Atoi(sudoGID)
+				if err != nil {
+					l.logger.Warn("Invalid SUDO_GID, subprocess will run as root", "sudo_gid", sudoGID, "error", err)
+				} else {
+					cmd.SysProcAttr = &syscall.SysProcAttr{
+						Credential: &syscall.Credential{
+							Uid: uint32(uid),
+							Gid: uint32(gid),
+						},
+					}
+					l.logger.Debug("Dropping privileges to original user", "uid", uid, "gid", gid)
+				}
+			}
+		}
+	}
 
 	// Start command
 	l.logger.Debug("Starting command", "path", cmd.Path, "args", cmd.Args)

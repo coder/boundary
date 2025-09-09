@@ -6,30 +6,12 @@ import (
 	"strings"
 )
 
-// Action represents whether to allow a request
-type Action int
-
-const (
-	Allow Action = iota
-	Deny  // Default deny when no allow rules match
-)
-
-func (a Action) String() string {
-	switch a {
-	case Allow:
-		return "ALLOW"
-	default:
-		return "DENY"
-	}
-}
-
 // Rule represents an allow rule with optional HTTP method restrictions
 type Rule struct {
 	Pattern string          // wildcard pattern for matching
 	Methods map[string]bool // nil means all methods allowed
 	Raw     string          // rule string for logging
 }
-
 
 // Matches checks if the rule matches the given method and URL using wildcard patterns
 func (r *Rule) Matches(method, url string) bool {
@@ -137,19 +119,29 @@ func NewRuleEngine(rules []*Rule, logger *slog.Logger) *RuleEngine {
 	}
 }
 
-// Evaluate evaluates a request against all allow rules and returns the action to take
-func (re *RuleEngine) Evaluate(method, url string) Action {
+// EvaluationResult contains the result of rule evaluation
+type EvaluationResult struct {
+	Allowed bool
+	Rule    string // The rule that matched (if any)
+}
+
+// Evaluate evaluates a request and returns both result and matching rule
+func (re *RuleEngine) Evaluate(method, url string) EvaluationResult {
 	// Check if any allow rule matches
 	for _, rule := range re.rules {
 		if rule.Matches(method, url) {
-			re.logger.Info("ALLOW", "method", method, "url", url, "rule", rule.Raw)
-			return Allow
+			return EvaluationResult{
+				Allowed: true,
+				Rule:    rule.Raw,
+			}
 		}
 	}
 
 	// Default deny if no allow rules match
-	re.logger.Warn("DENY", "method", method, "url", url, "reason", "no matching allow rules")
-	return Deny
+	return EvaluationResult{
+		Allowed: false,
+		Rule:    "",
+	}
 }
 
 // newAllowRule creates an allow Rule from a spec string used by --allow.

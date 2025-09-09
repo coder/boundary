@@ -12,7 +12,9 @@ import (
 	"math/big"
 	"net"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -139,6 +141,22 @@ func (cm *CertificateManager) generateCA(keyPath, certPath string) error {
 	// Create config directory if it doesn't exist
 	if err := os.MkdirAll(cm.configDir, 0700); err != nil {
 		return fmt.Errorf("failed to create config directory: %v", err)
+	}
+
+	// When running under sudo, ensure the directory is owned by the original user
+	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
+		if sudoUID := os.Getenv("SUDO_UID"); sudoUID != "" {
+			if sudoGID := os.Getenv("SUDO_GID"); sudoGID != "" {
+				uid, err1 := strconv.Atoi(sudoUID)
+				gid, err2 := strconv.Atoi(sudoGID)
+				if err1 == nil && err2 == nil {
+					// Change ownership of the config directory to the original user
+					if err := os.Chown(cm.configDir, uid, gid); err != nil {
+						cm.logger.Warn("Failed to change config directory ownership", "error", err)
+					}
+				}
+			}
+		}
 	}
 
 	// Generate private key
@@ -295,9 +313,28 @@ func (cm *CertificateManager) generateServerCertificate(hostname string) (*tls.C
 
 // GetConfigDir returns the configuration directory path
 func GetConfigDir() (string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get user home directory: %v", err)
+	// When running under sudo, use the original user's home directory
+	// so the subprocess can access the CA certificate files
+	var homeDir string
+	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
+		// Get original user's home directory
+		if user, err := user.Lookup(sudoUser); err == nil {
+			homeDir = user.HomeDir
+		} else {
+			// Fallback to current user if lookup fails
+			var err2 error
+			homeDir, err2 = os.UserHomeDir()
+			if err2 != nil {
+				return "", fmt.Errorf("failed to get user home directory: %v", err2)
+			}
+		}
+	} else {
+		// Normal case - use current user's home
+		var err error
+		homeDir, err = os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get user home directory: %v", err)
+		}
 	}
 
 	// Use platform-specific config directory

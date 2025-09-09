@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"os/user"
 	"strconv"
 	"strings"
 	"syscall"
@@ -84,16 +85,48 @@ func (m *MacOSNetJail) Execute(command []string, extraEnv map[string]string) err
 		env = append(env, fmt.Sprintf("%s=%s", key, value))
 	}
 
+	// When running under sudo, restore essential user environment variables
+	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
+		if user, err := user.Lookup(sudoUser); err == nil {
+			// Set HOME to original user's home directory
+			env = append(env, fmt.Sprintf("HOME=%s", user.HomeDir))
+			// Set USER to original username
+			env = append(env, fmt.Sprintf("USER=%s", sudoUser))
+			// Set LOGNAME to original username (some tools check this instead of USER)
+			env = append(env, fmt.Sprintf("LOGNAME=%s", sudoUser))
+			m.logger.Debug("Restored user environment", "home", user.HomeDir, "user", sudoUser)
+		}
+	}
+
 	cmd.Env = env
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 
-	// Set group ID using syscall (like httpjail does)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Credential: &syscall.Credential{
-			Gid: uint32(m.groupID),
-		},
+	// Drop privileges to original user if running under sudo
+	if sudoUID := os.Getenv("SUDO_UID"); sudoUID != "" {
+		if sudoGID := os.Getenv("SUDO_GID"); sudoGID != "" {
+			uid, err := strconv.Atoi(sudoUID)
+			if err != nil {
+				m.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", sudoUID, "error", err)
+			} else {
+				// Use original user ID but KEEP the jail group for network isolation
+				cmd.SysProcAttr = &syscall.SysProcAttr{
+					Credential: &syscall.Credential{
+						Uid: uint32(uid),
+						Gid: uint32(m.groupID), // Keep jail group, not original user's group
+					},
+				}
+				m.logger.Debug("Dropping privileges to original user with jail group", "uid", uid, "jail_gid", m.groupID)
+			}
+		}
+	} else {
+		// Set group ID using syscall (original behavior for non-sudo)
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			Credential: &syscall.Credential{
+				Gid: uint32(m.groupID),
+			},
+		}
 	}
 
 	// Start and wait for command to complete
