@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -140,6 +141,22 @@ func (cm *CertificateManager) generateCA(keyPath, certPath string) error {
 	// Create config directory if it doesn't exist
 	if err := os.MkdirAll(cm.configDir, 0700); err != nil {
 		return fmt.Errorf("failed to create config directory: %v", err)
+	}
+
+	// When running under sudo, ensure the directory is owned by the original user
+	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
+		if sudoUID := os.Getenv("SUDO_UID"); sudoUID != "" {
+			if sudoGID := os.Getenv("SUDO_GID"); sudoGID != "" {
+				uid, err1 := strconv.Atoi(sudoUID)
+				gid, err2 := strconv.Atoi(sudoGID)
+				if err1 == nil && err2 == nil {
+					// Change ownership of the config directory to the original user
+					if err := os.Chown(cm.configDir, uid, gid); err != nil {
+						cm.logger.Warn("Failed to change config directory ownership", "error", err)
+					}
+				}
+			}
+		}
 	}
 
 	// Generate private key
