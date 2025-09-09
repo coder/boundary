@@ -144,7 +144,6 @@ func (p *ProxyServer) forwardHTTPRequest(w http.ResponseWriter, r *http.Request)
 
 	// Create HTTP client
 	client := &http.Client{
-		Timeout: 30 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse // Don't follow redirects
 		},

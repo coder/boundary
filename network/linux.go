@@ -1,6 +1,6 @@
 //go:build linux
 
-package netjail
+package network
 
 import (
 	"fmt"
@@ -11,19 +11,23 @@ import (
 	"time"
 )
 
-// LinuxNetJail implements NetJail using Linux network namespaces
-type LinuxNetJail struct {
-	config    Config
+const (
+	namespacePrefix = "coder_jail"
+)
+
+// LinuxJail implements NetJail using Linux network namespaces
+type LinuxJail struct {
+	config    JailConfig
 	namespace string
 	logger    *slog.Logger
 }
 
-// newLinuxNetJail creates a new Linux network jail instance
-func newLinuxNetJail(config Config, logger *slog.Logger) (*LinuxNetJail, error) {
+// newLinuxJail creates a new Linux network jail instance
+func newLinuxJail(config JailConfig, logger *slog.Logger) (*LinuxJail, error) {
 	// Generate unique namespace name
-	namespace := fmt.Sprintf("boundary_%d", time.Now().UnixNano()%10000000)
+	namespace := fmt.Sprintf("%s_%d", namespacePrefix, time.Now().UnixNano()%10000000)
 
-	return &LinuxNetJail{
+	return &LinuxJail{
 		config:    config,
 		namespace: namespace,
 		logger:    logger,
@@ -31,7 +35,7 @@ func newLinuxNetJail(config Config, logger *slog.Logger) (*LinuxNetJail, error) 
 }
 
 // Setup creates network namespace and configures iptables rules
-func (l *LinuxNetJail) Setup(httpPort, httpsPort int) error {
+func (l *LinuxJail) Setup(httpPort, httpsPort int) error {
 	l.logger.Debug("Setup called", "httpPort", httpPort, "httpsPort", httpsPort)
 	l.config.HTTPPort = httpPort
 	l.config.HTTPSPort = httpsPort
@@ -70,7 +74,7 @@ func (l *LinuxNetJail) Setup(httpPort, httpsPort int) error {
 }
 
 // Execute runs a command within the network namespace
-func (l *LinuxNetJail) Execute(command []string, extraEnv map[string]string) error {
+func (l *LinuxJail) Execute(command []string, extraEnv map[string]string) error {
 	l.logger.Debug("Execute called", "command", command)
 	if len(command) == 0 {
 		return fmt.Errorf("no command specified")
@@ -81,7 +85,7 @@ func (l *LinuxNetJail) Execute(command []string, extraEnv map[string]string) err
 	cmdArgs := []string{"ip", "netns", "exec", l.namespace}
 	cmdArgs = append(cmdArgs, command...)
 	l.logger.Debug("Full command args", "args", cmdArgs)
-	
+
 	cmd := exec.Command("ip", cmdArgs[1:]...)
 
 	// Set up environment
@@ -124,7 +128,7 @@ func (l *LinuxNetJail) Execute(command []string, extraEnv map[string]string) err
 }
 
 // Cleanup removes the network namespace and iptables rules
-func (l *LinuxNetJail) Cleanup() error {
+func (l *LinuxJail) Cleanup() error {
 	if l.config.SkipCleanup {
 		return nil
 	}
@@ -152,7 +156,7 @@ func (l *LinuxNetJail) Cleanup() error {
 }
 
 // createNamespace creates a new network namespace
-func (l *LinuxNetJail) createNamespace() error {
+func (l *LinuxJail) createNamespace() error {
 	cmd := exec.Command("ip", "netns", "add", l.namespace)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to create namespace: %v", err)
@@ -161,12 +165,12 @@ func (l *LinuxNetJail) createNamespace() error {
 }
 
 // setupNetworking configures networking within the namespace
-func (l *LinuxNetJail) setupNetworking() error {
+func (l *LinuxJail) setupNetworking() error {
 	// Create veth pair with short names (Linux interface names limited to 15 chars)
 	// Generate unique ID to avoid conflicts
 	uniqueID := fmt.Sprintf("%d", time.Now().UnixNano()%10000000) // 7 digits max
-	vethHost := fmt.Sprintf("veth_h_%s", uniqueID)                    // veth_h_1234567 = 14 chars
-	vethNetJail := fmt.Sprintf("veth_n_%s", uniqueID)                // veth_n_1234567 = 14 chars
+	vethHost := fmt.Sprintf("veth_h_%s", uniqueID)                // veth_h_1234567 = 14 chars
+	vethNetJail := fmt.Sprintf("veth_n_%s", uniqueID)             // veth_n_1234567 = 14 chars
 
 	cmd := exec.Command("ip", "link", "add", vethHost, "type", "veth", "peer", "name", vethNetJail)
 	if err := cmd.Run(); err != nil {
@@ -218,7 +222,7 @@ func (l *LinuxNetJail) setupNetworking() error {
 // setupDNS configures DNS resolution for the namespace
 // This ensures reliable DNS resolution by using public DNS servers
 // instead of relying on the host's potentially complex DNS configuration
-func (l *LinuxNetJail) setupDNS() error {
+func (l *LinuxJail) setupDNS() error {
 	// Always create namespace-specific resolv.conf with reliable public DNS servers
 	// This avoids issues with systemd-resolved, Docker DNS, and other complex setups
 	netnsEtc := fmt.Sprintf("/etc/netns/%s", l.namespace)
@@ -228,7 +232,7 @@ func (l *LinuxNetJail) setupDNS() error {
 
 	// Write custom resolv.conf with multiple reliable public DNS servers
 	resolvConfPath := fmt.Sprintf("%s/resolv.conf", netnsEtc)
-	dnsConfig := `# Custom DNS for boundary namespace
+	dnsConfig := `# Custom DNS for network namespace
 nameserver 8.8.8.8
 nameserver 8.8.4.4
 nameserver 1.1.1.1
@@ -244,7 +248,7 @@ options timeout:2 attempts:2
 }
 
 // setupIptables configures iptables rules for traffic redirection
-func (l *LinuxNetJail) setupIptables() error {
+func (l *LinuxJail) setupIptables() error {
 	// Enable IP forwarding
 	cmd := exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1")
 	cmd.Run() // Ignore error
@@ -273,7 +277,7 @@ func (l *LinuxNetJail) setupIptables() error {
 }
 
 // removeIptables removes iptables rules
-func (l *LinuxNetJail) removeIptables() error {
+func (l *LinuxJail) removeIptables() error {
 	// Remove NAT rule
 	cmd := exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING", "-s", "192.168.100.0/24", "-j", "MASQUERADE")
 	cmd.Run() // Ignore errors during cleanup
@@ -282,7 +286,7 @@ func (l *LinuxNetJail) removeIptables() error {
 }
 
 // removeNamespace removes the network namespace
-func (l *LinuxNetJail) removeNamespace() error {
+func (l *LinuxJail) removeNamespace() error {
 	cmd := exec.Command("ip", "netns", "del", l.namespace)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to remove namespace: %v", err)

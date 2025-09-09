@@ -6,72 +6,30 @@ import (
 	"strings"
 )
 
-// Action represents whether to allow or deny a request
+// Action represents whether to allow a request
 type Action int
 
 const (
 	Allow Action = iota
-	Deny
+	Deny  // Default deny when no allow rules match
 )
 
 func (a Action) String() string {
 	switch a {
 	case Allow:
 		return "ALLOW"
-	case Deny:
+	default:
 		return "DENY"
-	default:
-		return "UNKNOWN"
 	}
 }
 
-// Rule represents a filtering rule with optional HTTP method restrictions
+// Rule represents an allow rule with optional HTTP method restrictions
 type Rule struct {
-	Action  Action
-	Pattern string              // wildcard pattern for matching
-	Methods map[string]bool     // nil means all methods allowed
-	Raw     string              // rule string for logging
+	Pattern string          // wildcard pattern for matching
+	Methods map[string]bool // nil means all methods allowed
+	Raw     string          // rule string for logging
 }
 
-// newRule creates a new rule from a string format like "allow: github.com" or "deny-post: telemetry.*"
-func newRule(ruleStr string) (*Rule, error) {
-	parts := strings.SplitN(ruleStr, ":", 2)
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid rule format: %s (expected 'action[-method]: pattern')", ruleStr)
-	}
-
-	actionPart := strings.TrimSpace(parts[0])
-	pattern := strings.TrimSpace(parts[1])
-
-	// Parse action and optional method
-	var action Action
-	var methods map[string]bool
-
-	actionParts := strings.Split(actionPart, "-")
-	switch strings.ToLower(actionParts[0]) {
-	case "allow":
-		action = Allow
-	case "deny":
-		action = Deny
-	default:
-		return nil, fmt.Errorf("invalid action: %s (must be 'allow' or 'deny')", actionParts[0])
-	}
-
-	// Parse optional method restriction
-	if len(actionParts) > 1 {
-		methods = make(map[string]bool)
-		for _, method := range actionParts[1:] {
-			methods[strings.ToUpper(method)] = true
-		}
-	}
-
-	return &Rule{
-		Action:  action,
-		Pattern: pattern,
-		Methods: methods,
-		Raw:     ruleStr,
-	}, nil
-}
 
 // Matches checks if the rule matches the given method and URL using wildcard patterns
 func (r *Rule) Matches(method, url string) bool {
@@ -95,12 +53,12 @@ func (r *Rule) Matches(method, url string) bool {
 		} else if strings.HasPrefix(url, "http://") {
 			urlWithoutProtocol = url[7:] // Remove "http://"
 		}
-		
+
 		// Try matching against URL without protocol
 		if wildcardMatch(r.Pattern, urlWithoutProtocol) {
 			return true
 		}
-		
+
 		// Also try matching just the domain part
 		domainEnd := strings.Index(urlWithoutProtocol, "/")
 		if domainEnd > 0 {
@@ -167,43 +125,38 @@ func wildcardMatchRecursive(pattern, text string, p, t int) bool {
 
 // RuleEngine evaluates HTTP requests against a set of rules
 type RuleEngine struct {
-	rules   []*Rule
-	logger  *slog.Logger
+	rules  []*Rule
+	logger *slog.Logger
 }
 
 // NewRuleEngine creates a new rule engine
 func NewRuleEngine(rules []*Rule, logger *slog.Logger) *RuleEngine {
 	return &RuleEngine{
-		rules:   rules,
-		logger:  logger,
+		rules:  rules,
+		logger: logger,
 	}
 }
 
-// Evaluate evaluates a request against all rules and returns the action to take
+// Evaluate evaluates a request against all allow rules and returns the action to take
 func (re *RuleEngine) Evaluate(method, url string) Action {
-	// Evaluate rules in order
+	// Check if any allow rule matches
 	for _, rule := range re.rules {
 		if rule.Matches(method, url) {
-			switch rule.Action {
-			case Allow:
-				re.logger.Info("ALLOW", "method", method, "url", url, "rule", rule.Raw)
-				return Allow
-			case Deny:
-				re.logger.Warn("DENY", "method", method, "url", url, "rule", rule.Raw)
-				return Deny
-			}
+			re.logger.Info("ALLOW", "method", method, "url", url, "rule", rule.Raw)
+			return Allow
 		}
 	}
 
-	// Default deny if no rules match
-	re.logger.Warn("DENY", "method", method, "url", url, "reason", "no matching rules")
+	// Default deny if no allow rules match
+	re.logger.Warn("DENY", "method", method, "url", url, "reason", "no matching allow rules")
 	return Deny
 }
 
 // newAllowRule creates an allow Rule from a spec string used by --allow.
 // Supported formats:
-//   "pattern"                    -> allow all methods to pattern
-//   "GET,HEAD pattern"           -> allow only listed methods to pattern
+//
+//	"pattern"                    -> allow all methods to pattern
+//	"GET,HEAD pattern"           -> allow only listed methods to pattern
 func newAllowRule(spec string) (*Rule, error) {
 	s := strings.TrimSpace(spec)
 	if s == "" {
@@ -240,7 +193,6 @@ func newAllowRule(spec string) (*Rule, error) {
 	}
 
 	return &Rule{
-		Action:  Allow,
 		Pattern: pattern,
 		Methods: methods,
 		Raw:     "allow " + spec,

@@ -1,4 +1,4 @@
-package netjail
+package network
 
 import (
 	"fmt"
@@ -6,8 +6,8 @@ import (
 	"runtime"
 )
 
-// NetJail represents a network isolation mechanism
-type NetJail interface {
+// Jail represents a network isolation mechanism
+type Jail interface {
 	// Setup configures the network jail for the given proxy ports
 	Setup(httpPort, httpsPort int) error
 
@@ -18,21 +18,21 @@ type NetJail interface {
 	Cleanup() error
 }
 
-// Config holds configuration for network jail
-type Config struct {
-	HTTPPort     int
-	HTTPSPort    int
-	NetJailName  string
-	SkipCleanup  bool
+// JailConfig holds configuration for network jail
+type JailConfig struct {
+	HTTPPort    int
+	HTTPSPort   int
+	NetJailName string
+	SkipCleanup bool
 }
 
-// NewNetJail creates a new NetJail instance for the current platform
-func NewNetJail(config Config, logger *slog.Logger) (NetJail, error) {
+// NewJail creates a new NetJail instance for the current platform
+func NewJail(config JailConfig, logger *slog.Logger) (Jail, error) {
 	switch runtime.GOOS {
 	case "darwin":
-		return newMacOSNetJail(config, logger)
+		return newMacOSJail(config, logger)
 	case "linux":
-		return newLinuxNetJail(config, logger)
+		return newLinuxJail(config, logger)
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
