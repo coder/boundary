@@ -86,8 +86,10 @@ func (m *MacOSNetJail) Execute(command []string, extraEnv map[string]string) err
 	}
 
 	// When running under sudo, restore essential user environment variables
-	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
-		if user, err := user.Lookup(sudoUser); err == nil {
+	sudoUser := os.Getenv("SUDO_USER")
+	if sudoUser != "" {
+		user, err := user.Lookup(sudoUser)
+		if err == nil {
 			// Set HOME to original user's home directory
 			env = append(env, fmt.Sprintf("HOME=%s", user.HomeDir))
 			// Set USER to original username
@@ -103,29 +105,28 @@ func (m *MacOSNetJail) Execute(command []string, extraEnv map[string]string) err
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 
+	// Set group ID using syscall
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Credential: &syscall.Credential{
+			Gid: uint32(m.groupID),
+		},
+	}
+
 	// Drop privileges to original user if running under sudo
-	if sudoUID := os.Getenv("SUDO_UID"); sudoUID != "" {
-		if sudoGID := os.Getenv("SUDO_GID"); sudoGID != "" {
-			uid, err := strconv.Atoi(sudoUID)
-			if err != nil {
-				m.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", sudoUID, "error", err)
-			} else {
-				// Use original user ID but KEEP the jail group for network isolation
-				cmd.SysProcAttr = &syscall.SysProcAttr{
-					Credential: &syscall.Credential{
-						Uid: uint32(uid),
-						Gid: uint32(m.groupID), // Keep jail group, not original user's group
-					},
-				}
-				m.logger.Debug("Dropping privileges to original user with jail group", "uid", uid, "jail_gid", m.groupID)
+	sudoUID := os.Getenv("SUDO_UID")
+	if sudoUID != "" {
+		uid, err := strconv.Atoi(sudoUID)
+		if err != nil {
+			m.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", sudoUID, "error", err)
+		} else {
+			// Use original user ID but KEEP the jail group for network isolation
+			cmd.SysProcAttr = &syscall.SysProcAttr{
+				Credential: &syscall.Credential{
+					Uid: uint32(uid),
+					Gid: uint32(m.groupID), // Keep jail group, not original user's group
+				},
 			}
-		}
-	} else {
-		// Set group ID using syscall (original behavior for non-sudo)
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			Credential: &syscall.Credential{
-				Gid: uint32(m.groupID),
-			},
+			m.logger.Debug("Dropping privileges to original user with jail group", "uid", uid, "jail_gid", m.groupID)
 		}
 	}
 

@@ -100,8 +100,10 @@ func (l *LinuxJail) Execute(command []string, extraEnv map[string]string) error 
 	}
 
 	// When running under sudo, restore essential user environment variables
-	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
-		if user, err := user.Lookup(sudoUser); err == nil {
+	sudoUser := os.Getenv("SUDO_USER")
+	if sudoUser != "" {
+		user, err := user.Lookup(sudoUser)
+		if err == nil {
 			// Set HOME to original user's home directory
 			env = append(env, fmt.Sprintf("HOME=%s", user.HomeDir))
 			// Set USER to original username
@@ -118,31 +120,32 @@ func (l *LinuxJail) Execute(command []string, extraEnv map[string]string) error 
 	cmd.Stderr = os.Stderr
 
 	// Drop privileges to original user if running under sudo
-	if sudoUID := os.Getenv("SUDO_UID"); sudoUID != "" {
-		if sudoGID := os.Getenv("SUDO_GID"); sudoGID != "" {
-			uid, err := strconv.Atoi(sudoUID)
-			if err != nil {
-				l.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", sudoUID, "error", err)
-			} else {
-				gid, err := strconv.Atoi(sudoGID)
-				if err != nil {
-					l.logger.Warn("Invalid SUDO_GID, subprocess will run as root", "sudo_gid", sudoGID, "error", err)
-				} else {
-					cmd.SysProcAttr = &syscall.SysProcAttr{
-						Credential: &syscall.Credential{
-							Uid: uint32(uid),
-							Gid: uint32(gid),
-						},
-					}
-					l.logger.Debug("Dropping privileges to original user", "uid", uid, "gid", gid)
-				}
-			}
+	var gid, uid int
+	var err error
+	sudoUID := os.Getenv("SUDO_UID")
+	if sudoUID != "" {
+		uid, err = strconv.Atoi(sudoUID)
+		if err != nil {
+			l.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", sudoUID, "error", err)
 		}
+	}
+	sudoGID := os.Getenv("SUDO_GID")
+	if sudoGID != "" {
+		gid, err = strconv.Atoi(sudoGID)
+		if err != nil {
+			l.logger.Warn("Invalid SUDO_GID, subprocess will run as root", "sudo_gid", sudoGID, "error", err)
+		}
+	}
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Credential: &syscall.Credential{
+			Uid: uint32(uid),
+			Gid: uint32(gid),
+		},
 	}
 
 	// Start command
 	l.logger.Debug("Starting command", "path", cmd.Path, "args", cmd.Args)
-	err := cmd.Start()
+	err = cmd.Start()
 	if err != nil {
 		return fmt.Errorf("failed to start command: %v", err)
 	}
