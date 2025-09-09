@@ -12,7 +12,6 @@ import (
 	"math/big"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sync"
 	"time"
@@ -292,69 +291,6 @@ func (cm *CertificateManager) generateServerCertificate(hostname string) (*tls.C
 	cm.logger.Debug("Generated certificate", "hostname", hostname)
 
 	return tlsCert, nil
-}
-
-// InstallCACertificate installs the CA certificate into the system trust store
-func (cm *CertificateManager) InstallCACertificate() error {
-	// Get CA certificate in PEM format
-	caCertPEM, err := cm.GetCACertPEM()
-	if err != nil {
-		return fmt.Errorf("failed to get CA certificate: %v", err)
-	}
-
-	// Install system-wide certificate (Linux)
-	if err := cm.installSystemCertificate(caCertPEM); err != nil {
-		cm.logger.Warn("Failed to install system certificate, continuing anyway", "error", err)
-	}
-
-	// Set up environment variables for tool-specific trust
-	if err := cm.setupEnvironmentVariables(); err != nil {
-		cm.logger.Warn("Failed to setup environment variables", "error", err)
-	}
-
-	cm.logger.Info("CA certificate trust setup completed")
-	return nil
-}
-
-// installSystemCertificate installs the CA certificate system-wide on Linux
-func (cm *CertificateManager) installSystemCertificate(caCertPEM []byte) error {
-	// Write certificate to system certificate directory
-	certPath := "/usr/local/share/ca-certificates/boundary-ca.crt"
-	if err := os.WriteFile(certPath, caCertPEM, 0644); err != nil {
-		return fmt.Errorf("failed to write certificate to %s: %v", certPath, err)
-	}
-
-	// Update system certificate store
-	cmd := exec.Command("update-ca-certificates")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to update ca certificates: %v, output: %s", err, output)
-	}
-
-	cm.logger.Info("System CA certificate installed", "path", certPath)
-	return nil
-}
-
-// setupEnvironmentVariables sets up environment variables for tool-specific certificate trust
-func (cm *CertificateManager) setupEnvironmentVariables() error {
-	caCertPath := filepath.Join(cm.configDir, "ca-cert.pem")
-	
-	// Set environment variables for various tools
-	envVars := map[string]string{
-		"SSL_CERT_FILE":      caCertPath,
-		"REQUESTS_CA_BUNDLE": caCertPath,
-		"CURL_CA_BUNDLE":     caCertPath,
-		"NODE_EXTRA_CA_CERTS": caCertPath,
-	}
-
-	for key, value := range envVars {
-		if err := os.Setenv(key, value); err != nil {
-			cm.logger.Warn("Failed to set environment variable", "key", key, "error", err)
-		} else {
-			cm.logger.Debug("Set environment variable", "key", key, "value", value)
-		}
-	}
-
-	return nil
 }
 
 // GetConfigDir returns the configuration directory path
