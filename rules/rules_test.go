@@ -157,7 +157,7 @@ func TestWildcardMatch(t *testing.T) {
 		// Basic exact matches
 		{"exact match", "github.com", "github.com", true},
 		{"no match", "github.com", "gitlab.com", false},
-		
+
 		// Wildcard * tests
 		{"star matches all", "*", "anything.com", true},
 		{"star matches empty", "*", "", true},
@@ -240,19 +240,19 @@ func TestRuleEngine(t *testing.T) {
 		name     string
 		method   string
 		url      string
-		expected Action
+		expected bool
 	}{
-		{"allow github", "GET", "https://github.com/user/repo", Allow},
-		{"allow api GET", "GET", "https://api.example.com", Allow},
-		{"deny api POST", "POST", "https://api.example.com", Deny},
-		{"deny other", "GET", "https://example.com", Deny},
+		{"allow github", "GET", "https://github.com/user/repo", true},
+		{"allow api GET", "GET", "https://api.example.com", true},
+		{"deny api POST", "POST", "https://api.example.com", false},
+		{"deny other", "GET", "https://example.com", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := engine.Evaluate(tt.method, tt.url)
-			if result != tt.expected {
-				t.Errorf("expected %v, got %v", tt.expected, result)
+			if result.Allowed != tt.expected {
+				t.Errorf("expected %v, got %v", tt.expected, result.Allowed)
 			}
 		})
 	}
@@ -275,20 +275,20 @@ func TestRuleEngineWildcardRules(t *testing.T) {
 		name     string
 		method   string
 		url      string
-		expected Action
+		expected bool
 	}{
-		{"allow github", "GET", "https://github.com", Allow},
-		{"allow github subdomain", "POST", "https://github.io", Allow},
-		{"allow api GET", "GET", "https://api.example.com", Allow},
-		{"deny api POST", "POST", "https://api.example.com", Deny},
-		{"deny unmatched", "GET", "https://example.org", Deny},
+		{"allow github", "GET", "https://github.com", true},
+		{"allow github subdomain", "POST", "https://github.io", true},
+		{"allow api GET", "GET", "https://api.example.com", true},
+		{"deny api POST", "POST", "https://api.example.com", false},
+		{"deny unmatched", "GET", "https://example.org", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := engine.Evaluate(tt.method, tt.url)
-			if result != tt.expected {
-				t.Errorf("expected %v, got %v", tt.expected, result)
+			if result.Allowed != tt.expected {
+				t.Errorf("expected %v, got %v", tt.expected, result.Allowed)
 			}
 		})
 	}
