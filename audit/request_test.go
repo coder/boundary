@@ -115,20 +115,3 @@ func TestHTTPRequestToAuditRequest(t *testing.T) {
 		})
 	}
 }
-
-func TestHTTPRequestToAuditRequest_NilRequest(t *testing.T) {
-	// Test edge case with nil request
-	defer func() {
-		if r := recover(); r != nil {
-			// If it panics, that's acceptable behavior for nil input
-			t.Logf("HTTPRequestToAuditRequest panicked with nil request: %v", r)
-		}
-	}()
-
-	// This should either handle gracefully or panic - both are acceptable
-	auditReq := HTTPRequestToAuditRequest(nil)
-	if auditReq != nil {
-		// If it doesn't panic, verify the result makes sense
-		t.Logf("HTTPRequestToAuditRequest with nil returned: %+v", auditReq)
-	}
-}
