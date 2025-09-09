@@ -66,7 +66,8 @@ func (p *ProxyServer) Start(ctx context.Context) error {
 	// Start HTTP server
 	go func() {
 		p.logger.Info("Starting HTTP proxy", "port", p.httpPort)
-		if err := p.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		err := p.httpServer.ListenAndServe()
+		if err != nil && err != http.ErrServerClosed {
 			p.logger.Error("HTTP proxy server error", "error", err)
 		}
 	}()
@@ -74,7 +75,8 @@ func (p *ProxyServer) Start(ctx context.Context) error {
 	// Start HTTPS server
 	go func() {
 		p.logger.Info("Starting HTTPS proxy", "port", p.httpsPort)
-		if err := p.httpsServer.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+		err := p.httpsServer.ListenAndServeTLS("", "")
+		if err != nil && err != http.ErrServerClosed {
 			p.logger.Error("HTTPS proxy server error", "error", err)
 		}
 	}()

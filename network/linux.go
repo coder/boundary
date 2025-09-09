@@ -45,28 +45,32 @@ func (l *LinuxJail) Setup(httpPort, httpsPort int) error {
 	// Setup DNS configuration BEFORE creating namespace
 	// This ensures the namespace-specific resolv.conf is available when namespace is created
 	l.logger.Debug("Setting up DNS configuration")
-	if err := l.setupDNS(); err != nil {
+	err := l.setupDNS()
+	if err != nil {
 		return fmt.Errorf("failed to setup DNS: %v", err)
 	}
 	l.logger.Debug("DNS setup completed")
 
 	// Create network namespace
 	l.logger.Debug("Creating network namespace", "namespace", l.namespace)
-	if err := l.createNamespace(); err != nil {
+	err = l.createNamespace()
+	if err != nil {
 		return fmt.Errorf("failed to create namespace: %v", err)
 	}
 	l.logger.Debug("Network namespace created")
 
 	// Setup network interface in namespace
 	l.logger.Debug("Setting up networking")
-	if err := l.setupNetworking(); err != nil {
+	err = l.setupNetworking()
+	if err != nil {
 		return fmt.Errorf("failed to setup networking: %v", err)
 	}
 	l.logger.Debug("Networking setup completed")
 
 	// Setup iptables rules
 	l.logger.Debug("Setting up iptables rules")
-	if err := l.setupIptables(); err != nil {
+	err = l.setupIptables()
+	if err != nil {
 		return fmt.Errorf("failed to setup iptables: %v", err)
 	}
 	l.logger.Debug("Iptables setup completed")
@@ -175,21 +179,24 @@ func (l *LinuxJail) Cleanup() error {
 	}
 
 	// Remove iptables rules
-	if err := l.removeIptables(); err != nil {
+	err := l.removeIptables()
+	if err != nil {
 		return fmt.Errorf("failed to remove iptables rules: %v", err)
 	}
 
 	// Clean up namespace-specific DNS config directory
 	netnsEtc := fmt.Sprintf("/etc/netns/%s", l.namespace)
 	if _, err := os.Stat(netnsEtc); err == nil {
-		if err := os.RemoveAll(netnsEtc); err != nil {
+		err := os.RemoveAll(netnsEtc)
+		if err != nil {
 			// Don't fail cleanup for this, just log
 			fmt.Printf("Warning: failed to remove DNS config directory %s: %v\n", netnsEtc, err)
 		}
 	}
 
 	// Remove network namespace
-	if err := l.removeNamespace(); err != nil {
+	err = l.removeNamespace()
+	if err != nil {
 		return fmt.Errorf("failed to remove namespace: %v", err)
 	}
 
@@ -199,7 +206,8 @@ func (l *LinuxJail) Cleanup() error {
 // createNamespace creates a new network namespace
 func (l *LinuxJail) createNamespace() error {
 	cmd := exec.Command("ip", "netns", "add", l.namespace)
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	if err != nil {
 		return fmt.Errorf("failed to create namespace: %v", err)
 	}
 	return nil
@@ -214,46 +222,54 @@ func (l *LinuxJail) setupNetworking() error {
 	vethNetJail := fmt.Sprintf("veth_n_%s", uniqueID)             // veth_n_1234567 = 14 chars
 
 	cmd := exec.Command("ip", "link", "add", vethHost, "type", "veth", "peer", "name", vethNetJail)
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	if err != nil {
 		return fmt.Errorf("failed to create veth pair: %v", err)
 	}
 
 	// Move netjail end to namespace
 	cmd = exec.Command("ip", "link", "set", vethNetJail, "netns", l.namespace)
-	if err := cmd.Run(); err != nil {
+	err = cmd.Run()
+	if err != nil {
 		return fmt.Errorf("failed to move veth to namespace: %v", err)
 	}
 
 	// Configure host side of veth pair
 	cmd = exec.Command("ip", "addr", "add", "192.168.100.1/24", "dev", vethHost)
-	if err := cmd.Run(); err != nil {
+	err = cmd.Run()
+	if err != nil {
 		return fmt.Errorf("failed to configure host veth: %v", err)
 	}
 
 	cmd = exec.Command("ip", "link", "set", vethHost, "up")
-	if err := cmd.Run(); err != nil {
+	err = cmd.Run()
+	if err != nil {
 		return fmt.Errorf("failed to bring up host veth: %v", err)
 	}
 
 	// Configure namespace side of veth pair
 	cmd = exec.Command("ip", "netns", "exec", l.namespace, "ip", "addr", "add", "192.168.100.2/24", "dev", vethNetJail)
-	if err := cmd.Run(); err != nil {
+	err = cmd.Run()
+	if err != nil {
 		return fmt.Errorf("failed to configure namespace veth: %v", err)
 	}
 
 	cmd = exec.Command("ip", "netns", "exec", l.namespace, "ip", "link", "set", vethNetJail, "up")
-	if err := cmd.Run(); err != nil {
+	err = cmd.Run()
+	if err != nil {
 		return fmt.Errorf("failed to bring up namespace veth: %v", err)
 	}
 
 	cmd = exec.Command("ip", "netns", "exec", l.namespace, "ip", "link", "set", "lo", "up")
-	if err := cmd.Run(); err != nil {
+	err = cmd.Run()
+	if err != nil {
 		return fmt.Errorf("failed to bring up loopback: %v", err)
 	}
 
 	// Set default route in namespace
 	cmd = exec.Command("ip", "netns", "exec", l.namespace, "ip", "route", "add", "default", "via", "192.168.100.1")
-	if err := cmd.Run(); err != nil {
+	err = cmd.Run()
+	if err != nil {
 		return fmt.Errorf("failed to set default route: %v", err)
 	}
 
@@ -267,7 +283,8 @@ func (l *LinuxJail) setupDNS() error {
 	// Always create namespace-specific resolv.conf with reliable public DNS servers
 	// This avoids issues with systemd-resolved, Docker DNS, and other complex setups
 	netnsEtc := fmt.Sprintf("/etc/netns/%s", l.namespace)
-	if err := os.MkdirAll(netnsEtc, 0755); err != nil {
+	err := os.MkdirAll(netnsEtc, 0755)
+	if err != nil {
 		return fmt.Errorf("failed to create /etc/netns directory: %v", err)
 	}
 
@@ -280,7 +297,8 @@ nameserver 1.1.1.1
 nameserver 9.9.9.9
 options timeout:2 attempts:2
 `
-	if err := os.WriteFile(resolvConfPath, []byte(dnsConfig), 0644); err != nil {
+	err = os.WriteFile(resolvConfPath, []byte(dnsConfig), 0644)
+	if err != nil {
 		return fmt.Errorf("failed to write namespace-specific resolv.conf: %v", err)
 	}
 
@@ -296,21 +314,24 @@ func (l *LinuxJail) setupIptables() error {
 
 	// NAT rules for outgoing traffic
 	cmd = exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", "-s", "192.168.100.0/24", "-j", "MASQUERADE")
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	if err != nil {
 		return fmt.Errorf("failed to add NAT rule: %v", err)
 	}
 
 	// Redirect HTTP traffic to proxy
 	cmd = exec.Command("ip", "netns", "exec", l.namespace, "iptables", "-t", "nat", "-A", "OUTPUT",
 		"-p", "tcp", "--dport", "80", "-j", "DNAT", "--to-destination", fmt.Sprintf("192.168.100.1:%d", l.config.HTTPPort))
-	if err := cmd.Run(); err != nil {
+	err = cmd.Run()
+	if err != nil {
 		return fmt.Errorf("failed to add HTTP redirect rule: %v", err)
 	}
 
 	// Redirect HTTPS traffic to proxy
 	cmd = exec.Command("ip", "netns", "exec", l.namespace, "iptables", "-t", "nat", "-A", "OUTPUT",
 		"-p", "tcp", "--dport", "443", "-j", "DNAT", "--to-destination", fmt.Sprintf("192.168.100.1:%d", l.config.HTTPSPort))
-	if err := cmd.Run(); err != nil {
+	err = cmd.Run()
+	if err != nil {
 		return fmt.Errorf("failed to add HTTPS redirect rule: %v", err)
 	}
 
@@ -329,7 +350,8 @@ func (l *LinuxJail) removeIptables() error {
 // removeNamespace removes the network namespace
 func (l *LinuxJail) removeNamespace() error {
 	cmd := exec.Command("ip", "netns", "del", l.namespace)
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	if err != nil {
 		return fmt.Errorf("failed to remove namespace: %v", err)
 	}
 	return nil

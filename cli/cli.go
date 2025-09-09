@@ -166,7 +166,8 @@ func Run(config Config, args []string) error {
 
 		// Write CA certificate to a temporary file for tools that need a file path
 		caCertPath := filepath.Join(configDir, "ca-cert.pem")
-		if err := os.WriteFile(caCertPath, caCertPEM, 0644); err != nil {
+		err = os.WriteFile(caCertPath, caCertPEM, 0644)
+		if err != nil {
 			logger.Error("Failed to write CA certificate file", "error", err)
 			return fmt.Errorf("failed to write CA certificate file: %v", err)
 		}
@@ -205,7 +206,8 @@ func Run(config Config, args []string) error {
 	go func() {
 		sig := <-sigChan
 		logger.Info("Received signal during setup, cleaning up...", "signal", sig)
-		if err := networkInstance.Cleanup(); err != nil {
+		err := networkInstance.Cleanup()
+		if err != nil {
 			logger.Error("Emergency cleanup failed", "error", err)
 		}
 		os.Exit(1)
@@ -214,7 +216,8 @@ func Run(config Config, args []string) error {
 	// Ensure cleanup happens no matter what
 	defer func() {
 		logger.Debug("Starting cleanup process")
-		if err := networkInstance.Cleanup(); err != nil {
+		err := networkInstance.Cleanup()
+		if err != nil {
 			logger.Error("Failed to cleanup network jail", "error", err)
 		} else {
 			logger.Debug("Cleanup completed successfully")
@@ -222,7 +225,8 @@ func Run(config Config, args []string) error {
 	}()
 
 	// Setup network jail
-	if err := networkInstance.Setup(networkConfig.HTTPPort, networkConfig.HTTPSPort); err != nil {
+	err = networkInstance.Setup(networkConfig.HTTPPort, networkConfig.HTTPSPort)
+	if err != nil {
 		logger.Error("Failed to setup network jail", "error", err)
 		return fmt.Errorf("failed to setup network jail: %v", err)
 	}
@@ -248,7 +252,8 @@ func Run(config Config, args []string) error {
 
 	// Start proxy server in background
 	go func() {
-		if err := proxyServer.Start(ctx); err != nil {
+		err := proxyServer.Start(ctx)
+		if err != nil {
 			logger.Error("Proxy server error", "error", err)
 		}
 	}()
@@ -259,7 +264,8 @@ func Run(config Config, args []string) error {
 	// Execute command in network jail
 	go func() {
 		defer cancel()
-		if err := networkInstance.Execute(args, extraEnv); err != nil {
+		err := networkInstance.Execute(args, extraEnv)
+		if err != nil {
 			logger.Error("Command execution failed", "error", err)
 		}
 	}()
@@ -274,7 +280,8 @@ func Run(config Config, args []string) error {
 	}
 
 	// Stop proxy server
-	if err := proxyServer.Stop(); err != nil {
+	err = proxyServer.Stop()
+	if err != nil {
 		logger.Error("Failed to stop proxy server", "error", err)
 	}
 
