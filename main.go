@@ -154,6 +154,11 @@ func runBoundary(inv *serpent.Invocation) error {
 			return fmt.Errorf("failed to create certificate manager: %v", err)
 		}
 
+		// Automatically install CA certificate for system and tool trust
+		if err := certManager.InstallCACertificate(); err != nil {
+			logger.Warn("Failed to install CA certificate, manual setup may be required", "error", err)
+		}
+
 		tlsConfig = certManager.GetTLSConfig()
 
 		// Get CA certificate for environment
