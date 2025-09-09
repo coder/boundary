@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	cryptotls "crypto/tls"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,58 +11,56 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	cryptotls "crypto/tls"
 
-	"boundary/netjail"
-	"boundary/proxy"
-	"boundary/rules"
-	"boundary/tls"
-
+	"github.com/coder/jail/netjail"
+	"github.com/coder/jail/proxy"
+	"github.com/coder/jail/rules"
+	"github.com/coder/jail/tls"
 	"github.com/coder/serpent"
 )
 
 var (
-	allowStrings    []string
-	noTLSIntercept  bool
-	logLevel        string
-	noJailCleanup   bool
+	allowStrings   []string
+	noTLSIntercept bool
+	logLevel       string
+	noJailCleanup  bool
 )
 
 func main() {
 	cmd := &serpent.Command{
-		Use:   "boundary [flags] -- command [args...]",
+		Use:   "jail [flags] -- command [args...]",
 		Short: "Monitor and restrict HTTP/HTTPS requests from processes",
-		Long: `boundary creates an isolated network environment for the target process,
+		Long: `jail creates an isolated network environment for the target process,
 intercepting all HTTP/HTTPS traffic through a transparent proxy that enforces
 user-defined rules.
 
 Examples:
   # Allow only requests to github.com
-  boundary --allow "github.com" -- curl https://github.com
+  jail --allow "github.com" -- curl https://github.com
 
   # Monitor all requests to specific domains (allow only those)
-  boundary --allow "github.com/api/issues/*" --allow "GET,HEAD github.com" -- npm install
+  jail --allow "github.com/api/issues/*" --allow "GET,HEAD github.com" -- npm install
 
   # Block everything by default (implicit)`,
 		Options: serpent.OptionSet{
 			{
 				Name:        "allow",
 				Flag:        "allow",
-				Env:         "BOUNDARY_ALLOW",
+				Env:         "JAIL_ALLOW",
 				Description: "Allow rule (can be specified multiple times). Format: 'pattern' or 'METHOD[,METHOD] pattern'.",
 				Value:       serpent.StringArrayOf(&allowStrings),
 			},
 			{
 				Name:        "no-tls-intercept",
 				Flag:        "no-tls-intercept",
-				Env:         "BOUNDARY_NO_TLS_INTERCEPT",
+				Env:         "JAIL_NO_TLS_INTERCEPT",
 				Description: "Disable HTTPS interception.",
 				Value:       serpent.BoolOf(&noTLSIntercept),
 			},
 			{
 				Name:        "log-level",
 				Flag:        "log-level",
-				Env:         "BOUNDARY_LOG_LEVEL",
+				Env:         "JAIL_LOG_LEVEL",
 				Description: "Set log level (error, warn, info, debug).",
 				Default:     "warn",
 				Value:       serpent.StringOf(&logLevel),
@@ -69,13 +68,13 @@ Examples:
 			{
 				Name:        "no-jail-cleanup",
 				Flag:        "no-jail-cleanup",
-				Env:         "BOUNDARY_NO_JAIL_CLEANUP",
+				Env:         "JAIL_NO_JAIL_CLEANUP",
 				Description: "Skip jail cleanup (hidden flag for testing).",
 				Value:       serpent.BoolOf(&noJailCleanup),
 				Hidden:      true,
 			},
 		},
-		Handler: runBoundary,
+		Handler: runJail,
 	}
 
 	err := cmd.Invoke().WithOS().Run()
@@ -108,7 +107,7 @@ func setupLogging(logLevel string) *slog.Logger {
 	return slog.New(handler)
 }
 
-func runBoundary(inv *serpent.Invocation) error {
+func runJail(inv *serpent.Invocation) error {
 	logger := setupLogging(logLevel)
 
 	// Get command arguments
@@ -172,21 +171,21 @@ func runBoundary(inv *serpent.Invocation) error {
 
 		// Set standard CA certificate environment variables for common tools
 		// This makes tools like curl, git, etc. trust our dynamically generated CA
-		extraEnv["SSL_CERT_FILE"] = caCertPath        // OpenSSL/LibreSSL-based tools
-		extraEnv["SSL_CERT_DIR"] = configDir          // OpenSSL certificate directory
-		extraEnv["CURL_CA_BUNDLE"] = caCertPath       // curl
-		extraEnv["GIT_SSL_CAINFO"] = caCertPath       // Git
-		extraEnv["REQUESTS_CA_BUNDLE"] = caCertPath   // Python requests
-		extraEnv["NODE_EXTRA_CA_CERTS"] = caCertPath  // Node.js
-		extraEnv["BOUNDARY_CA_CERT"] = string(caCertPEM) // Keep for backward compatibility
+		extraEnv["SSL_CERT_FILE"] = caCertPath       // OpenSSL/LibreSSL-based tools
+		extraEnv["SSL_CERT_DIR"] = configDir         // OpenSSL certificate directory
+		extraEnv["CURL_CA_BUNDLE"] = caCertPath      // curl
+		extraEnv["GIT_SSL_CAINFO"] = caCertPath      // Git
+		extraEnv["REQUESTS_CA_BUNDLE"] = caCertPath  // Python requests
+		extraEnv["NODE_EXTRA_CA_CERTS"] = caCertPath // Node.js
+		extraEnv["JAIL_CA_CERT"] = string(caCertPEM) // Keep for backward compatibility
 	}
 
 	// Create network jail configuration
 	netjailConfig := netjail.Config{
-		HTTPPort:     8040,
-		HTTPSPort:    8043,
-		NetJailName:  "boundary",
-		SkipCleanup:  noJailCleanup,
+		HTTPPort:    8040,
+		HTTPSPort:   8043,
+		NetJailName: "jail",
+		SkipCleanup: noJailCleanup,
 	}
 
 	// Create network jail

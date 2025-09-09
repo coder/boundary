@@ -1,8 +1,8 @@
-# boundary
+# jail
 
 **Network isolation tool for monitoring and restricting HTTP/HTTPS requests from processes**
 
-boundary creates an isolated network environment for target processes, intercepting all HTTP/HTTPS traffic through a transparent proxy that enforces user-defined allow rules.
+jail creates an isolated network environment for target processes, intercepting all HTTP/HTTPS traffic through a transparent proxy that enforces user-defined allow rules.
 
 ## Features
 
@@ -18,24 +18,24 @@ boundary creates an isolated network environment for target processes, intercept
 
 ```bash
 # Build the tool
-go build -o boundary .
+go build -o jail .
 
 # Allow only requests to github.com
-./boundary --allow "github.com" -- curl https://github.com
+./jail --allow "github.com" -- curl https://github.com
 
 # Allow full access to GitHub issues API, but only GET/HEAD elsewhere on GitHub
-./boundary \
+./jail \
   --allow "github.com/api/issues/*" \
   --allow "GET,HEAD github.com" \
   -- npm install
 
 # Default deny-all: everything is blocked unless explicitly allowed
-./boundary -- curl https://example.com
+./jail -- curl https://example.com
 ```
 
 ## Allow Rules
 
-boundary uses simple wildcard patterns for URL matching.
+jail uses simple wildcard patterns for URL matching.
 
 ### Rule Format
 
@@ -52,14 +52,14 @@ boundary uses simple wildcard patterns for URL matching.
 
 ```bash
 # Basic patterns
-boundary --allow "github.com" -- git pull
+jail --allow "github.com" -- git pull
 
 # Wildcard patterns
-boundary --allow "*.github.com" -- npm install    # GitHub subdomains
-boundary --allow "api.*" -- ./app                 # Any API domain
+jail --allow "*.github.com" -- npm install    # GitHub subdomains
+jail --allow "api.*" -- ./app                 # Any API domain
 
 # Method-specific rules
-boundary --allow "GET,HEAD api.github.com" -- curl https://api.github.com
+jail --allow "GET,HEAD api.github.com" -- curl https://api.github.com
 ```
 
 **Default Policy:** All traffic is denied unless explicitly allowed.
@@ -68,13 +68,13 @@ boundary --allow "GET,HEAD api.github.com" -- curl https://api.github.com
 
 ```bash
 # Monitor all requests with info logging
-boundary --log-level info --allow "*" -- npm install
+jail --log-level info --allow "*" -- npm install
 
 # Debug logging for troubleshooting
-boundary --log-level debug --allow "github.com" -- git pull
+jail --log-level debug --allow "github.com" -- git pull
 
 # Error-only logging
-boundary --log-level error --allow "*" -- ./app
+jail --log-level error --allow "*" -- ./app
 ```
 
 **Log Levels:**
@@ -85,20 +85,20 @@ boundary --log-level error --allow "*" -- ./app
 
 ## Blocked Request Messages
 
-When a request is blocked, boundary provides helpful guidance:
+When a request is blocked, jail provides helpful guidance:
 
 ```
-🚫 Request Blocked by Boundary
+🚫 Request Blocked by Jail
 
 Request: GET /
 Host: google.com
 Reason: No matching allow rules (default deny-all policy)
 
-To allow this request, restart boundary with:
+To allow this request, restart jail with:
   --allow "google.com"                    # Allow all methods to this host
   --allow "GET google.com"          # Allow only GET requests to this host
 
-For more help: https://github.com/coder/boundary
+For more help: https://github.com/coder/jail
 ```
 
 ## Platform Support
@@ -128,30 +128,30 @@ For more help: https://github.com/coder/boundary
 ### Build from Source
 
 ```bash
-git clone https://github.com/coder/boundary
-cd boundary
-go build -o boundary .
+git clone https://github.com/coder/jail
+cd jail
+go build -o jail .
 ```
 
 ## TLS Interception
 
-boundary automatically generates a Certificate Authority (CA) to intercept HTTPS traffic:
+jail automatically generates a Certificate Authority (CA) to intercept HTTPS traffic:
 
-- CA stored in `~/.config/boundary/` (or `$XDG_CONFIG_HOME/boundary/`)
-- CA certificate provided via `BOUNDARY_CA_CERT` environment variable
+- CA stored in `~/.config/jail/` (or `$XDG_CONFIG_HOME/jail/`)
+- CA certificate provided via `JAIL_CA_CERT` environment variable
 - Certificates generated on-demand for intercepted domains
 - CA expires after 1 year
 
 ### Disable TLS Interception
 
 ```bash
-boundary --no-tls-intercept --allow "*" -- ./app
+jail --no-tls-intercept --allow "*" -- ./app
 ```
 
 ## Command-Line Options
 
 ```text
-boundary [flags] -- command [args...]
+jail [flags] -- command [args...]
 
 OPTIONS:
     --allow <SPEC>             Allow rule (repeatable)
@@ -165,14 +165,14 @@ OPTIONS:
 
 ```bash
 # Build
-go build -o boundary .
+go build -o jail .
 
 # Test
 go test ./...
 
 # Cross-compile
-GOOS=linux GOARCH=amd64 go build -o boundary-linux .
-GOOS=darwin GOARCH=amd64 go build -o boundary-macos .
+GOOS=linux GOARCH=amd64 go build -o jail-linux .
+GOOS=darwin GOARCH=amd64 go build -o jail-macos .
 ```
 
 ## License

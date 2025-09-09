@@ -1,16 +1,11 @@
-module boundary
+module github.com/coder/jail
 
-go 1.21.4
+go 1.25
 
-toolchain go1.23.8
+require github.com/coder/serpent v0.10.0
 
 require (
 	cdr.dev/slog v1.6.2-0.20240126064726-20367d4aede6 // indirect
-	github.com/coder/serpent v0.10.0
-	gopkg.in/yaml.v3 v3.0.1 // indirect
-)
-
-require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/coder/pretty v0.0.0-20230908205945-e89ba86370e0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
@@ -32,4 +27,5 @@ require (
 	golang.org/x/sys v0.17.0 // indirect
 	golang.org/x/term v0.17.0 // indirect
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

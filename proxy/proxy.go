@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"time"
 
-	"boundary/rules"
+	"github.com/coder/jail/rules"
 )
 
 // ProxyServer handles HTTP and HTTPS requests with rule-based filtering
@@ -249,24 +249,24 @@ func (p *ProxyServer) forwardHTTPSRequest(w http.ResponseWriter, r *http.Request
 func (p *ProxyServer) writeBlockedResponse(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusForbidden)
-	
+
 	// Extract host from URL for cleaner display
 	host := r.URL.Host
 	if host == "" {
 		host = r.Host
 	}
-	
-	fmt.Fprintf(w, `🚫 Request Blocked by Boundary
+
+	fmt.Fprintf(w, `🚫 Request Blocked by Jail
 
 Request: %s %s
 Host: %s
 Reason: No matching allow rules (default deny-all policy)
 
-To allow this request, restart boundary with:
+To allow this request, restart jail with:
   --allow "%s"                    # Allow all methods to this host
   --allow "%s %s"          # Allow only %s requests to this host
 
-For more help: https://github.com/coder/boundary
-`, 
+For more help: https://github.com/coder/jail
+`,
 		r.Method, r.URL.Path, host, host, r.Method, host, r.Method)
 }

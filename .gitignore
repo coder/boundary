@@ -4,8 +4,8 @@
 *.dll
 *.so
 *.dylib
-boundary
-boundary.exe
+jail
+jail.exe
 
 # Test binary, built with `go test -c`
 *.test
