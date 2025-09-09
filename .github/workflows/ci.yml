@@ -2,9 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ main, "blink/*" ]
   pull_request:
-    branches: [ main ]
 
 jobs:
   test:
@@ -42,15 +40,7 @@ jobs:
       run: go mod verify
 
     - name: Run tests
-      run: go test -v -race -coverprofile=coverage.out ./...
+      run: go test -v -race ./...
 
     - name: Run build
       run: go build -v ./...
-
-    - name: Upload coverage to Codecov (Linux only)
-      if: matrix.os == 'ubuntu-latest'
-      uses: codecov/codecov-action@v4
-      with:
-        file: ./coverage.out
-        flags: unittests
-        name: codecov-umbrella
