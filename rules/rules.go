@@ -6,14 +6,12 @@ import (
 	"strings"
 )
 
-
 // Rule represents an allow rule with optional HTTP method restrictions
 type Rule struct {
 	Pattern string          // wildcard pattern for matching
 	Methods map[string]bool // nil means all methods allowed
 	Raw     string          // rule string for logging
 }
-
 
 // Matches checks if the rule matches the given method and URL using wildcard patterns
 func (r *Rule) Matches(method, url string) bool {
@@ -127,21 +125,8 @@ type EvaluationResult struct {
 	Rule    string // The rule that matched (if any)
 }
 
-// Evaluate evaluates a request against all allow rules and returns true if allowed
-func (re *RuleEngine) Evaluate(method, url string) bool {
-	// Check if any allow rule matches
-	for _, rule := range re.rules {
-		if rule.Matches(method, url) {
-			return true
-		}
-	}
-
-	// Default deny if no allow rules match
-	return false
-}
-
-// EvaluateWithRule evaluates a request and returns both result and matching rule
-func (re *RuleEngine) EvaluateWithRule(method, url string) EvaluationResult {
+// Evaluate evaluates a request and returns both result and matching rule
+func (re *RuleEngine) Evaluate(method, url string) EvaluationResult {
 	// Check if any allow rule matches
 	for _, rule := range re.rules {
 		if rule.Matches(method, url) {

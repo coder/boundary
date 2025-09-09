@@ -106,7 +106,7 @@ func (p *ProxyServer) Stop() error {
 // handleHTTP handles regular HTTP requests
 func (p *ProxyServer) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	// Check if request should be allowed
-	result := p.ruleEngine.EvaluateWithRule(r.Method, r.URL.String())
+	result := p.ruleEngine.Evaluate(r.Method, r.URL.String())
 
 	// Audit the request
 	auditReq := audit.HTTPRequestToAuditRequest(r)
@@ -132,7 +132,7 @@ func (p *ProxyServer) handleHTTPS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if request should be allowed
-	result := p.ruleEngine.EvaluateWithRule(r.Method, fullURL)
+	result := p.ruleEngine.Evaluate(r.Method, fullURL)
 
 	// Audit the request
 	auditReq := &audit.Request{

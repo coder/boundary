@@ -157,7 +157,7 @@ func TestWildcardMatch(t *testing.T) {
 		// Basic exact matches
 		{"exact match", "github.com", "github.com", true},
 		{"no match", "github.com", "gitlab.com", false},
-		
+
 		// Wildcard * tests
 		{"star matches all", "*", "anything.com", true},
 		{"star matches empty", "*", "", true},
@@ -251,8 +251,8 @@ func TestRuleEngine(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := engine.Evaluate(tt.method, tt.url)
-			if result != tt.expected {
-				t.Errorf("expected %v, got %v", tt.expected, result)
+			if result.Allowed != tt.expected {
+				t.Errorf("expected %v, got %v", tt.expected, result.Allowed)
 			}
 		})
 	}
@@ -287,8 +287,8 @@ func TestRuleEngineWildcardRules(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := engine.Evaluate(tt.method, tt.url)
-			if result != tt.expected {
-				t.Errorf("expected %v, got %v", tt.expected, result)
+			if result.Allowed != tt.expected {
+				t.Errorf("expected %v, got %v", tt.expected, result.Allowed)
 			}
 		})
 	}
