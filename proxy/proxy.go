@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"boundary/rules"
@@ -110,12 +108,6 @@ func (p *ProxyServer) handleHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Handle CONNECT method for HTTPS tunneling
-	if r.Method == http.MethodConnect {
-		p.handleConnect(w, r)
-		return
-	}
-
 	// Forward regular HTTP request
 	p.forwardHTTPRequest(w, r)
 }
@@ -137,51 +129,6 @@ func (p *ProxyServer) handleHTTPS(w http.ResponseWriter, r *http.Request) {
 
 	// Forward HTTPS request
 	p.forwardHTTPSRequest(w, r)
-}
-
-// handleConnect handles CONNECT requests for HTTPS tunneling
-func (p *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
-	// Extract host and port
-	host := r.URL.Host
-	if !strings.Contains(host, ":") {
-		host += ":443" // Default HTTPS port
-	}
-
-	// Check if CONNECT should be allowed
-	connectURL := fmt.Sprintf("https://%s", strings.Split(host, ":")[0])
-	action := p.ruleEngine.Evaluate("CONNECT", connectURL)
-	if action == rules.Deny {
-		p.writeBlockedResponse(w, r)
-		return
-	}
-
-	// Establish connection to target server
-	targetConn, err := net.DialTimeout("tcp", host, 10*time.Second)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to connect to %s: %v", host, err), http.StatusBadGateway)
-		return
-	}
-	defer targetConn.Close()
-
-	// Send 200 Connection Established
-	w.WriteHeader(http.StatusOK)
-
-	// Get the underlying connection
-	hijacker, ok := w.(http.Hijacker)
-	if !ok {
-		http.Error(w, "Hijacking not supported", http.StatusInternalServerError)
-		return
-	}
-
-	clientConn, _, err := hijacker.Hijack()
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to hijack connection: %v", err), http.StatusInternalServerError)
-		return
-	}
-	defer clientConn.Close()
-
-	// Relay data between client and target
-	p.relayConnections(clientConn, targetConn)
 }
 
 // forwardHTTPRequest forwards a regular HTTP request
@@ -322,24 +269,4 @@ To allow this request, restart boundary with:
 For more help: https://github.com/coder/boundary
 `, 
 		r.Method, r.URL.Path, host, host, r.Method, host, r.Method)
-}
-
-// relayConnections relays data between two connections
-func (p *ProxyServer) relayConnections(client, target net.Conn) {
-	done := make(chan struct{}, 2)
-
-	// Client to target
-	go func() {
-		defer func() { done <- struct{}{} }()
-		io.Copy(target, client)
-	}()
-
-	// Target to client
-	go func() {
-		defer func() { done <- struct{}{} }()
-		io.Copy(client, target)
-	}()
-
-	// Wait for one direction to finish
-	<-done
 }
