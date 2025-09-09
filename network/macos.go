@@ -10,6 +10,9 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
+
+	"github.com/coder/jail/environment"
 )
 
 const (
@@ -78,6 +81,12 @@ func (m *MacOSNetJail) Execute(command []string, extraEnv map[string]string) err
 	// Set up environment
 	m.logger.Debug("Setting up environment")
 	env := os.Environ()
+
+	// Restore original user environment if running under sudo
+	restoredUserEnv := environment.RestoreOriginalUserEnvironment(m.logger)
+	for key, value := range restoredUserEnv {
+		env = append(env, fmt.Sprintf("%s=%s", key, value))
+	}
 
 	// Add extra environment variables (including CA cert if provided)
 	for key, value := range extraEnv {

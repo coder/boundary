@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"syscall"
 	"time"
+
+	"github.com/coder/jail/environment"
 )
 
 const (
@@ -91,6 +93,12 @@ func (l *LinuxJail) Execute(command []string, extraEnv map[string]string) error 
 	// Set up environment
 	l.logger.Debug("Setting up environment")
 	env := os.Environ()
+
+	// Restore original user environment if running under sudo
+	restoredUserEnv := environment.RestoreOriginalUserEnvironment(l.logger)
+	for key, value := range restoredUserEnv {
+		env = append(env, fmt.Sprintf("%s=%s", key, value))
+	}
 
 	// Add extra environment variables (including CA cert if provided)
 	for key, value := range extraEnv {
