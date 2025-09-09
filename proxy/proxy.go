@@ -19,7 +19,7 @@ type ProxyServer struct {
 	httpServer  *http.Server
 	httpsServer *http.Server
 	ruleEngine  *rules.RuleEngine
-	auditor     audit.Auditor
+	auditor     *audit.LoggingAuditor
 	logger      *slog.Logger
 	tlsConfig   *tls.Config
 	httpPort    int
@@ -31,7 +31,7 @@ type Config struct {
 	HTTPPort   int
 	HTTPSPort  int
 	RuleEngine *rules.RuleEngine
-	Auditor    audit.Auditor
+	Auditor    *audit.LoggingAuditor
 	Logger     *slog.Logger
 	TLSConfig  *tls.Config
 }
@@ -107,13 +107,13 @@ func (p *ProxyServer) Stop() error {
 func (p *ProxyServer) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	// Check if request should be allowed
 	result := p.ruleEngine.EvaluateWithRule(r.Method, r.URL.String())
-	
+
 	// Audit the request
 	auditReq := audit.HTTPRequestToAuditRequest(r)
 	auditReq.Allowed = result.Allowed
 	auditReq.Rule = result.Rule
 	p.auditRequest(auditReq)
-	
+
 	if !result.Allowed {
 		p.writeBlockedResponse(w, r)
 		return
@@ -133,7 +133,7 @@ func (p *ProxyServer) handleHTTPS(w http.ResponseWriter, r *http.Request) {
 
 	// Check if request should be allowed
 	result := p.ruleEngine.EvaluateWithRule(r.Method, fullURL)
-	
+
 	// Audit the request
 	auditReq := &audit.Request{
 		Method:  r.Method,
@@ -142,7 +142,7 @@ func (p *ProxyServer) handleHTTPS(w http.ResponseWriter, r *http.Request) {
 		Rule:    result.Rule,
 	}
 	p.auditRequest(auditReq)
-	
+
 	if !result.Allowed {
 		p.writeBlockedResponse(w, r)
 		return
@@ -292,8 +292,5 @@ For more help: https://github.com/coder/jail
 
 // auditRequest handles auditing of requests
 func (p *ProxyServer) auditRequest(req *audit.Request) {
-	if !req.Allowed {
-		req.Reason = "no matching allow rules"
-	}
 	p.auditor.AuditRequest(req)
 }

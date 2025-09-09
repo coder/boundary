@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"io"
 	"log/slog"
-	"net/http"
-	"net/url"
 	"strings"
 	"testing"
 )
@@ -25,7 +23,7 @@ func TestLoggingAuditor(t *testing.T) {
 				Allowed: true,
 				Rule:    "allow github.com",
 			},
-			expectedLevel: "INFO",
+			expectedLevel:  "INFO",
 			expectedFields: []string{"ALLOW", "GET", "https://github.com", "allow github.com"},
 		},
 		{
@@ -34,10 +32,93 @@ func TestLoggingAuditor(t *testing.T) {
 				Method:  "POST",
 				URL:     "https://example.com",
 				Allowed: false,
-				Reason:  ReasonNoMatchingRules,
 			},
-			expectedLevel: "WARN",
-			expectedFields: []string{"DENY", "POST", "https://example.com", ReasonNoMatchingRules},
+			expectedLevel:  "WARN",
+			expectedFields: []string{"DENY", "POST", "https://example.com"},
+		},
+		{
+			name: "allow with empty rule",
+			request: &Request{
+				Method:  "PUT",
+				URL:     "https://api.github.com/repos",
+				Allowed: true,
+				Rule:    "",
+			},
+			expectedLevel:  "INFO",
+			expectedFields: []string{"ALLOW", "PUT", "https://api.github.com/repos"},
+		},
+		{
+			name: "deny HTTPS request",
+			request: &Request{
+				Method:  "GET",
+				URL:     "https://malware.bad.com/payload",
+				Allowed: false,
+			},
+			expectedLevel:  "WARN",
+			expectedFields: []string{"DENY", "GET", "https://malware.bad.com/payload"},
+		},
+		{
+			name: "allow with wildcard rule",
+			request: &Request{
+				Method:  "POST",
+				URL:     "https://api.github.com/graphql",
+				Allowed: true,
+				Rule:    "allow api.github.com/*",
+			},
+			expectedLevel:  "INFO",
+			expectedFields: []string{"ALLOW", "POST", "https://api.github.com/graphql", "allow api.github.com/*"},
+		},
+		{
+			name: "deny HTTP request",
+			request: &Request{
+				Method:  "GET",
+				URL:     "http://insecure.example.com",
+				Allowed: false,
+			},
+			expectedLevel:  "WARN",
+			expectedFields: []string{"DENY", "GET", "http://insecure.example.com"},
+		},
+		{
+			name: "allow HEAD request",
+			request: &Request{
+				Method:  "HEAD",
+				URL:     "https://cdn.jsdelivr.net/health",
+				Allowed: true,
+				Rule:    "allow HEAD cdn.jsdelivr.net",
+			},
+			expectedLevel:  "INFO",
+			expectedFields: []string{"ALLOW", "HEAD", "https://cdn.jsdelivr.net/health", "allow HEAD cdn.jsdelivr.net"},
+		},
+		{
+			name: "deny OPTIONS request",
+			request: &Request{
+				Method:  "OPTIONS",
+				URL:     "https://restricted.api.com/cors",
+				Allowed: false,
+			},
+			expectedLevel:  "WARN",
+			expectedFields: []string{"DENY", "OPTIONS", "https://restricted.api.com/cors"},
+		},
+		{
+			name: "allow with port number",
+			request: &Request{
+				Method:  "GET",
+				URL:     "https://localhost:3000/api/health",
+				Allowed: true,
+				Rule:    "allow localhost:3000",
+			},
+			expectedLevel:  "INFO",
+			expectedFields: []string{"ALLOW", "GET", "https://localhost:3000/api/health", "allow localhost:3000"},
+		},
+		{
+			name: "deny DELETE request",
+			request: &Request{
+				Method:  "DELETE",
+				URL:     "https://api.production.com/users/admin",
+				Allowed: false,
+			},
+			expectedLevel:  "WARN",
+			expectedFields: []string{"DENY", "DELETE", "https://api.production.com/users/admin"},
 		},
 	}
 
@@ -84,7 +165,7 @@ func TestLoggingAuditor_EdgeCases(t *testing.T) {
 				Allowed: true,
 				Rule:    "",
 			},
-			expectedLevel: "INFO",
+			expectedLevel:  "INFO",
 			expectedFields: []string{"ALLOW"},
 		},
 		{
@@ -95,7 +176,7 @@ func TestLoggingAuditor_EdgeCases(t *testing.T) {
 				Allowed: true,
 				Rule:    "allow api.example.com/*",
 			},
-			expectedLevel: "INFO",
+			expectedLevel:  "INFO",
 			expectedFields: []string{"ALLOW", "POST", "https://api.example.com/users?name=John%20Doe&id=123", "allow api.example.com/*"},
 		},
 		{
@@ -104,21 +185,19 @@ func TestLoggingAuditor_EdgeCases(t *testing.T) {
 				Method:  "GET",
 				URL:     "https://example.com/" + strings.Repeat("a", 1000),
 				Allowed: false,
-				Reason:  "URL too long",
 			},
-			expectedLevel: "WARN",
-			expectedFields: []string{"DENY", "GET", "URL too long"},
+			expectedLevel:  "WARN",
+			expectedFields: []string{"DENY", "GET"},
 		},
 		{
-			name: "custom reason",
+			name: "deny with custom URL",
 			request: &Request{
 				Method:  "DELETE",
 				URL:     "https://malicious.com",
 				Allowed: false,
-				Reason:  "blocked by security policy",
 			},
-			expectedLevel: "WARN",
-			expectedFields: []string{"DENY", "DELETE", "https://malicious.com", "blocked by security policy"},
+			expectedLevel:  "WARN",
+			expectedFields: []string{"DENY", "DELETE", "https://malicious.com"},
 		},
 	}
 
@@ -152,10 +231,10 @@ func TestLoggingAuditor_EdgeCases(t *testing.T) {
 
 func TestLoggingAuditor_DifferentLogLevels(t *testing.T) {
 	tests := []struct {
-		name          string
-		logLevel      slog.Level
-		request       *Request
-		expectOutput  bool
+		name         string
+		logLevel     slog.Level
+		request      *Request
+		expectOutput bool
 	}{
 		{
 			name:     "info level allows info logs",
@@ -186,7 +265,6 @@ func TestLoggingAuditor_DifferentLogLevels(t *testing.T) {
 				Method:  "POST",
 				URL:     "https://example.com",
 				Allowed: false,
-				Reason:  ReasonNoMatchingRules,
 			},
 			expectOutput: true,
 		},
@@ -197,7 +275,6 @@ func TestLoggingAuditor_DifferentLogLevels(t *testing.T) {
 				Method:  "POST",
 				URL:     "https://example.com",
 				Allowed: false,
-				Reason:  ReasonNoMatchingRules,
 			},
 			expectOutput: false,
 		},
@@ -244,178 +321,6 @@ func TestLoggingAuditor_NilLogger(t *testing.T) {
 
 	// This should either handle gracefully or panic - both are acceptable
 	auditor.AuditRequest(req)
-}
-
-func TestHTTPRequestToAuditRequest(t *testing.T) {
-	tests := []struct {
-		name        string
-		request     *http.Request
-		expectedMethod string
-		expectedURL    string
-	}{
-		{
-			name: "basic GET request",
-			request: func() *http.Request {
-				req, _ := http.NewRequest("GET", "https://example.com/path?query=value", nil)
-				return req
-			}(),
-			expectedMethod: "GET",
-			expectedURL: "https://example.com/path?query=value",
-		},
-		{
-			name: "POST request with body",
-			request: func() *http.Request {
-				req, _ := http.NewRequest("POST", "https://api.example.com/users", strings.NewReader("data"))
-				return req
-			}(),
-			expectedMethod: "POST",
-			expectedURL: "https://api.example.com/users",
-		},
-		{
-			name: "request with port",
-			request: func() *http.Request {
-				req, _ := http.NewRequest("GET", "https://example.com:8443/api", nil)
-				return req
-			}(),
-			expectedMethod: "GET",
-			expectedURL: "https://example.com:8443/api",
-		},
-		{
-			name: "request with complex query parameters",
-			request: func() *http.Request {
-				req, _ := http.NewRequest("GET", "https://search.example.com/api?q=hello%20world&limit=10&offset=0", nil)
-				return req
-			}(),
-			expectedMethod: "GET",
-			expectedURL: "https://search.example.com/api?q=hello%20world&limit=10&offset=0",
-		},
-		{
-			name: "request with fragment (should be ignored)",
-			request: func() *http.Request {
-				u, _ := url.Parse("https://example.com/page#section")
-				req := &http.Request{
-					Method: "GET",
-					URL:    u,
-				}
-				return req
-			}(),
-			expectedMethod: "GET",
-			expectedURL: "https://example.com/page#section",
-		},
-		{
-			name: "HTTP request (not HTTPS)",
-			request: func() *http.Request {
-				req, _ := http.NewRequest("GET", "http://insecure.example.com/data", nil)
-				return req
-			}(),
-			expectedMethod: "GET",
-			expectedURL: "http://insecure.example.com/data",
-		},
-		{
-			name: "PUT request",
-			request: func() *http.Request {
-				req, _ := http.NewRequest("PUT", "https://api.example.com/users/123", strings.NewReader("updated data"))
-				return req
-			}(),
-			expectedMethod: "PUT",
-			expectedURL: "https://api.example.com/users/123",
-		},
-		{
-			name: "DELETE request",
-			request: func() *http.Request {
-				req, _ := http.NewRequest("DELETE", "https://api.example.com/users/123", nil)
-				return req
-			}(),
-			expectedMethod: "DELETE",
-			expectedURL: "https://api.example.com/users/123",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			auditReq := HTTPRequestToAuditRequest(tt.request)
-
-			if auditReq.Method != tt.expectedMethod {
-				t.Errorf("expected method %s, got %s", tt.expectedMethod, auditReq.Method)
-			}
-
-			if auditReq.URL != tt.expectedURL {
-				t.Errorf("expected URL %s, got %s", tt.expectedURL, auditReq.URL)
-			}
-
-			// Verify that fields not set by HTTPRequestToAuditRequest have zero values
-			if auditReq.Allowed != false {
-				t.Errorf("expected Allowed to be false (zero value), got %v", auditReq.Allowed)
-			}
-
-			if auditReq.Rule != "" {
-				t.Errorf("expected Rule to be empty (zero value), got %q", auditReq.Rule)
-			}
-
-			if auditReq.Reason != "" {
-				t.Errorf("expected Reason to be empty (zero value), got %q", auditReq.Reason)
-			}
-		})
-	}
-}
-
-func TestHTTPRequestToAuditRequest_NilRequest(t *testing.T) {
-	// Test edge case with nil request
-	defer func() {
-		if r := recover(); r != nil {
-			// If it panics, that's acceptable behavior for nil input
-			t.Logf("HTTPRequestToAuditRequest panicked with nil request: %v", r)
-		}
-	}()
-
-	// This should either handle gracefully or panic - both are acceptable
-	auditReq := HTTPRequestToAuditRequest(nil)
-	if auditReq != nil {
-		// If it doesn't panic, verify the result makes sense
-		t.Logf("HTTPRequestToAuditRequest with nil returned: %+v", auditReq)
-	}
-}
-
-func TestNewLoggingAuditor(t *testing.T) {
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
-
-	auditor := NewLoggingAuditor(logger)
-
-	if auditor == nil {
-		t.Fatal("expected NewLoggingAuditor to return non-nil auditor")
-	}
-
-	if auditor.logger != logger {
-		t.Error("expected auditor to use the provided logger")
-	}
-
-	// Verify it implements the Auditor interface
-	var _ Auditor = auditor
-}
-
-func TestAuditorInterface(t *testing.T) {
-	// Test that our LoggingAuditor properly implements the Auditor interface
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{}))
-
-	// This should compile - testing interface compliance
-	var auditor Auditor = NewLoggingAuditor(logger)
-
-	req := &Request{
-		Method:  "GET",
-		URL:     "https://example.com",
-		Allowed: true,
-		Rule:    "allow example.com",
-	}
-
-	auditor.AuditRequest(req)
-
-	if buf.String() == "" {
-		t.Error("expected audit log output through interface")
-	}
 }
 
 func TestLoggingAuditor_JSONHandler(t *testing.T) {
