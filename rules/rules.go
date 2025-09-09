@@ -137,19 +137,42 @@ func NewRuleEngine(rules []*Rule, logger *slog.Logger) *RuleEngine {
 	}
 }
 
+// EvaluationResult contains the result of rule evaluation
+type EvaluationResult struct {
+	Action Action
+	Rule   string // The rule that matched (if any)
+}
+
 // Evaluate evaluates a request against all allow rules and returns the action to take
 func (re *RuleEngine) Evaluate(method, url string) Action {
 	// Check if any allow rule matches
 	for _, rule := range re.rules {
 		if rule.Matches(method, url) {
-			re.logger.Info("ALLOW", "method", method, "url", url, "rule", rule.Raw)
 			return Allow
 		}
 	}
 
 	// Default deny if no allow rules match
-	re.logger.Warn("DENY", "method", method, "url", url, "reason", "no matching allow rules")
 	return Deny
+}
+
+// EvaluateWithRule evaluates a request and returns both action and matching rule
+func (re *RuleEngine) EvaluateWithRule(method, url string) EvaluationResult {
+	// Check if any allow rule matches
+	for _, rule := range re.rules {
+		if rule.Matches(method, url) {
+			return EvaluationResult{
+				Action: Allow,
+				Rule:   rule.Raw,
+			}
+		}
+	}
+
+	// Default deny if no allow rules match
+	return EvaluationResult{
+		Action: Deny,
+		Rule:   "",
+	}
 }
 
 // newAllowRule creates an allow Rule from a spec string used by --allow.

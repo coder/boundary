@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/coder/jail/audit"
 	"github.com/coder/jail/network"
 	"github.com/coder/jail/proxy"
 	"github.com/coder/jail/rules"
@@ -225,11 +226,15 @@ func runJail(inv *serpent.Invocation) error {
 		return fmt.Errorf("failed to setup network jail: %v", err)
 	}
 
+	// Create auditor
+	auditor := audit.NewLoggingAuditor(logger)
+
 	// Create proxy server
 	proxyConfig := proxy.Config{
 		HTTPPort:   networkConfig.HTTPPort,
 		HTTPSPort:  networkConfig.HTTPSPort,
 		RuleEngine: ruleEngine,
+		Auditor:    auditor,
 		Logger:     logger,
 		TLSConfig:  tlsConfig,
 	}
