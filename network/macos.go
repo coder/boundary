@@ -97,11 +97,33 @@ func (m *MacOSNetJail) Execute(command []string, extraEnv map[string]string) err
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 
-	// Set group ID using syscall (like httpjail does)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Credential: &syscall.Credential{
-			Gid: uint32(m.groupID),
-		},
+	// Drop privileges to original user if running under sudo
+	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
+		uid, err := environment.GetEffectiveUID()
+		if err != nil {
+			m.logger.Warn("Failed to get effective UID, subprocess will run as root", "error", err)
+		} else {
+			gid, err := environment.GetEffectiveGID()
+			if err != nil {
+				m.logger.Warn("Failed to get effective GID, subprocess will run as root", "error", err)
+			} else {
+				// Set group ID using syscall (like httpjail does)
+				cmd.SysProcAttr = &syscall.SysProcAttr{
+					Credential: &syscall.Credential{
+						Uid: uint32(uid),
+						Gid: uint32(gid),
+					},
+				}
+				m.logger.Debug("Dropping privileges to original user", "uid", uid, "gid", gid, "user", sudoUser)
+			}
+		}
+	} else {
+		// Set group ID using syscall (like httpjail does) - original behavior for non-sudo
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			Credential: &syscall.Credential{
+				Gid: uint32(m.groupID),
+			},
+		}
 	}
 
 	// Start and wait for command to complete

@@ -110,6 +110,27 @@ func (l *LinuxJail) Execute(command []string, extraEnv map[string]string) error 
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
+	// Drop privileges to original user if running under sudo
+	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
+		uid, err := environment.GetEffectiveUID()
+		if err != nil {
+			l.logger.Warn("Failed to get effective UID, subprocess will run as root", "error", err)
+		} else {
+			gid, err := environment.GetEffectiveGID()
+			if err != nil {
+				l.logger.Warn("Failed to get effective GID, subprocess will run as root", "error", err)
+			} else {
+				cmd.SysProcAttr = &syscall.SysProcAttr{
+					Credential: &syscall.Credential{
+						Uid: uint32(uid),
+						Gid: uint32(gid),
+					},
+				}
+				l.logger.Debug("Dropping privileges to original user", "uid", uid, "gid", gid, "user", sudoUser)
+			}
+		}
+	}
+
 	// Start command
 	l.logger.Debug("Starting command", "path", cmd.Path, "args", cmd.Args)
 	err := cmd.Start()
