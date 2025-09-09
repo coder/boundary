@@ -92,6 +92,8 @@ func (m *MacOSNetJail) Execute(command []string, extraEnv map[string]string) err
 			env = append(env, fmt.Sprintf("HOME=%s", user.HomeDir))
 			// Set USER to original username
 			env = append(env, fmt.Sprintf("USER=%s", sudoUser))
+			// Set LOGNAME to original username (some tools check this instead of USER)
+			env = append(env, fmt.Sprintf("LOGNAME=%s", sudoUser))
 			m.logger.Debug("Restored user environment", "home", user.HomeDir, "user", sudoUser)
 		}
 	}
