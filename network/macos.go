@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"os/user"
 	"strconv"
 	"strings"
 	"syscall"
@@ -82,6 +83,17 @@ func (m *MacOSNetJail) Execute(command []string, extraEnv map[string]string) err
 	// Add extra environment variables (including CA cert if provided)
 	for key, value := range extraEnv {
 		env = append(env, fmt.Sprintf("%s=%s", key, value))
+	}
+
+	// When running under sudo, restore essential user environment variables
+	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
+		if user, err := user.Lookup(sudoUser); err == nil {
+			// Set HOME to original user's home directory
+			env = append(env, fmt.Sprintf("HOME=%s", user.HomeDir))
+			// Set USER to original username
+			env = append(env, fmt.Sprintf("USER=%s", sudoUser))
+			m.logger.Debug("Restored user environment", "home", user.HomeDir, "user", sudoUser)
+		}
 	}
 
 	cmd.Env = env
