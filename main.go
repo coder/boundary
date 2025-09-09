@@ -1,66 +1,277 @@
 package main
 
 import (
-	"flag"
+	"context"
 	"fmt"
+	"log/slog"
 	"os"
+	"os/signal"
+	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
+	cryptotls "crypto/tls"
 
-	"github.com/coder/squeeze/squeeze"
+	"boundary/netjail"
+	"boundary/proxy"
+	"boundary/rules"
+	"boundary/tls"
+
+	"github.com/coder/serpent"
 )
 
-// runChildProcess handles the child process execution in isolated namespaces
-func runChildProcess() {
-	// TODO: We need to pass config data from parent to child
-	// For now, just create namespaces and exit to test
-	
-	if err := squeeze.CreateNamespaces(); err != nil {
-		fmt.Fprintf(os.Stderr, "Child: failed to create namespaces: %v\n", err)
-		os.Exit(1)
-	}
-	
-	fmt.Printf("Child: successfully created namespaces\n")
-	os.Exit(0)
-}
+var (
+	allowStrings    []string
+	noTLSIntercept  bool
+	logLevel        string
+	noJailCleanup   bool
+)
 
 func main() {
-	// Check if we're running as the child process for namespace setup
-	if len(os.Args) > 1 && os.Args[1] == "squeeze-child" {
-		runChildProcess()
-		return
+	cmd := &serpent.Command{
+		Use:   "boundary [flags] -- command [args...]",
+		Short: "Monitor and restrict HTTP/HTTPS requests from processes",
+		Long: `boundary creates an isolated network environment for the target process,
+intercepting all HTTP/HTTPS traffic through a transparent proxy that enforces
+user-defined rules.
+
+Examples:
+  # Allow only requests to github.com
+  boundary --allow "github.com" -- curl https://github.com
+
+  # Monitor all requests to specific domains (allow only those)
+  boundary --allow "github.com/api/issues/*" --allow "GET,HEAD github.com" -- npm install
+
+  # Block everything by default (implicit)`,
+		Options: serpent.OptionSet{
+			{
+				Name:        "allow",
+				Flag:        "allow",
+				Env:         "BOUNDARY_ALLOW",
+				Description: "Allow rule (can be specified multiple times). Format: 'pattern' or 'METHOD[,METHOD] pattern'.",
+				Value:       serpent.StringArrayOf(&allowStrings),
+			},
+			{
+				Name:        "no-tls-intercept",
+				Flag:        "no-tls-intercept",
+				Env:         "BOUNDARY_NO_TLS_INTERCEPT",
+				Description: "Disable HTTPS interception.",
+				Value:       serpent.BoolOf(&noTLSIntercept),
+			},
+			{
+				Name:        "log-level",
+				Flag:        "log-level",
+				Env:         "BOUNDARY_LOG_LEVEL",
+				Description: "Set log level (error, warn, info, debug).",
+				Default:     "warn",
+				Value:       serpent.StringOf(&logLevel),
+			},
+			{
+				Name:        "no-jail-cleanup",
+				Flag:        "no-jail-cleanup",
+				Env:         "BOUNDARY_NO_JAIL_CLEANUP",
+				Description: "Skip jail cleanup (hidden flag for testing).",
+				Value:       serpent.BoolOf(&noJailCleanup),
+				Hidden:      true,
+			},
+		},
+		Handler: runBoundary,
 	}
 
-	var configFile = flag.String("config", "", "path to configuration file")
-	
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [options] -- command [args...]\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "\nOptions:\n")
-		flag.PrintDefaults()
-	}
-	
-	flag.Parse()
-	command := flag.Args()
-
-	if len(command) < 1 {
-		fmt.Fprintf(os.Stderr, "Error: no command specified after --\n")
-		flag.Usage()
-		os.Exit(1)
-	}
-	
-	// Create basic config for testing (config file loading not implemented yet)
-	config := squeeze.NewConfig(
-		squeeze.WithCommand(command[0], command[1:]...),
-		squeeze.WithWorkingDir("."),
-	)
-
-	if *configFile != "" {
-		fmt.Printf("Config file specified: %s (not implemented yet)\n", *configFile)
-	}
-	
-	fmt.Printf("Running isolated: %s\n", strings.Join(command, " "))
-	
-	if err := config.RunIsolated(); err != nil {
+	err := cmd.Invoke().WithOS().Run()
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func setupLogging(logLevel string) *slog.Logger {
+	var level slog.Level
+	switch strings.ToLower(logLevel) {
+	case "error":
+		level = slog.LevelError
+	case "warn":
+		level = slog.LevelWarn
+	case "info":
+		level = slog.LevelInfo
+	case "debug":
+		level = slog.LevelDebug
+	default:
+		level = slog.LevelWarn // Default to warn if invalid level
+	}
+
+	// Create a standard slog logger with the appropriate level
+	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: level,
+	})
+
+	return slog.New(handler)
+}
+
+func runBoundary(inv *serpent.Invocation) error {
+	logger := setupLogging(logLevel)
+
+	// Get command arguments
+	args := inv.Args
+	if len(args) == 0 {
+		return fmt.Errorf("no command specified")
+	}
+
+	// Parse allow list; default to deny-all if none provided
+	if len(allowStrings) == 0 {
+		logger.Warn("No allow rules specified; all network traffic will be denied by default")
+	}
+
+	allowRules, err := rules.ParseAllowSpecs(allowStrings)
+	if err != nil {
+		logger.Error("Failed to parse allow rules", "error", err)
+		return fmt.Errorf("failed to parse allow rules: %v", err)
+	}
+
+	// Implicit final deny-all is handled by the RuleEngine default behavior when no rules match.
+	// Build final rules slice in order: user allows only.
+	ruleList := allowRules
+
+	// Create rule engine
+	ruleEngine := rules.NewRuleEngine(ruleList, logger)
+
+	// Get configuration directory
+	configDir, err := tls.GetConfigDir()
+	if err != nil {
+		logger.Error("Failed to get config directory", "error", err)
+		return fmt.Errorf("failed to get config directory: %v", err)
+	}
+
+	// Create certificate manager (if TLS interception is enabled)
+	var certManager *tls.CertificateManager
+	var tlsConfig *cryptotls.Config
+	var extraEnv map[string]string = make(map[string]string)
+
+	if !noTLSIntercept {
+		certManager, err = tls.NewCertificateManager(configDir, logger)
+		if err != nil {
+			logger.Error("Failed to create certificate manager", "error", err)
+			return fmt.Errorf("failed to create certificate manager: %v", err)
+		}
+
+		tlsConfig = certManager.GetTLSConfig()
+
+		// Get CA certificate for environment
+		caCertPEM, err := certManager.GetCACertPEM()
+		if err != nil {
+			logger.Error("Failed to get CA certificate", "error", err)
+			return fmt.Errorf("failed to get CA certificate: %v", err)
+		}
+
+		// Write CA certificate to a temporary file for tools that need a file path
+		caCertPath := filepath.Join(configDir, "ca-cert.pem")
+		if err := os.WriteFile(caCertPath, caCertPEM, 0644); err != nil {
+			logger.Error("Failed to write CA certificate file", "error", err)
+			return fmt.Errorf("failed to write CA certificate file: %v", err)
+		}
+
+		// Set standard CA certificate environment variables for common tools
+		// This makes tools like curl, git, etc. trust our dynamically generated CA
+		extraEnv["SSL_CERT_FILE"] = caCertPath        // OpenSSL/LibreSSL-based tools
+		extraEnv["SSL_CERT_DIR"] = configDir          // OpenSSL certificate directory
+		extraEnv["CURL_CA_BUNDLE"] = caCertPath       // curl
+		extraEnv["GIT_SSL_CAINFO"] = caCertPath       // Git
+		extraEnv["REQUESTS_CA_BUNDLE"] = caCertPath   // Python requests
+		extraEnv["NODE_EXTRA_CA_CERTS"] = caCertPath  // Node.js
+		extraEnv["BOUNDARY_CA_CERT"] = string(caCertPEM) // Keep for backward compatibility
+	}
+
+	// Create network jail configuration
+	netjailConfig := netjail.Config{
+		HTTPPort:     8040,
+		HTTPSPort:    8043,
+		NetJailName:  "boundary",
+		SkipCleanup:  noJailCleanup,
+	}
+
+	// Create network jail
+	netjailInstance, err := netjail.NewNetJail(netjailConfig, logger)
+	if err != nil {
+		logger.Error("Failed to create network jail", "error", err)
+		return fmt.Errorf("failed to create network jail: %v", err)
+	}
+
+	// Setup signal handling BEFORE any network setup
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// Handle signals immediately in background
+	go func() {
+		sig := <-sigChan
+		logger.Info("Received signal during setup, cleaning up...", "signal", sig)
+		if err := netjailInstance.Cleanup(); err != nil {
+			logger.Error("Emergency cleanup failed", "error", err)
+		}
+		os.Exit(1)
+	}()
+
+	// Ensure cleanup happens no matter what
+	defer func() {
+		logger.Debug("Starting cleanup process")
+		if err := netjailInstance.Cleanup(); err != nil {
+			logger.Error("Failed to cleanup network jail", "error", err)
+		} else {
+			logger.Debug("Cleanup completed successfully")
+		}
+	}()
+
+	// Setup network jail
+	if err := netjailInstance.Setup(netjailConfig.HTTPPort, netjailConfig.HTTPSPort); err != nil {
+		logger.Error("Failed to setup network jail", "error", err)
+		return fmt.Errorf("failed to setup network jail: %v", err)
+	}
+
+	// Create proxy server
+	proxyConfig := proxy.Config{
+		HTTPPort:   netjailConfig.HTTPPort,
+		HTTPSPort:  netjailConfig.HTTPSPort,
+		RuleEngine: ruleEngine,
+		Logger:     logger,
+		TLSConfig:  tlsConfig,
+	}
+
+	proxyServer := proxy.NewProxyServer(proxyConfig)
+
+	// Create context for graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start proxy server in background
+	go func() {
+		if err := proxyServer.Start(ctx); err != nil {
+			logger.Error("Proxy server error", "error", err)
+		}
+	}()
+
+	// Give proxy time to start
+	time.Sleep(100 * time.Millisecond)
+
+	// Execute command in network jail
+	go func() {
+		defer cancel()
+		if err := netjailInstance.Execute(args, extraEnv); err != nil {
+			logger.Error("Command execution failed", "error", err)
+		}
+	}()
+
+	// Wait for signal or context cancellation
+	select {
+	case sig := <-sigChan:
+		logger.Info("Received signal, shutting down...", "signal", sig)
+		cancel()
+	case <-ctx.Done():
+		// Context cancelled by command completion
+	}
+
+	// Stop proxy server
+	if err := proxyServer.Stop(); err != nil {
+		logger.Error("Failed to stop proxy server", "error", err)
+	}
+
+	return nil
 }
