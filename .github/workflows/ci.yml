@@ -36,13 +36,10 @@ jobs:
           ${{ runner.os }}-go-
 
     - name: Download dependencies
-      run: go mod download
-
-    - name: Verify dependencies
-      run: go mod verify
+      run: make tidy
 
     - name: Run tests
-      run: go test -v -race ./...
+      run: make test
 
     - name: Check build
-      run: go build -v ./...
+      run: make build

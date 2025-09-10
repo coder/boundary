@@ -49,19 +49,22 @@ jobs:
           ${{ runner.os }}-go-
 
     - name: Download dependencies
-      run: go mod download
+      run: make tidy
 
     - name: Build binary
-      env:
-        GOOS: ${{ matrix.goos }}
-        GOARCH: ${{ matrix.goarch }}
-        CGO_ENABLED: 0
       run: |
+        # Set target for cross-compilation
+        export GOOS=${{ matrix.goos }}
+        export GOARCH=${{ matrix.goarch }}
+        export CGO_ENABLED=0
+        
         # Add version info if available
         VERSION="dev-${{ github.sha }}"
         if [ "${{ github.ref_type }}" = "tag" ]; then
           VERSION="${{ github.ref_name }}"
         fi
+        
+        # Build using Go directly for cross-compilation
         go build -ldflags="-s -w -X main.version=$VERSION" -o ${{ matrix.name }} .
 
     - name: Upload binary as artifact

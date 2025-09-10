@@ -1,0 +1,60 @@
+name: Makefile Build
+
+on:
+  workflow_dispatch: # Allow manual triggering
+  schedule:
+    - cron: '0 6 * * 1' # Weekly on Monday at 6 AM UTC
+
+jobs:
+  makefile-build:
+    name: Build All Platforms with Makefile
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+        check-latest: true
+
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Set up development environment
+      run: make dev-setup
+
+    - name: Run tests
+      run: make test
+
+    - name: Build all platforms
+      run: make build-all
+
+    - name: Upload all binaries as single artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: jail-all-platforms-makefile
+        path: build/*
+        retention-days: 7
+
+    - name: Build Summary
+      run: |
+        echo "## 🛠️ Makefile Build Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Built all platforms using \`make build-all\`:" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        ls -la build/
+        ls -la build/ >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "All binaries are available as a single artifact: \`jail-all-platforms-makefile\`" >> $GITHUB_STEP_SUMMARY
