@@ -27,9 +27,10 @@ type Linux struct {
 // newLinux creates a new Linux network jail instance
 func newLinux(config Config, logger *slog.Logger) (*Linux, error) {
 	return &Linux{
-		config:    config,
-		namespace: newNamespaceName(),
-		logger:    logger,
+		config:      config,
+		namespace:   newNamespaceName(),
+		logger:      logger,
+		preparedEnv: make(map[string]string),
 	}, nil
 }
 
@@ -64,12 +65,14 @@ func (l *Linux) Open() error {
 
 	// Prepare environment once during setup
 	l.logger.Debug("Preparing environment")
-	l.preparedEnv = make(map[string]string)
 
 	// Start with current environment
 	for _, envVar := range os.Environ() {
 		if parts := strings.SplitN(envVar, "=", 2); len(parts) == 2 {
-			l.preparedEnv[parts[0]] = parts[1]
+			// Only set if not already set by SetEnv
+			if _, exists := l.preparedEnv[parts[0]]; !exists {
+				l.preparedEnv[parts[0]] = parts[1]
+			}
 		}
 	}
 

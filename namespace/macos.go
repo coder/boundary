@@ -40,6 +40,7 @@ func newMacOSJail(config Config, logger *slog.Logger) (*MacOSNetJail, error) {
 		pfRulesPath:   pfRulesPath,
 		mainRulesPath: mainRulesPath,
 		logger:        logger,
+		preparedEnv:   make(map[string]string),
 	}, nil
 }
 
@@ -63,12 +64,14 @@ func (m *MacOSNetJail) Open() error {
 
 	// Prepare environment once during setup
 	m.logger.Debug("Preparing environment")
-	m.preparedEnv = make(map[string]string)
 
 	// Start with current environment
 	for _, envVar := range os.Environ() {
 		if parts := strings.SplitN(envVar, "=", 2); len(parts) == 2 {
-			m.preparedEnv[parts[0]] = parts[1]
+			// Only set if not already set by SetEnv
+			if _, exists := m.preparedEnv[parts[0]]; !exists {
+				m.preparedEnv[parts[0]] = parts[1]
+			}
 		}
 	}
 

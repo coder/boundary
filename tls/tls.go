@@ -31,6 +31,15 @@ type CertificateManager struct {
 
 // NewCertificateManager creates a new certificate manager
 func NewCertificateManager(configDir string, logger *slog.Logger) (*CertificateManager, error) {
+	// If no configDir provided, determine it automatically
+	if configDir == "" {
+		var err error
+		configDir, err = getConfigDir()
+		if err != nil {
+			return nil, fmt.Errorf("failed to determine config directory: %v", err)
+		}
+	}
+
 	cm := &CertificateManager{
 		certCache: make(map[string]*tls.Certificate),
 		logger:    logger,
