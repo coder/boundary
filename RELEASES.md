@@ -42,6 +42,30 @@ Artifacts are kept for 30 days.
 
 ## Local Development
 
+### Using Makefile (Recommended)
+
+The project includes a Makefile with common development tasks:
+
+```bash
+# Build for current platform
+make build
+
+# Build for all platforms
+make build-all
+
+# Run tests
+make test
+
+# Clean build artifacts
+make clean
+
+# Install to system PATH
+make install
+
+# Show all available targets
+make help
+```
+
 ### Quick Build
 
 Build for your current platform:
@@ -50,7 +74,7 @@ Build for your current platform:
 go build -o jail .
 ```
 
-### Cross-Platform Build
+### Cross-Platform Build Script
 
 Use the provided script to build for all platforms:
 
