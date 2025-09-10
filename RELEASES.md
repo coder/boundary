@@ -28,8 +28,6 @@ This triggers the **Release** workflow which:
 | Linux | ARM64 | `jail-linux-arm64` | `.tar.gz` |
 | macOS | Intel | `jail-darwin-amd64` | `.tar.gz` |
 | macOS | Apple Silicon | `jail-darwin-arm64` | `.tar.gz` |
-| Windows | x64 | `jail-windows-amd64.exe` | `.zip` |
-| Windows | ARM64 | `jail-windows-arm64.exe` | `.zip` |
 
 ### Development Builds
 
@@ -70,9 +68,6 @@ GOOS=linux GOARCH=amd64 go build -o jail-linux-amd64 .
 
 # macOS ARM64 (Apple Silicon)
 GOOS=darwin GOARCH=arm64 go build -o jail-darwin-arm64 .
-
-# Windows x64
-GOOS=windows GOARCH=amd64 go build -o jail-windows-amd64.exe .
 ```
 
 ### Build with Version Info

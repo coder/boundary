@@ -27,13 +27,6 @@ jobs:
           - goos: darwin
             goarch: arm64
             name: jail-darwin-arm64
-          # Windows builds
-          - goos: windows
-            goarch: amd64
-            name: jail-windows-amd64.exe
-          - goos: windows
-            goarch: arm64
-            name: jail-windows-arm64.exe
 
     steps:
     - name: Check out code
@@ -95,17 +88,12 @@ jobs:
         for dir in */; do
           binary_name=$(basename "$dir")
           cd "$dir"
-          if [[ "$binary_name" == *.exe ]]; then
-            # Windows: create zip
-            zip "../${binary_name%.exe}.zip" "$binary_name"
-          else
-            # Unix: create tar.gz
-            tar -czf "../${binary_name}.tar.gz" "$binary_name"
-          fi
+          # Unix: create tar.gz
+          tar -czf "../${binary_name}.tar.gz" "$binary_name"
           cd ..
         done
         # List all release assets
-        ls -la *.tar.gz *.zip
+        ls -la *.tar.gz
 
     - name: Generate release notes
       id: release_notes
@@ -116,12 +104,10 @@ jobs:
         echo "" >> release_notes.md
         echo "Choose the appropriate binary for your platform:" >> release_notes.md
         echo "" >> release_notes.md
-        echo "- **Linux (x64)**: `jail-linux-amd64.tar.gz`" >> release_notes.md
-        echo "- **Linux (ARM64)**: `jail-linux-arm64.tar.gz`" >> release_notes.md
-        echo "- **macOS (Intel)**: `jail-darwin-amd64.tar.gz`" >> release_notes.md
-        echo "- **macOS (Apple Silicon)**: `jail-darwin-arm64.tar.gz`" >> release_notes.md
-        echo "- **Windows (x64)**: `jail-windows-amd64.zip`" >> release_notes.md
-        echo "- **Windows (ARM64)**: `jail-windows-arm64.zip`" >> release_notes.md
+        echo "- **Linux (x64)**: \`jail-linux-amd64.tar.gz\`" >> release_notes.md
+        echo "- **Linux (ARM64)**: \`jail-linux-arm64.tar.gz\`" >> release_notes.md
+        echo "- **macOS (Intel)**: \`jail-darwin-amd64.tar.gz\`" >> release_notes.md
+        echo "- **macOS (Apple Silicon)**: \`jail-darwin-arm64.tar.gz\`" >> release_notes.md
         echo "" >> release_notes.md
         echo "### 🛠️ Installation" >> release_notes.md
         echo "" >> release_notes.md
@@ -139,10 +125,6 @@ jobs:
       with:
         files: |
           binaries/*.tar.gz
-          binaries/*.zip
         body_path: release_notes.md
-        draft: false
-        prerelease: ${{ contains(github.ref_name, '-') }}
-        generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

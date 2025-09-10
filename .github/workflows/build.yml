@@ -27,13 +27,6 @@ jobs:
           - goos: darwin
             goarch: arm64
             name: jail-darwin-arm64
-          # Windows builds
-          - goos: windows
-            goarch: amd64
-            name: jail-windows-amd64.exe
-          - goos: windows
-            goarch: arm64
-            name: jail-windows-arm64.exe
 
     steps:
     - name: Check out code
@@ -97,8 +90,6 @@ jobs:
         echo "- 🐧 **Linux (ARM64)**: jail-linux-arm64" >> $GITHUB_STEP_SUMMARY
         echo "- 🍎 **macOS (Intel)**: jail-darwin-amd64" >> $GITHUB_STEP_SUMMARY
         echo "- 🍎 **macOS (Apple Silicon)**: jail-darwin-arm64" >> $GITHUB_STEP_SUMMARY
-        echo "- 🪟 **Windows (x64)**: jail-windows-amd64.exe" >> $GITHUB_STEP_SUMMARY
-        echo "- 🪟 **Windows (ARM64)**: jail-windows-arm64.exe" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 📎 Download Instructions" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY

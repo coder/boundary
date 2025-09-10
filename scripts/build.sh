@@ -29,8 +29,6 @@ configs=(
     "linux:arm64:jail-linux-arm64"
     "darwin:amd64:jail-darwin-amd64"
     "darwin:arm64:jail-darwin-arm64"
-    "windows:amd64:jail-windows-amd64.exe"
-    "windows:arm64:jail-windows-arm64.exe"
 )
 
 # Build each configuration
@@ -62,5 +60,4 @@ echo -e "${YELLOW}To create release archives:${NC}"
 echo "  cd $BUILD_DIR"
 echo "  tar -czf jail-linux-amd64.tar.gz jail-linux-amd64"
 echo "  tar -czf jail-darwin-amd64.tar.gz jail-darwin-amd64"
-echo "  zip jail-windows-amd64.zip jail-windows-amd64.exe"
 echo "  # ... etc for other platforms"
