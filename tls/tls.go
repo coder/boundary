@@ -205,13 +205,13 @@ func (cm *CertificateManager) generateCA(keyPath, certPath string) error {
 	template := x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject: pkix.Name{
-			Organization:  []string{"boundary"},
+			Organization:  []string{"coder"},
 			Country:       []string{"US"},
 			Province:      []string{""},
 			Locality:      []string{""},
 			StreetAddress: []string{""},
 			PostalCode:    []string{""},
-			CommonName:    "boundary CA",
+			CommonName:    "coder CA",
 		},
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().Add(365 * 24 * time.Hour), // 1 year
@@ -310,7 +310,7 @@ func (cm *CertificateManager) generateServerCertificate(hostname string) (*tls.C
 	template := x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()),
 		Subject: pkix.Name{
-			Organization:  []string{"boundary"},
+			Organization:  []string{"coder"},
 			Country:       []string{"US"},
 			Province:      []string{""},
 			Locality:      []string{""},
@@ -377,9 +377,9 @@ func getConfigDir() (string, error) {
 	var configDir string
 	switch {
 	case os.Getenv("XDG_CONFIG_HOME") != "":
-		configDir = filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "boundary")
+		configDir = filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "coder_jail")
 	default:
-		configDir = filepath.Join(homeDir, ".config", "boundary")
+		configDir = filepath.Join(homeDir, ".config", "coder_jail")
 	}
 
 	return configDir, nil
