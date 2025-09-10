@@ -142,7 +142,7 @@ func Run(config Config, args []string) error {
 	// Create certificate manager (if TLS interception is enabled)
 	var tlsConfig *cryptotls.Config
 	if !config.NoTLSIntercept {
-		certManager, err := tls.NewCertificateManager("", logger) // Empty configDir since it will be determined internally
+		certManager, err := tls.NewCertificateManager(logger)
 		if err != nil {
 			logger.Error("Failed to create certificate manager", "error", err)
 			return fmt.Errorf("failed to create certificate manager: %v", err)

@@ -18,6 +18,7 @@ import (
 type Linux struct {
 	config      Config
 	namespace   string
+	vethHost    string // Host-side veth interface name for iptables rules
 	logger      *slog.Logger
 	preparedEnv map[string]string
 	procAttr    *syscall.SysProcAttr
@@ -26,9 +27,10 @@ type Linux struct {
 // newLinux creates a new Linux network jail instance
 func newLinux(config Config, logger *slog.Logger) (*Linux, error) {
 	return &Linux{
-		config:    config,
-		namespace: newNamespaceName(),
-		logger:    logger,
+		config:      config,
+		namespace:   newNamespaceName(),
+		logger:      logger,
+		preparedEnv: make(map[string]string),
 	}, nil
 }
 
@@ -63,12 +65,14 @@ func (l *Linux) Open() error {
 
 	// Prepare environment once during setup
 	l.logger.Debug("Preparing environment")
-	l.preparedEnv = make(map[string]string)
 
 	// Start with current environment
 	for _, envVar := range os.Environ() {
 		if parts := strings.SplitN(envVar, "=", 2); len(parts) == 2 {
-			l.preparedEnv[parts[0]] = parts[1]
+			// Only set if not already set by SetEnv
+			if _, exists := l.preparedEnv[parts[0]]; !exists {
+				l.preparedEnv[parts[0]] = parts[1]
+			}
 		}
 	}
 
@@ -193,6 +197,9 @@ func (l *Linux) setupNetworking() error {
 	vethHost := fmt.Sprintf("veth_h_%s", uniqueID)                // veth_h_1234567 = 14 chars
 	vethNetJail := fmt.Sprintf("veth_n_%s", uniqueID)             // veth_n_1234567 = 14 chars
 
+	// Store veth interface name for iptables rules
+	l.vethHost = vethHost
+
 	setupCmds := []struct {
 		description string
 		command     *exec.Cmd
@@ -246,42 +253,40 @@ options timeout:2 attempts:2
 	return nil
 }
 
-// setupIptables configures iptables rules for traffic redirection
+// setupIptables configures iptables rules for comprehensive TCP traffic interception
 func (l *Linux) setupIptables() error {
 	// Enable IP forwarding
 	cmd := exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1")
 	cmd.Run() // Ignore error
 
-	// NAT rules for outgoing traffic
+	// NAT rules for outgoing traffic (MASQUERADE for return traffic)
 	cmd = exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", "-s", "192.168.100.0/24", "-j", "MASQUERADE")
 	err := cmd.Run()
 	if err != nil {
 		return fmt.Errorf("failed to add NAT rule: %v", err)
 	}
 
-	// Redirect HTTP traffic to proxy
-	cmd = exec.Command("ip", "netns", "exec", l.namespace, "iptables", "-t", "nat", "-A", "OUTPUT",
-		"-p", "tcp", "--dport", "80", "-j", "DNAT", "--to-destination", fmt.Sprintf("192.168.100.1:%d", l.config.HTTPPort))
+	// COMPREHENSIVE APPROACH: Intercept ALL TCP traffic from namespace
+	// Use PREROUTING on host to catch traffic after it exits namespace but before routing
+	// This ensures NO TCP traffic can bypass the proxy
+	cmd = exec.Command("iptables", "-t", "nat", "-A", "PREROUTING", "-i", l.vethHost, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.config.HTTPSPort))
 	err = cmd.Run()
 	if err != nil {
-		return fmt.Errorf("failed to add HTTP redirect rule: %v", err)
+		return fmt.Errorf("failed to add comprehensive TCP redirect rule: %v", err)
 	}
 
-	// Redirect HTTPS traffic to proxy
-	cmd = exec.Command("ip", "netns", "exec", l.namespace, "iptables", "-t", "nat", "-A", "OUTPUT",
-		"-p", "tcp", "--dport", "443", "-j", "DNAT", "--to-destination", fmt.Sprintf("192.168.100.1:%d", l.config.HTTPSPort))
-	err = cmd.Run()
-	if err != nil {
-		return fmt.Errorf("failed to add HTTPS redirect rule: %v", err)
-	}
-
+	l.logger.Debug("Comprehensive TCP jailing enabled", "interface", l.vethHost, "proxy_port", l.config.HTTPSPort)
 	return nil
 }
 
 // removeIptables removes iptables rules
 func (l *Linux) removeIptables() error {
+	// Remove comprehensive TCP redirect rule
+	cmd := exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-i", l.vethHost, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.config.HTTPSPort))
+	cmd.Run() // Ignore errors during cleanup
+
 	// Remove NAT rule
-	cmd := exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING", "-s", "192.168.100.0/24", "-j", "MASQUERADE")
+	cmd = exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING", "-s", "192.168.100.0/24", "-j", "MASQUERADE")
 	cmd.Run() // Ignore errors during cleanup
 
 	return nil
