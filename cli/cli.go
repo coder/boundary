@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/coder/jail/audit"
-	"github.com/coder/jail/network"
+	"github.com/coder/jail/namespace"
 	"github.com/coder/jail/proxy"
 	"github.com/coder/jail/rules"
 	"github.com/coder/jail/tls"
@@ -183,16 +183,15 @@ func Run(config Config, args []string) error {
 		extraEnv["JAIL_CA_CERT"] = string(caCertPEM) // Keep for backward compatibility
 	}
 
-	// Create network jail configuration
-	networkConfig := network.JailConfig{
+	// Create network namespace configuration
+	nsConfig := namespace.Config{
 		HTTPPort:    8040,
 		HTTPSPort:   8043,
-		NetJailName: "jail",
 		SkipCleanup: config.NoJailCleanup,
 	}
 
-	// Create network jail
-	networkInstance, err := network.NewJail(networkConfig, logger)
+	// Create network namespace instance
+	networkInstance, err := namespace.New(nsConfig, logger)
 	if err != nil {
 		logger.Error("Failed to create network jail", "error", err)
 		return fmt.Errorf("failed to create network jail: %v", err)
@@ -206,7 +205,7 @@ func Run(config Config, args []string) error {
 	go func() {
 		sig := <-sigChan
 		logger.Info("Received signal during setup, cleaning up...", "signal", sig)
-		err := networkInstance.Cleanup()
+		err := networkInstance.Close()
 		if err != nil {
 			logger.Error("Emergency cleanup failed", "error", err)
 		}
@@ -216,7 +215,7 @@ func Run(config Config, args []string) error {
 	// Ensure cleanup happens no matter what
 	defer func() {
 		logger.Debug("Starting cleanup process")
-		err := networkInstance.Cleanup()
+		err := networkInstance.Close()
 		if err != nil {
 			logger.Error("Failed to cleanup network jail", "error", err)
 		} else {
@@ -225,7 +224,7 @@ func Run(config Config, args []string) error {
 	}()
 
 	// Setup network jail
-	err = networkInstance.Setup(networkConfig.HTTPPort, networkConfig.HTTPSPort)
+	err = networkInstance.Open()
 	if err != nil {
 		logger.Error("Failed to setup network jail", "error", err)
 		return fmt.Errorf("failed to setup network jail: %v", err)
@@ -236,8 +235,8 @@ func Run(config Config, args []string) error {
 
 	// Create proxy server
 	proxyConfig := proxy.Config{
-		HTTPPort:   networkConfig.HTTPPort,
-		HTTPSPort:  networkConfig.HTTPSPort,
+		HTTPPort:   nsConfig.HTTPPort,
+		HTTPSPort:  nsConfig.HTTPSPort,
 		RuleEngine: ruleEngine,
 		Auditor:    auditor,
 		Logger:     logger,
@@ -264,7 +263,7 @@ func Run(config Config, args []string) error {
 	// Execute command in network jail
 	go func() {
 		defer cancel()
-		err := networkInstance.Execute(args, extraEnv)
+		err := networkInstance.Command(args).Run()
 		if err != nil {
 			logger.Error("Command execution failed", "error", err)
 		}
@@ -277,6 +276,7 @@ func Run(config Config, args []string) error {
 		cancel()
 	case <-ctx.Done():
 		// Context cancelled by command completion
+		logger.Info("Command completed, shutting down...")
 	}
 
 	// Stop proxy server

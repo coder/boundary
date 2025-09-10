@@ -1,26 +1,24 @@
 //go:build darwin
 
-package network
+package namespace
 
 import (
 	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
-	"os/user"
 	"strconv"
 	"strings"
-	"syscall"
 )
 
 const (
-	PF_ANCHOR_NAME = "network"
-	GROUP_NAME     = "network"
+	pfAnchorName = "coder_jail"
+	groupName    = "coder_jail"
 )
 
 // MacOSNetJail implements network jail using macOS PF (Packet Filter) and group-based isolation
 type MacOSNetJail struct {
-	config        JailConfig
+	config        Config
 	groupID       int
 	pfRulesPath   string
 	mainRulesPath string
@@ -28,9 +26,10 @@ type MacOSNetJail struct {
 }
 
 // newMacOSJail creates a new macOS network jail instance
-func newMacOSJail(config JailConfig, logger *slog.Logger) (*MacOSNetJail, error) {
-	pfRulesPath := fmt.Sprintf("/tmp/%s.pf", config.NetJailName)
-	mainRulesPath := fmt.Sprintf("/tmp/%s_main.pf", config.NetJailName)
+func newMacOSJail(config Config, logger *slog.Logger) (*MacOSNetJail, error) {
+	ns := newNamespaceName()
+	pfRulesPath := fmt.Sprintf("/tmp/%s.pf", ns)
+	mainRulesPath := fmt.Sprintf("/tmp/%s_main.pf", ns)
 
 	return &MacOSNetJail{
 		config:        config,
@@ -41,10 +40,8 @@ func newMacOSJail(config JailConfig, logger *slog.Logger) (*MacOSNetJail, error)
 }
 
 // Setup creates the network jail group and configures PF rules
-func (m *MacOSNetJail) Setup(httpPort, httpsPort int) error {
-	m.logger.Debug("Setup called", "httpPort", httpPort, "httpsPort", httpsPort)
-	m.config.HTTPPort = httpPort
-	m.config.HTTPSPort = httpsPort
+func (m *MacOSNetJail) Open() error {
+	m.logger.Debug("Setup called")
 
 	// Create or get network jail group
 	m.logger.Debug("Creating or ensuring network jail group")
@@ -66,99 +63,111 @@ func (m *MacOSNetJail) Setup(httpPort, httpsPort int) error {
 	return nil
 }
 
+// // Execute runs the command with the network jail group membership
+// func (m *MacOSNetJail) Execute(command []string, extraEnv map[string]string) error {
+// 	m.logger.Debug("Execute called", "command", command)
+// 	if len(command) == 0 {
+// 		return fmt.Errorf("no command specified")
+// 	}
+
+// 	// Create command directly (no sg wrapper needed)
+// 	m.logger.Debug("Creating command with group membership", "groupID", m.groupID)
+// 	cmd := exec.Command(command[0], command[1:]...)
+// 	m.logger.Debug("Full command args", "args", command)
+
+// 	// Set up environment
+// 	m.logger.Debug("Setting up environment")
+// 	env := os.Environ()
+
+// 	// Add extra environment variables (including CA cert if provided)
+// 	for key, value := range extraEnv {
+// 		env = append(env, fmt.Sprintf("%s=%s", key, value))
+// 	}
+
+// 	// When running under sudo, restore essential user environment variables
+// 	sudoUser := os.Getenv("SUDO_USER")
+// 	if sudoUser != "" {
+// 		user, err := user.Lookup(sudoUser)
+// 		if err == nil {
+// 			// Set HOME to original user's home directory
+// 			env = append(env, fmt.Sprintf("HOME=%s", user.HomeDir))
+// 			// Set USER to original username
+// 			env = append(env, fmt.Sprintf("USER=%s", sudoUser))
+// 			// Set LOGNAME to original username (some tools check this instead of USER)
+// 			env = append(env, fmt.Sprintf("LOGNAME=%s", sudoUser))
+// 			m.logger.Debug("Restored user environment", "home", user.HomeDir, "user", sudoUser)
+// 		}
+// 	}
+
+// 	cmd.Env = env
+// 	cmd.Stdout = os.Stdout
+// 	cmd.Stderr = os.Stderr
+// 	cmd.Stdin = os.Stdin
+
+// 	// Set group ID using syscall
+// 	cmd.SysProcAttr = &syscall.SysProcAttr{
+// 		Credential: &syscall.Credential{
+// 			Gid: uint32(m.groupID),
+// 		},
+// 	}
+
+// 	// Drop privileges to original user if running under sudo
+// 	sudoUID := os.Getenv("SUDO_UID")
+// 	if sudoUID != "" {
+// 		uid, err := strconv.Atoi(sudoUID)
+// 		if err != nil {
+// 			m.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", sudoUID, "error", err)
+// 		} else {
+// 			// Use original user ID but KEEP the jail group for network isolation
+// 			cmd.SysProcAttr = &syscall.SysProcAttr{
+// 				Credential: &syscall.Credential{
+// 					Uid: uint32(uid),
+// 					Gid: uint32(m.groupID), // Keep jail group, not original user's group
+// 				},
+// 			}
+// 			m.logger.Debug("Dropping privileges to original user with jail group", "uid", uid, "jail_gid", m.groupID)
+// 		}
+// 	}
+
+// 	// Start and wait for command to complete
+// 	m.logger.Debug("Starting command", "path", cmd.Path, "args", cmd.Args)
+// 	err := cmd.Start()
+// 	if err != nil {
+// 		return fmt.Errorf("failed to start command: %v", err)
+// 	}
+// 	m.logger.Debug("Command started, waiting for completion")
+
+// 	// Wait for command to complete
+// 	err = cmd.Wait()
+// 	m.logger.Debug("Command completed", "error", err)
+// 	if err != nil {
+// 		if exitError, ok := err.(*exec.ExitError); ok {
+// 			if status, ok := exitError.Sys().(syscall.WaitStatus); ok {
+// 				m.logger.Debug("Command exit status", "status", status.ExitStatus())
+// 				os.Exit(status.ExitStatus())
+// 			}
+// 		}
+// 		return fmt.Errorf("command execution failed: %v", err)
+// 	}
+
+// 	m.logger.Debug("Command executed successfully")
+// 	return nil
+// }
+
 // Execute runs the command with the network jail group membership
-func (m *MacOSNetJail) Execute(command []string, extraEnv map[string]string) error {
+func (m *MacOSNetJail) Command(command []string) *exec.Cmd {
 	m.logger.Debug("Execute called", "command", command)
-	if len(command) == 0 {
-		return fmt.Errorf("no command specified")
-	}
 
 	// Create command directly (no sg wrapper needed)
 	m.logger.Debug("Creating command with group membership", "groupID", m.groupID)
 	cmd := exec.Command(command[0], command[1:]...)
 	m.logger.Debug("Full command args", "args", command)
 
-	// Set up environment
-	m.logger.Debug("Setting up environment")
-	env := os.Environ()
-
-	// Add extra environment variables (including CA cert if provided)
-	for key, value := range extraEnv {
-		env = append(env, fmt.Sprintf("%s=%s", key, value))
-	}
-
-	// When running under sudo, restore essential user environment variables
-	sudoUser := os.Getenv("SUDO_USER")
-	if sudoUser != "" {
-		user, err := user.Lookup(sudoUser)
-		if err == nil {
-			// Set HOME to original user's home directory
-			env = append(env, fmt.Sprintf("HOME=%s", user.HomeDir))
-			// Set USER to original username
-			env = append(env, fmt.Sprintf("USER=%s", sudoUser))
-			// Set LOGNAME to original username (some tools check this instead of USER)
-			env = append(env, fmt.Sprintf("LOGNAME=%s", sudoUser))
-			m.logger.Debug("Restored user environment", "home", user.HomeDir, "user", sudoUser)
-		}
-	}
-
-	cmd.Env = env
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-
-	// Set group ID using syscall
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Credential: &syscall.Credential{
-			Gid: uint32(m.groupID),
-		},
-	}
-
-	// Drop privileges to original user if running under sudo
-	sudoUID := os.Getenv("SUDO_UID")
-	if sudoUID != "" {
-		uid, err := strconv.Atoi(sudoUID)
-		if err != nil {
-			m.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", sudoUID, "error", err)
-		} else {
-			// Use original user ID but KEEP the jail group for network isolation
-			cmd.SysProcAttr = &syscall.SysProcAttr{
-				Credential: &syscall.Credential{
-					Uid: uint32(uid),
-					Gid: uint32(m.groupID), // Keep jail group, not original user's group
-				},
-			}
-			m.logger.Debug("Dropping privileges to original user with jail group", "uid", uid, "jail_gid", m.groupID)
-		}
-	}
-
-	// Start and wait for command to complete
-	m.logger.Debug("Starting command", "path", cmd.Path, "args", cmd.Args)
-	err := cmd.Start()
-	if err != nil {
-		return fmt.Errorf("failed to start command: %v", err)
-	}
-	m.logger.Debug("Command started, waiting for completion")
-
-	// Wait for command to complete
-	err = cmd.Wait()
-	m.logger.Debug("Command completed", "error", err)
-	if err != nil {
-		if exitError, ok := err.(*exec.ExitError); ok {
-			if status, ok := exitError.Sys().(syscall.WaitStatus); ok {
-				m.logger.Debug("Command exit status", "status", status.ExitStatus())
-				os.Exit(status.ExitStatus())
-			}
-		}
-		return fmt.Errorf("command execution failed: %v", err)
-	}
-
-	m.logger.Debug("Command executed successfully")
-	return nil
+	return cmd
 }
 
 // Cleanup removes PF rules and cleans up temporary files
-func (m *MacOSNetJail) Cleanup() error {
+func (m *MacOSNetJail) Close() error {
 	m.logger.Debug("Starting cleanup process")
 	if m.config.SkipCleanup {
 		m.logger.Debug("Skipping cleanup (SkipCleanup=true)")
@@ -183,7 +192,7 @@ func (m *MacOSNetJail) Cleanup() error {
 // ensureGroup creates the network jail group if it doesn't exist
 func (m *MacOSNetJail) ensureGroup() error {
 	// Check if group already exists
-	output, err := exec.Command("dscl", ".", "-read", fmt.Sprintf("/Groups/%s", GROUP_NAME), "PrimaryGroupID").Output()
+	output, err := exec.Command("dscl", ".", "-read", fmt.Sprintf("/Groups/%s", groupName), "PrimaryGroupID").Output()
 	if err == nil {
 		// Parse GID from output
 		stdout := string(output)
@@ -203,14 +212,14 @@ func (m *MacOSNetJail) ensureGroup() error {
 	}
 
 	// Group doesn't exist, create it
-	cmd := exec.Command("dseditgroup", "-o", "create", GROUP_NAME)
+	cmd := exec.Command("dseditgroup", "-o", "create", groupName)
 	err = cmd.Run()
 	if err != nil {
 		return fmt.Errorf("failed to create group: %v", err)
 	}
 
 	// Get the newly created group's GID
-	output, err = exec.Command("dscl", ".", "-read", fmt.Sprintf("/Groups/%s", GROUP_NAME), "PrimaryGroupID").Output()
+	output, err = exec.Command("dscl", ".", "-read", fmt.Sprintf("/Groups/%s", groupName), "PrimaryGroupID").Output()
 	if err != nil {
 		return fmt.Errorf("failed to read group GID: %v", err)
 	}
@@ -230,7 +239,7 @@ func (m *MacOSNetJail) ensureGroup() error {
 		}
 	}
 
-	return fmt.Errorf("failed to get GID for group %s", GROUP_NAME)
+	return fmt.Errorf("failed to get GID for group %s", groupName)
 }
 
 // getDefaultInterface gets the default network interface
@@ -309,7 +318,7 @@ func (m *MacOSNetJail) setupPFRules() error {
 	}
 
 	// Load rules into anchor
-	cmd := exec.Command("pfctl", "-a", PF_ANCHOR_NAME, "-f", m.pfRulesPath)
+	cmd := exec.Command("pfctl", "-a", pfAnchorName, "-f", m.pfRulesPath)
 	err = cmd.Run()
 	if err != nil {
 		return fmt.Errorf("failed to load PF rules: %v", err)
@@ -333,7 +342,7 @@ rdr-anchor "%s"
 # 4. Filtering
 anchor "com.apple/*"
 anchor "%s"
-`, PF_ANCHOR_NAME, PF_ANCHOR_NAME)
+`, pfAnchorName, pfAnchorName)
 
 	// Write and load the main ruleset
 	err = os.WriteFile(m.mainRulesPath, []byte(mainRules), 0644)
@@ -349,7 +358,7 @@ anchor "%s"
 	}
 
 	// Verify that rules were loaded correctly
-	cmd = exec.Command("pfctl", "-a", PF_ANCHOR_NAME, "-s", "rules")
+	cmd = exec.Command("pfctl", "-a", pfAnchorName, "-s", "rules")
 	output, err := cmd.Output()
 	if err == nil && len(output) > 0 {
 		// Rules loaded successfully
@@ -362,7 +371,7 @@ anchor "%s"
 // removePFRules removes PF rules from anchor
 func (m *MacOSNetJail) removePFRules() error {
 	// Flush the anchor
-	cmd := exec.Command("pfctl", "-a", PF_ANCHOR_NAME, "-F", "all")
+	cmd := exec.Command("pfctl", "-a", pfAnchorName, "-F", "all")
 	cmd.Run() // Ignore errors during cleanup
 
 	return nil

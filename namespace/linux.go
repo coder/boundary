@@ -1,46 +1,34 @@
 //go:build linux
 
-package network
+package namespace
 
 import (
 	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
-	"os/user"
-	"strconv"
-	"syscall"
 	"time"
 )
 
-const (
-	namespacePrefix = "coder_jail"
-)
-
-// LinuxJail implements NetJail using Linux network namespaces
-type LinuxJail struct {
-	config    JailConfig
+// Linux implements jail.Commander using Linux network namespaces
+type Linux struct {
+	config    Config
 	namespace string
 	logger    *slog.Logger
 }
 
-// newLinuxJail creates a new Linux network jail instance
-func newLinuxJail(config JailConfig, logger *slog.Logger) (*LinuxJail, error) {
-	// Generate unique namespace name
-	namespace := fmt.Sprintf("%s_%d", namespacePrefix, time.Now().UnixNano()%10000000)
-
-	return &LinuxJail{
+// newLinux creates a new Linux network jail instance
+func newLinux(config Config, logger *slog.Logger) (*Linux, error) {
+	return &Linux{
 		config:    config,
-		namespace: namespace,
+		namespace: newNamespaceName(),
 		logger:    logger,
 	}, nil
 }
 
 // Setup creates network namespace and configures iptables rules
-func (l *LinuxJail) Setup(httpPort, httpsPort int) error {
-	l.logger.Debug("Setup called", "httpPort", httpPort, "httpsPort", httpsPort)
-	l.config.HTTPPort = httpPort
-	l.config.HTTPSPort = httpsPort
+func (l *Linux) Open() error {
+	l.logger.Debug("Setup called")
 
 	// Setup DNS configuration BEFORE creating namespace
 	// This ensures the namespace-specific resolv.conf is available when namespace is created
@@ -79,12 +67,102 @@ func (l *LinuxJail) Setup(httpPort, httpsPort int) error {
 	return nil
 }
 
-// Execute runs a command within the network namespace
-func (l *LinuxJail) Execute(command []string, extraEnv map[string]string) error {
-	l.logger.Debug("Execute called", "command", command)
-	if len(command) == 0 {
-		return fmt.Errorf("no command specified")
-	}
+// // Execute runs a command within the network namespace
+// func (l *LinuxJail) Execute(command []string, extraEnv map[string]string) error {
+// 	l.logger.Debug("Execute called", "command", command)
+// 	if len(command) == 0 {
+// 		return fmt.Errorf("no command specified")
+// 	}
+
+// 	// Create command with ip netns exec
+// 	l.logger.Debug("Creating command with namespace", "namespace", l.namespace)
+// 	cmdArgs := []string{"ip", "netns", "exec", l.namespace}
+// 	cmdArgs = append(cmdArgs, command...)
+// 	l.logger.Debug("Full command args", "args", cmdArgs)
+
+// 	cmd := exec.Command("ip", cmdArgs[1:]...)
+
+// 	// Set up environment
+// 	l.logger.Debug("Setting up environment")
+// 	env := os.Environ()
+
+// 	// Add extra environment variables (including CA cert if provided)
+// 	for key, value := range extraEnv {
+// 		env = append(env, fmt.Sprintf("%s=%s", key, value))
+// 	}
+
+// 	// When running under sudo, restore essential user environment variables
+// 	sudoUser := os.Getenv("SUDO_USER")
+// 	if sudoUser != "" {
+// 		user, err := user.Lookup(sudoUser)
+// 		if err == nil {
+// 			// Set HOME to original user's home directory
+// 			env = append(env, fmt.Sprintf("HOME=%s", user.HomeDir))
+// 			// Set USER to original username
+// 			env = append(env, fmt.Sprintf("USER=%s", sudoUser))
+// 			// Set LOGNAME to original username (some tools check this instead of USER)
+// 			env = append(env, fmt.Sprintf("LOGNAME=%s", sudoUser))
+// 			l.logger.Debug("Restored user environment", "home", user.HomeDir, "user", sudoUser)
+// 		}
+// 	}
+
+// 	cmd.Env = env
+// 	cmd.Stdin = os.Stdin
+// 	cmd.Stdout = os.Stdout
+// 	cmd.Stderr = os.Stderr
+
+// 	// Drop privileges to original user if running under sudo
+// 	var gid, uid int
+// 	var err error
+// 	sudoUID := os.Getenv("SUDO_UID")
+// 	if sudoUID != "" {
+// 		uid, err = strconv.Atoi(sudoUID)
+// 		if err != nil {
+// 			l.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", sudoUID, "error", err)
+// 		}
+// 	}
+// 	sudoGID := os.Getenv("SUDO_GID")
+// 	if sudoGID != "" {
+// 		gid, err = strconv.Atoi(sudoGID)
+// 		if err != nil {
+// 			l.logger.Warn("Invalid SUDO_GID, subprocess will run as root", "sudo_gid", sudoGID, "error", err)
+// 		}
+// 	}
+// 	cmd.SysProcAttr = &syscall.SysProcAttr{
+// 		Credential: &syscall.Credential{
+// 			Uid: uint32(uid),
+// 			Gid: uint32(gid),
+// 		},
+// 	}
+
+// 	// Start command
+// 	l.logger.Debug("Starting command", "path", cmd.Path, "args", cmd.Args)
+// 	err = cmd.Start()
+// 	if err != nil {
+// 		return fmt.Errorf("failed to start command: %v", err)
+// 	}
+// 	l.logger.Debug("Command started, waiting for completion")
+
+// 	// Wait for command to complete
+// 	err = cmd.Wait()
+// 	l.logger.Debug("Command completed", "error", err)
+// 	if err != nil {
+// 		if exitError, ok := err.(*exec.ExitError); ok {
+// 			if status, ok := exitError.Sys().(syscall.WaitStatus); ok {
+// 				l.logger.Debug("Command exit status", "status", status.ExitStatus())
+// 				os.Exit(status.ExitStatus())
+// 			}
+// 		}
+// 		return fmt.Errorf("command failed: %v", err)
+// 	}
+
+// 	l.logger.Debug("Command executed successfully")
+// 	return nil
+// }
+
+// Command returns an exec.Cmd configured to run within the network namespace
+func (l *Linux) Command(command []string) *exec.Cmd {
+	l.logger.Debug("Command called", "command", command)
 
 	// Create command with ip netns exec
 	l.logger.Debug("Creating command with namespace", "namespace", l.namespace)
@@ -92,88 +170,11 @@ func (l *LinuxJail) Execute(command []string, extraEnv map[string]string) error 
 	cmdArgs = append(cmdArgs, command...)
 	l.logger.Debug("Full command args", "args", cmdArgs)
 
-	cmd := exec.Command("ip", cmdArgs[1:]...)
-
-	// Set up environment
-	l.logger.Debug("Setting up environment")
-	env := os.Environ()
-
-	// Add extra environment variables (including CA cert if provided)
-	for key, value := range extraEnv {
-		env = append(env, fmt.Sprintf("%s=%s", key, value))
-	}
-
-	// When running under sudo, restore essential user environment variables
-	sudoUser := os.Getenv("SUDO_USER")
-	if sudoUser != "" {
-		user, err := user.Lookup(sudoUser)
-		if err == nil {
-			// Set HOME to original user's home directory
-			env = append(env, fmt.Sprintf("HOME=%s", user.HomeDir))
-			// Set USER to original username
-			env = append(env, fmt.Sprintf("USER=%s", sudoUser))
-			// Set LOGNAME to original username (some tools check this instead of USER)
-			env = append(env, fmt.Sprintf("LOGNAME=%s", sudoUser))
-			l.logger.Debug("Restored user environment", "home", user.HomeDir, "user", sudoUser)
-		}
-	}
-
-	cmd.Env = env
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	// Drop privileges to original user if running under sudo
-	var gid, uid int
-	var err error
-	sudoUID := os.Getenv("SUDO_UID")
-	if sudoUID != "" {
-		uid, err = strconv.Atoi(sudoUID)
-		if err != nil {
-			l.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", sudoUID, "error", err)
-		}
-	}
-	sudoGID := os.Getenv("SUDO_GID")
-	if sudoGID != "" {
-		gid, err = strconv.Atoi(sudoGID)
-		if err != nil {
-			l.logger.Warn("Invalid SUDO_GID, subprocess will run as root", "sudo_gid", sudoGID, "error", err)
-		}
-	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Credential: &syscall.Credential{
-			Uid: uint32(uid),
-			Gid: uint32(gid),
-		},
-	}
-
-	// Start command
-	l.logger.Debug("Starting command", "path", cmd.Path, "args", cmd.Args)
-	err = cmd.Start()
-	if err != nil {
-		return fmt.Errorf("failed to start command: %v", err)
-	}
-	l.logger.Debug("Command started, waiting for completion")
-
-	// Wait for command to complete
-	err = cmd.Wait()
-	l.logger.Debug("Command completed", "error", err)
-	if err != nil {
-		if exitError, ok := err.(*exec.ExitError); ok {
-			if status, ok := exitError.Sys().(syscall.WaitStatus); ok {
-				l.logger.Debug("Command exit status", "status", status.ExitStatus())
-				os.Exit(status.ExitStatus())
-			}
-		}
-		return fmt.Errorf("command failed: %v", err)
-	}
-
-	l.logger.Debug("Command executed successfully")
-	return nil
+	return exec.Command("ip", cmdArgs[1:]...)
 }
 
 // Cleanup removes the network namespace and iptables rules
-func (l *LinuxJail) Cleanup() error {
+func (l *Linux) Close() error {
 	if l.config.SkipCleanup {
 		return nil
 	}
@@ -204,7 +205,7 @@ func (l *LinuxJail) Cleanup() error {
 }
 
 // createNamespace creates a new network namespace
-func (l *LinuxJail) createNamespace() error {
+func (l *Linux) createNamespace() error {
 	cmd := exec.Command("ip", "netns", "add", l.namespace)
 	err := cmd.Run()
 	if err != nil {
@@ -214,7 +215,7 @@ func (l *LinuxJail) createNamespace() error {
 }
 
 // setupNetworking configures networking within the namespace
-func (l *LinuxJail) setupNetworking() error {
+func (l *Linux) setupNetworking() error {
 	// Create veth pair with short names (Linux interface names limited to 15 chars)
 	// Generate unique ID to avoid conflicts
 	uniqueID := fmt.Sprintf("%d", time.Now().UnixNano()%10000000) // 7 digits max
@@ -247,7 +248,7 @@ func (l *LinuxJail) setupNetworking() error {
 // setupDNS configures DNS resolution for the namespace
 // This ensures reliable DNS resolution by using public DNS servers
 // instead of relying on the host's potentially complex DNS configuration
-func (l *LinuxJail) setupDNS() error {
+func (l *Linux) setupDNS() error {
 	// Always create namespace-specific resolv.conf with reliable public DNS servers
 	// This avoids issues with systemd-resolved, Docker DNS, and other complex setups
 	netnsEtc := fmt.Sprintf("/etc/netns/%s", l.namespace)
@@ -275,7 +276,7 @@ options timeout:2 attempts:2
 }
 
 // setupIptables configures iptables rules for traffic redirection
-func (l *LinuxJail) setupIptables() error {
+func (l *Linux) setupIptables() error {
 	// Enable IP forwarding
 	cmd := exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1")
 	cmd.Run() // Ignore error
@@ -307,7 +308,7 @@ func (l *LinuxJail) setupIptables() error {
 }
 
 // removeIptables removes iptables rules
-func (l *LinuxJail) removeIptables() error {
+func (l *Linux) removeIptables() error {
 	// Remove NAT rule
 	cmd := exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING", "-s", "192.168.100.0/24", "-j", "MASQUERADE")
 	cmd.Run() // Ignore errors during cleanup
@@ -316,7 +317,7 @@ func (l *LinuxJail) removeIptables() error {
 }
 
 // removeNamespace removes the network namespace
-func (l *LinuxJail) removeNamespace() error {
+func (l *Linux) removeNamespace() error {
 	cmd := exec.Command("ip", "netns", "del", l.namespace)
 	err := cmd.Run()
 	if err != nil {
