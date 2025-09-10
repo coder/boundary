@@ -7,10 +7,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/coder/jail/audit"
 	"github.com/coder/jail/proxy"
-	"github.com/coder/jail/rules"
-	"github.com/coder/jail/tls"
 )
 
 type Commander interface {
@@ -22,18 +19,12 @@ type Commander interface {
 type Config struct {
 	CommandExecutor Commander
 	ProxyServer     *proxy.ProxyServer
-	CertManager     *tls.CertificateManager
-	RuleEngine      *rules.RuleEngine
-	Auditor         *audit.LoggingAuditor
 	Logger          *slog.Logger
 }
 
 type Jail struct {
 	commandExecutor Commander
 	proxyServer     *proxy.ProxyServer
-	certManager     *tls.CertificateManager
-	ruleEngine      *rules.RuleEngine
-	auditor         *audit.LoggingAuditor
 	logger          *slog.Logger
 	cancel          context.CancelFunc
 	ctx             context.Context
@@ -45,9 +36,6 @@ func New(config Config) *Jail {
 	return &Jail{
 		commandExecutor: config.CommandExecutor,
 		proxyServer:     config.ProxyServer,
-		certManager:     config.CertManager,
-		ruleEngine:      config.RuleEngine,
-		auditor:         config.Auditor,
 		logger:          config.Logger,
 		ctx:             ctx,
 		cancel:          cancel,
@@ -77,13 +65,6 @@ func (j *Jail) Open() error {
 
 func (j *Jail) Command(command []string) *exec.Cmd {
 	return j.commandExecutor.Command(command)
-}
-
-func (j *Jail) GetCACertPEM() ([]byte, error) {
-	if j.certManager == nil {
-		return nil, fmt.Errorf("certificate manager not available (TLS interception disabled)")
-	}
-	return j.certManager.GetCACertPEM()
 }
 
 func (j *Jail) Close() error {

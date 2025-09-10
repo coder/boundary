@@ -190,9 +190,6 @@ func Run(config Config, args []string) error {
 	jailConfig := jail.Config{
 		CommandExecutor: networkInstance,
 		ProxyServer:     proxyServer,
-		CertManager:     certManager,
-		RuleEngine:      ruleEngine,
-		Auditor:         auditor,
 		Logger:          logger,
 	}
 
