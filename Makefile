@@ -36,18 +36,18 @@ build-all:
 	@echo "Binaries are in the '$(BUILD_DIR)' directory:"
 	@ls -la $(BUILD_DIR)/
 
-# Run tests
+# Run tests (needs sudo for E2E tests)
 .PHONY: test
 test:
 	@echo "Running tests..."
-	go test -v -race ./...
+	sudo go test -v -race ./...
 	@echo "✓ All tests passed!"
 
-# Run tests with coverage
+# Run tests with coverage (needs sudo for E2E tests)
 .PHONY: test-coverage
 test-coverage:
 	@echo "Running tests with coverage..."
-	go test -v -race -coverprofile=coverage.out ./...
+	sudo go test -v -race -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "✓ Coverage report generated: coverage.html"
 
