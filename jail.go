@@ -250,17 +250,6 @@ func (j *Jail) Execute(command []string, additionalEnv map[string]string) error 
 	return nil
 }
 
-// Run is a convenience method that combines Start() and Execute().
-// It starts the jail, executes the command, and automatically cleans up.
-func (j *Jail) Run(command []string, additionalEnv map[string]string) error {
-	if err := j.Start(); err != nil {
-		return err
-	}
-	defer j.Stop()
-
-	return j.Execute(command, additionalEnv)
-}
-
 // Stop gracefully shuts down the jail and cleans up resources.
 func (j *Jail) Stop() error {
 	if j.cleanedUp {
