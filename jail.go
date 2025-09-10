@@ -68,10 +68,6 @@ func (j *Jail) Command(command []string) *exec.Cmd {
 	return j.commandExecutor.Command(command)
 }
 
-func (j *Jail) CommandExecutor() Commander {
-	return j.commandExecutor
-}
-
 func (j *Jail) Close() error {
 	// Cancel context to stop proxy server
 	if j.cancel != nil {

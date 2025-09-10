@@ -134,19 +134,6 @@ func Run(config Config, args []string) error {
 		return fmt.Errorf("failed to get config directory: %v", err)
 	}
 
-	// Create certificate manager (if TLS interception is enabled)
-	var certManager *tls.CertificateManager
-	var tlsConfig *cryptotls.Config
-
-	if !config.NoTLSIntercept {
-		certManager, err = tls.NewCertificateManager(configDir, logger)
-		if err != nil {
-			logger.Error("Failed to create certificate manager", "error", err)
-			return fmt.Errorf("failed to create certificate manager: %v", err)
-		}
-		tlsConfig = certManager.GetTLSConfig()
-	}
-
 	// Create network namespace configuration
 	nsConfig := namespace.Config{
 		HTTPPort:  8040,
@@ -158,6 +145,44 @@ func Run(config Config, args []string) error {
 	if err != nil {
 		logger.Error("Failed to create network namespace", "error", err)
 		return fmt.Errorf("failed to create network namespace: %v", err)
+	}
+
+	// Create certificate manager (if TLS interception is enabled)
+	var certManager *tls.CertificateManager
+	var tlsConfig *cryptotls.Config
+
+	if !config.NoTLSIntercept {
+		certManager, err = tls.NewCertificateManager(configDir, logger)
+		if err != nil {
+			logger.Error("Failed to create certificate manager", "error", err)
+			return fmt.Errorf("failed to create certificate manager: %v", err)
+		}
+		tlsConfig = certManager.GetTLSConfig()
+
+		// Get CA certificate for environment
+		caCertPEM, err := certManager.GetCACertPEM()
+		if err != nil {
+			logger.Error("Failed to get CA certificate", "error", err)
+			return fmt.Errorf("failed to get CA certificate: %v", err)
+		}
+
+		// Write CA certificate to a temporary file for tools that need a file path
+		caCertPath := filepath.Join(configDir, "ca-cert.pem")
+		err = os.WriteFile(caCertPath, caCertPEM, 0644)
+		if err != nil {
+			logger.Error("Failed to write CA certificate file", "error", err)
+			return fmt.Errorf("failed to write CA certificate file: %v", err)
+		}
+
+		// Set standard CA certificate environment variables for common tools
+		// This makes tools like curl, git, etc. trust our dynamically generated CA
+		networkInstance.SetEnv("SSL_CERT_FILE", caCertPath)       // OpenSSL/LibreSSL-based tools
+		networkInstance.SetEnv("SSL_CERT_DIR", configDir)         // OpenSSL certificate directory
+		networkInstance.SetEnv("CURL_CA_BUNDLE", caCertPath)      // curl
+		networkInstance.SetEnv("GIT_SSL_CAINFO", caCertPath)      // Git
+		networkInstance.SetEnv("REQUESTS_CA_BUNDLE", caCertPath)  // Python requests
+		networkInstance.SetEnv("NODE_EXTRA_CA_CERTS", caCertPath) // Node.js
+		networkInstance.SetEnv("JAIL_CA_CERT", string(caCertPEM)) // Keep for backward compatibility
 	}
 
 	// Create proxy server
@@ -213,34 +238,6 @@ func Run(config Config, args []string) error {
 	if err != nil {
 		logger.Error("Failed to open jail", "error", err)
 		return fmt.Errorf("failed to open jail: %v", err)
-	}
-
-	// Setup CA certificate environment variables if TLS interception is enabled
-	if !config.NoTLSIntercept && certManager != nil {
-		// Get CA certificate for environment
-		caCertPEM, err := certManager.GetCACertPEM()
-		if err != nil {
-			logger.Error("Failed to get CA certificate", "error", err)
-			return fmt.Errorf("failed to get CA certificate: %v", err)
-		}
-
-		// Write CA certificate to a temporary file for tools that need a file path
-		caCertPath := filepath.Join(configDir, "ca-cert.pem")
-		err = os.WriteFile(caCertPath, caCertPEM, 0644)
-		if err != nil {
-			logger.Error("Failed to write CA certificate file", "error", err)
-			return fmt.Errorf("failed to write CA certificate file: %v", err)
-		}
-
-		// Set standard CA certificate environment variables for common tools
-		// This makes tools like curl, git, etc. trust our dynamically generated CA
-		jailInstance.CommandExecutor().SetEnv("SSL_CERT_FILE", caCertPath)       // OpenSSL/LibreSSL-based tools
-		jailInstance.CommandExecutor().SetEnv("SSL_CERT_DIR", configDir)         // OpenSSL certificate directory
-		jailInstance.CommandExecutor().SetEnv("CURL_CA_BUNDLE", caCertPath)      // curl
-		jailInstance.CommandExecutor().SetEnv("GIT_SSL_CAINFO", caCertPath)      // Git
-		jailInstance.CommandExecutor().SetEnv("REQUESTS_CA_BUNDLE", caCertPath)  // Python requests
-		jailInstance.CommandExecutor().SetEnv("NODE_EXTRA_CA_CERTS", caCertPath) // Node.js
-		jailInstance.CommandExecutor().SetEnv("JAIL_CA_CERT", string(caCertPEM)) // Keep for backward compatibility
 	}
 
 	// Create context for graceful shutdown
