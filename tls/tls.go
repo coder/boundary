@@ -66,7 +66,7 @@ func (cm *CertificateManager) GetCACertPEM() ([]byte, error) {
 // Returns the TLS config, CA cert path, and config directory
 func (cm *CertificateManager) SetupTLSAndWriteCACert() (*tls.Config, string, string, error) {
 	// Get config directory
-	configDir, err := GetConfigDir()
+	configDir, err := getConfigDir()
 	if err != nil {
 		return nil, "", "", fmt.Errorf("failed to get config directory: %v", err)
 	}
@@ -342,8 +342,8 @@ func (cm *CertificateManager) generateServerCertificate(hostname string) (*tls.C
 	return tlsCert, nil
 }
 
-// GetConfigDir returns the configuration directory path
-func GetConfigDir() (string, error) {
+// getConfigDir returns the configuration directory path
+func getConfigDir() (string, error) {
 	// When running under sudo, use the original user's home directory
 	// so the subprocess can access the CA certificate files
 	var homeDir string
