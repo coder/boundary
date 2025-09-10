@@ -142,7 +142,7 @@ func (cm *CertificateManager) generateCA(keyPath, certPath string) error {
 	// Create config directory if it doesn't exist
 	err := os.MkdirAll(cm.configDir, 0700)
 	if err != nil {
-		return fmt.Errorf("failed to create config directory: %v", err)
+		return fmt.Errorf("failed to create config directory at %s: %v", cm.configDir, err)
 	}
 
 	// When running under sudo, ensure the directory is owned by the original user
