@@ -15,9 +15,10 @@ import (
 
 // Linux implements jail.Commander using Linux network namespaces
 type Linux struct {
-	config    Config
-	namespace string
-	logger    *slog.Logger
+	config      Config
+	namespace   string
+	logger      *slog.Logger
+	preparedEnv []string
 }
 
 // newLinux creates a new Linux network jail instance
@@ -35,55 +36,31 @@ func (l *Linux) Open() error {
 
 	// Setup DNS configuration BEFORE creating namespace
 	// This ensures the namespace-specific resolv.conf is available when namespace is created
-	l.logger.Debug("Setting up DNS configuration")
 	err := l.setupDNS()
 	if err != nil {
 		return fmt.Errorf("failed to setup DNS: %v", err)
 	}
-	l.logger.Debug("DNS setup completed")
 
-	// Create network namespace
-	l.logger.Debug("Creating network namespace", "namespace", l.namespace)
+	// Create namespace
 	err = l.createNamespace()
 	if err != nil {
 		return fmt.Errorf("failed to create namespace: %v", err)
 	}
-	l.logger.Debug("Network namespace created")
 
-	// Setup network interface in namespace
-	l.logger.Debug("Setting up networking")
+	// Setup networking within namespace
 	err = l.setupNetworking()
 	if err != nil {
 		return fmt.Errorf("failed to setup networking: %v", err)
 	}
-	l.logger.Debug("Networking setup completed")
 
 	// Setup iptables rules
-	l.logger.Debug("Setting up iptables rules")
 	err = l.setupIptables()
 	if err != nil {
 		return fmt.Errorf("failed to setup iptables: %v", err)
 	}
-	l.logger.Debug("Iptables setup completed")
 
-	l.logger.Debug("Setup completed successfully")
-	return nil
-}
-
-// Command returns an exec.Cmd configured to run within the network namespace
-func (l *Linux) Command(command []string) *exec.Cmd {
-	l.logger.Debug("Command called", "command", command)
-
-	// Create command with ip netns exec
-	l.logger.Debug("Creating command with namespace", "namespace", l.namespace)
-	cmdArgs := []string{"ip", "netns", "exec", l.namespace}
-	cmdArgs = append(cmdArgs, command...)
-	l.logger.Debug("Full command args", "args", cmdArgs)
-
-	cmd := exec.Command("ip", cmdArgs[1:]...)
-
-	// Set up environment
-	l.logger.Debug("Setting up environment")
+	// Prepare environment once during setup
+	l.logger.Debug("Preparing environment")
 	env := os.Environ()
 
 	// Add extra environment variables from config
@@ -106,7 +83,27 @@ func (l *Linux) Command(command []string) *exec.Cmd {
 		}
 	}
 
-	cmd.Env = env
+	// Store prepared environment for use in Command method
+	l.preparedEnv = env
+
+	l.logger.Debug("Setup completed successfully")
+	return nil
+}
+
+// Command returns an exec.Cmd configured to run within the network namespace
+func (l *Linux) Command(command []string) *exec.Cmd {
+	l.logger.Debug("Command called", "command", command)
+
+	// Create command with ip netns exec
+	l.logger.Debug("Creating command with namespace", "namespace", l.namespace)
+	cmdArgs := []string{"ip", "netns", "exec", l.namespace}
+	cmdArgs = append(cmdArgs, command...)
+	l.logger.Debug("Full command args", "args", cmdArgs)
+
+	cmd := exec.Command("ip", cmdArgs[1:]...)
+
+	// Use prepared environment from Open method
+	cmd.Env = l.preparedEnv
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

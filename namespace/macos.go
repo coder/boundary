@@ -25,6 +25,7 @@ type MacOSNetJail struct {
 	pfRulesPath   string
 	mainRulesPath string
 	logger        *slog.Logger
+	preparedEnv   []string
 }
 
 // newMacOSJail creates a new macOS network jail instance
@@ -51,7 +52,6 @@ func (m *MacOSNetJail) Open() error {
 	if err != nil {
 		return fmt.Errorf("failed to ensure group: %v", err)
 	}
-	m.logger.Debug("Network jail group ready", "groupID", m.groupID)
 
 	// Setup PF rules
 	m.logger.Debug("Setting up PF rules")
@@ -59,23 +59,9 @@ func (m *MacOSNetJail) Open() error {
 	if err != nil {
 		return fmt.Errorf("failed to setup PF rules: %v", err)
 	}
-	m.logger.Debug("PF rules setup completed")
 
-	m.logger.Debug("Setup completed successfully")
-	return nil
-}
-
-// Execute runs the command with the network jail group membership
-func (m *MacOSNetJail) Command(command []string) *exec.Cmd {
-	m.logger.Debug("Command called", "command", command)
-
-	// Create command directly (no sg wrapper needed)
-	m.logger.Debug("Creating command with group membership", "groupID", m.groupID)
-	cmd := exec.Command(command[0], command[1:]...)
-	m.logger.Debug("Full command args", "args", command)
-
-	// Set up environment
-	m.logger.Debug("Setting up environment")
+	// Prepare environment once during setup
+	m.logger.Debug("Preparing environment")
 	env := os.Environ()
 
 	// Add extra environment variables from config
@@ -98,7 +84,24 @@ func (m *MacOSNetJail) Command(command []string) *exec.Cmd {
 		}
 	}
 
-	cmd.Env = env
+	// Store prepared environment for use in Command method
+	m.preparedEnv = env
+
+	m.logger.Debug("Setup completed successfully")
+	return nil
+}
+
+// Execute runs the command with the network jail group membership
+func (m *MacOSNetJail) Command(command []string) *exec.Cmd {
+	m.logger.Debug("Command called", "command", command)
+
+	// Create command directly (no sg wrapper needed)
+	m.logger.Debug("Creating command with group membership", "groupID", m.groupID)
+	cmd := exec.Command(command[0], command[1:]...)
+	m.logger.Debug("Full command args", "args", command)
+
+	// Use prepared environment from Open method
+	cmd.Env = m.preparedEnv
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
