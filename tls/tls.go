@@ -30,7 +30,12 @@ type CertificateManager struct {
 }
 
 // NewCertificateManager creates a new certificate manager
-func NewCertificateManager(configDir string, logger *slog.Logger) (*CertificateManager, error) {
+func NewCertificateManager(logger *slog.Logger) (*CertificateManager, error) {
+	configDir, err := getConfigDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine config directory: %v", err)
+	}
+
 	cm := &CertificateManager{
 		certCache: make(map[string]*tls.Certificate),
 		logger:    logger,
@@ -38,7 +43,7 @@ func NewCertificateManager(configDir string, logger *slog.Logger) (*CertificateM
 	}
 
 	// Load or generate CA certificate
-	err := cm.loadOrGenerateCA()
+	err = cm.loadOrGenerateCA()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load or generate CA: %v", err)
 	}
@@ -60,6 +65,34 @@ func (cm *CertificateManager) GetCACertPEM() ([]byte, error) {
 		Type:  "CERTIFICATE",
 		Bytes: cm.caCert.Raw,
 	}), nil
+}
+
+// SetupTLSAndWriteCACert sets up TLS config and writes CA certificate to file
+// Returns the TLS config, CA cert path, and config directory
+func (cm *CertificateManager) SetupTLSAndWriteCACert() (*tls.Config, string, string, error) {
+	// Get config directory
+	configDir, err := getConfigDir()
+	if err != nil {
+		return nil, "", "", fmt.Errorf("failed to get config directory: %v", err)
+	}
+
+	// Get TLS config
+	tlsConfig := cm.GetTLSConfig()
+
+	// Get CA certificate PEM
+	caCertPEM, err := cm.GetCACertPEM()
+	if err != nil {
+		return nil, "", "", fmt.Errorf("failed to get CA certificate: %v", err)
+	}
+
+	// Write CA certificate to file
+	caCertPath := filepath.Join(configDir, "ca-cert.pem")
+	err = os.WriteFile(caCertPath, caCertPEM, 0644)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("failed to write CA certificate file: %v", err)
+	}
+
+	return tlsConfig, caCertPath, configDir, nil
 }
 
 // loadOrGenerateCA loads existing CA or generates a new one
@@ -314,8 +347,8 @@ func (cm *CertificateManager) generateServerCertificate(hostname string) (*tls.C
 	return tlsCert, nil
 }
 
-// GetConfigDir returns the configuration directory path
-func GetConfigDir() (string, error) {
+// getConfigDir returns the configuration directory path
+func getConfigDir() (string, error) {
 	// When running under sudo, use the original user's home directory
 	// so the subprocess can access the CA certificate files
 	var homeDir string
