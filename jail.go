@@ -6,8 +6,6 @@ import (
 	"log/slog"
 	"os/exec"
 	"time"
-
-	"github.com/coder/jail/proxy"
 )
 
 type Commander interface {
@@ -17,15 +15,20 @@ type Commander interface {
 	Close() error
 }
 
+type ProxyServer interface {
+	Start(ctx context.Context) error
+	Stop() error
+}
+
 type Config struct {
 	Commander   Commander
-	ProxyServer *proxy.ProxyServer
+	ProxyServer ProxyServer
 	Logger      *slog.Logger
 }
 
 type Jail struct {
 	commandExecutor Commander
-	proxyServer     *proxy.ProxyServer
+	proxyServer     ProxyServer
 	logger          *slog.Logger
 	cancel          context.CancelFunc
 	ctx             context.Context
