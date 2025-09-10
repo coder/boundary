@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	cryptotls "crypto/tls"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,12 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
-	"time"
 
-	"github.com/coder/jail/audit"
+	"github.com/coder/jail"
 	"github.com/coder/jail/namespace"
-	"github.com/coder/jail/proxy"
-	"github.com/coder/jail/rules"
 	"github.com/coder/jail/tls"
 	"github.com/coder/serpent"
 )
@@ -123,19 +119,6 @@ func Run(config Config, args []string) error {
 		logger.Warn("No allow rules specified; all network traffic will be denied by default")
 	}
 
-	allowRules, err := rules.ParseAllowSpecs(config.AllowStrings)
-	if err != nil {
-		logger.Error("Failed to parse allow rules", "error", err)
-		return fmt.Errorf("failed to parse allow rules: %v", err)
-	}
-
-	// Implicit final deny-all is handled by the RuleEngine default behavior when no rules match.
-	// Build final rules slice in order: user allows only.
-	ruleList := allowRules
-
-	// Create rule engine
-	ruleEngine := rules.NewRuleEngine(ruleList, logger)
-
 	// Get configuration directory
 	configDir, err := tls.GetConfigDir()
 	if err != nil {
@@ -143,22 +126,72 @@ func Run(config Config, args []string) error {
 		return fmt.Errorf("failed to get config directory: %v", err)
 	}
 
-	// Create certificate manager (if TLS interception is enabled)
-	var certManager *tls.CertificateManager
-	var tlsConfig *cryptotls.Config
+	// Create environment map for CA certificate
 	var extraEnv map[string]string = make(map[string]string)
 
-	if !config.NoTLSIntercept {
-		certManager, err = tls.NewCertificateManager(configDir, logger)
+	// Create network namespace configuration
+	nsConfig := namespace.Config{
+		HTTPPort:    8040,
+		HTTPSPort:   8043,
+		SkipCleanup: config.NoJailCleanup,
+		Env:         extraEnv,
+	}
+
+	// Create network namespace instance
+	networkInstance, err := namespace.New(nsConfig, logger)
+	if err != nil {
+		logger.Error("Failed to create network namespace", "error", err)
+		return fmt.Errorf("failed to create network namespace: %v", err)
+	}
+
+	// Create jail configuration
+	jailConfig := jail.Config{
+		CommandExecutor: networkInstance,
+		AllowRules:      config.AllowStrings,
+		NoTLSIntercept:  config.NoTLSIntercept,
+		Logger:          logger,
+		ConfigDir:       configDir,
+		HTTPPort:        8040,
+		HTTPSPort:       8043,
+	}
+
+	// Create jail instance
+	jailInstance, err := jail.New(jailConfig)
+	if err != nil {
+		logger.Error("Failed to create jail", "error", err)
+		return fmt.Errorf("failed to create jail: %v", err)
+	}
+
+	// Setup signal handling BEFORE any setup
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// Handle signals immediately in background
+	go func() {
+		sig := <-sigChan
+		logger.Info("Received signal during setup, cleaning up...", "signal", sig)
+		err := jailInstance.Close()
 		if err != nil {
-			logger.Error("Failed to create certificate manager", "error", err)
-			return fmt.Errorf("failed to create certificate manager: %v", err)
+			logger.Error("Emergency cleanup failed", "error", err)
 		}
+		os.Exit(1)
+	}()
 
-		tlsConfig = certManager.GetTLSConfig()
+	// Ensure cleanup happens no matter what
+	defer func() {
+		logger.Debug("Starting cleanup process")
+		err := jailInstance.Close()
+		if err != nil {
+			logger.Error("Failed to cleanup jail", "error", err)
+		} else {
+			logger.Debug("Cleanup completed successfully")
+		}
+	}()
 
+	// Setup CA certificate environment variables if TLS interception is enabled
+	if !config.NoTLSIntercept {
 		// Get CA certificate for environment
-		caCertPEM, err := certManager.GetCACertPEM()
+		caCertPEM, err := jailInstance.GetCACertPEM()
 		if err != nil {
 			logger.Error("Failed to get CA certificate", "error", err)
 			return fmt.Errorf("failed to get CA certificate: %v", err)
@@ -183,87 +216,21 @@ func Run(config Config, args []string) error {
 		extraEnv["JAIL_CA_CERT"] = string(caCertPEM) // Keep for backward compatibility
 	}
 
-	// Create network namespace configuration
-	nsConfig := namespace.Config{
-		HTTPPort:    8040,
-		HTTPSPort:   8043,
-		SkipCleanup: config.NoJailCleanup,
-	}
-
-	// Create network namespace instance
-	networkInstance, err := namespace.New(nsConfig, logger)
+	// Open jail (starts network namespace and proxy server)
+	err = jailInstance.Open()
 	if err != nil {
-		logger.Error("Failed to create network jail", "error", err)
-		return fmt.Errorf("failed to create network jail: %v", err)
+		logger.Error("Failed to open jail", "error", err)
+		return fmt.Errorf("failed to open jail: %v", err)
 	}
-
-	// Setup signal handling BEFORE any network setup
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	// Handle signals immediately in background
-	go func() {
-		sig := <-sigChan
-		logger.Info("Received signal during setup, cleaning up...", "signal", sig)
-		err := networkInstance.Close()
-		if err != nil {
-			logger.Error("Emergency cleanup failed", "error", err)
-		}
-		os.Exit(1)
-	}()
-
-	// Ensure cleanup happens no matter what
-	defer func() {
-		logger.Debug("Starting cleanup process")
-		err := networkInstance.Close()
-		if err != nil {
-			logger.Error("Failed to cleanup network jail", "error", err)
-		} else {
-			logger.Debug("Cleanup completed successfully")
-		}
-	}()
-
-	// Setup network jail
-	err = networkInstance.Open()
-	if err != nil {
-		logger.Error("Failed to setup network jail", "error", err)
-		return fmt.Errorf("failed to setup network jail: %v", err)
-	}
-
-	// Create auditor
-	auditor := audit.NewLoggingAuditor(logger)
-
-	// Create proxy server
-	proxyConfig := proxy.Config{
-		HTTPPort:   nsConfig.HTTPPort,
-		HTTPSPort:  nsConfig.HTTPSPort,
-		RuleEngine: ruleEngine,
-		Auditor:    auditor,
-		Logger:     logger,
-		TLSConfig:  tlsConfig,
-	}
-
-	proxyServer := proxy.NewProxyServer(proxyConfig)
 
 	// Create context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Start proxy server in background
-	go func() {
-		err := proxyServer.Start(ctx)
-		if err != nil {
-			logger.Error("Proxy server error", "error", err)
-		}
-	}()
-
-	// Give proxy time to start
-	time.Sleep(100 * time.Millisecond)
-
-	// Execute command in network jail
+	// Execute command in jail
 	go func() {
 		defer cancel()
-		err := networkInstance.Command(args).Run()
+		err := jailInstance.Command(args).Run()
 		if err != nil {
 			logger.Error("Command execution failed", "error", err)
 		}
@@ -277,12 +244,6 @@ func Run(config Config, args []string) error {
 	case <-ctx.Done():
 		// Context cancelled by command completion
 		logger.Info("Command completed, shutting down...")
-	}
-
-	// Stop proxy server
-	err = proxyServer.Stop()
-	if err != nil {
-		logger.Error("Failed to stop proxy server", "error", err)
 	}
 
 	return nil

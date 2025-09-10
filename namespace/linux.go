@@ -7,6 +7,9 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"os/user"
+	"strconv"
+	"syscall"
 	"time"
 )
 
@@ -67,99 +70,6 @@ func (l *Linux) Open() error {
 	return nil
 }
 
-// // Execute runs a command within the network namespace
-// func (l *LinuxJail) Execute(command []string, extraEnv map[string]string) error {
-// 	l.logger.Debug("Execute called", "command", command)
-// 	if len(command) == 0 {
-// 		return fmt.Errorf("no command specified")
-// 	}
-
-// 	// Create command with ip netns exec
-// 	l.logger.Debug("Creating command with namespace", "namespace", l.namespace)
-// 	cmdArgs := []string{"ip", "netns", "exec", l.namespace}
-// 	cmdArgs = append(cmdArgs, command...)
-// 	l.logger.Debug("Full command args", "args", cmdArgs)
-
-// 	cmd := exec.Command("ip", cmdArgs[1:]...)
-
-// 	// Set up environment
-// 	l.logger.Debug("Setting up environment")
-// 	env := os.Environ()
-
-// 	// Add extra environment variables (including CA cert if provided)
-// 	for key, value := range extraEnv {
-// 		env = append(env, fmt.Sprintf("%s=%s", key, value))
-// 	}
-
-// 	// When running under sudo, restore essential user environment variables
-// 	sudoUser := os.Getenv("SUDO_USER")
-// 	if sudoUser != "" {
-// 		user, err := user.Lookup(sudoUser)
-// 		if err == nil {
-// 			// Set HOME to original user's home directory
-// 			env = append(env, fmt.Sprintf("HOME=%s", user.HomeDir))
-// 			// Set USER to original username
-// 			env = append(env, fmt.Sprintf("USER=%s", sudoUser))
-// 			// Set LOGNAME to original username (some tools check this instead of USER)
-// 			env = append(env, fmt.Sprintf("LOGNAME=%s", sudoUser))
-// 			l.logger.Debug("Restored user environment", "home", user.HomeDir, "user", sudoUser)
-// 		}
-// 	}
-
-// 	cmd.Env = env
-// 	cmd.Stdin = os.Stdin
-// 	cmd.Stdout = os.Stdout
-// 	cmd.Stderr = os.Stderr
-
-// 	// Drop privileges to original user if running under sudo
-// 	var gid, uid int
-// 	var err error
-// 	sudoUID := os.Getenv("SUDO_UID")
-// 	if sudoUID != "" {
-// 		uid, err = strconv.Atoi(sudoUID)
-// 		if err != nil {
-// 			l.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", sudoUID, "error", err)
-// 		}
-// 	}
-// 	sudoGID := os.Getenv("SUDO_GID")
-// 	if sudoGID != "" {
-// 		gid, err = strconv.Atoi(sudoGID)
-// 		if err != nil {
-// 			l.logger.Warn("Invalid SUDO_GID, subprocess will run as root", "sudo_gid", sudoGID, "error", err)
-// 		}
-// 	}
-// 	cmd.SysProcAttr = &syscall.SysProcAttr{
-// 		Credential: &syscall.Credential{
-// 			Uid: uint32(uid),
-// 			Gid: uint32(gid),
-// 		},
-// 	}
-
-// 	// Start command
-// 	l.logger.Debug("Starting command", "path", cmd.Path, "args", cmd.Args)
-// 	err = cmd.Start()
-// 	if err != nil {
-// 		return fmt.Errorf("failed to start command: %v", err)
-// 	}
-// 	l.logger.Debug("Command started, waiting for completion")
-
-// 	// Wait for command to complete
-// 	err = cmd.Wait()
-// 	l.logger.Debug("Command completed", "error", err)
-// 	if err != nil {
-// 		if exitError, ok := err.(*exec.ExitError); ok {
-// 			if status, ok := exitError.Sys().(syscall.WaitStatus); ok {
-// 				l.logger.Debug("Command exit status", "status", status.ExitStatus())
-// 				os.Exit(status.ExitStatus())
-// 			}
-// 		}
-// 		return fmt.Errorf("command failed: %v", err)
-// 	}
-
-// 	l.logger.Debug("Command executed successfully")
-// 	return nil
-// }
-
 // Command returns an exec.Cmd configured to run within the network namespace
 func (l *Linux) Command(command []string) *exec.Cmd {
 	l.logger.Debug("Command called", "command", command)
@@ -170,7 +80,62 @@ func (l *Linux) Command(command []string) *exec.Cmd {
 	cmdArgs = append(cmdArgs, command...)
 	l.logger.Debug("Full command args", "args", cmdArgs)
 
-	return exec.Command("ip", cmdArgs[1:]...)
+	cmd := exec.Command("ip", cmdArgs[1:]...)
+
+	// Set up environment
+	l.logger.Debug("Setting up environment")
+	env := os.Environ()
+
+	// Add extra environment variables from config
+	for key, value := range l.config.Env {
+		env = append(env, fmt.Sprintf("%s=%s", key, value))
+	}
+
+	// When running under sudo, restore essential user environment variables
+	sudoUser := os.Getenv("SUDO_USER")
+	if sudoUser != "" {
+		user, err := user.Lookup(sudoUser)
+		if err == nil {
+			// Set HOME to original user's home directory
+			env = append(env, fmt.Sprintf("HOME=%s", user.HomeDir))
+			// Set USER to original username
+			env = append(env, fmt.Sprintf("USER=%s", sudoUser))
+			// Set LOGNAME to original username (some tools check this instead of USER)
+			env = append(env, fmt.Sprintf("LOGNAME=%s", sudoUser))
+			l.logger.Debug("Restored user environment", "home", user.HomeDir, "user", sudoUser)
+		}
+	}
+
+	cmd.Env = env
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	// Drop privileges to original user if running under sudo
+	var gid, uid int
+	var err error
+	sudoUID := os.Getenv("SUDO_UID")
+	if sudoUID != "" {
+		uid, err = strconv.Atoi(sudoUID)
+		if err != nil {
+			l.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", sudoUID, "error", err)
+		}
+	}
+	sudoGID := os.Getenv("SUDO_GID")
+	if sudoGID != "" {
+		gid, err = strconv.Atoi(sudoGID)
+		if err != nil {
+			l.logger.Warn("Invalid SUDO_GID, subprocess will run as root", "sudo_gid", sudoGID, "error", err)
+		}
+	}
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Credential: &syscall.Credential{
+			Uid: uint32(uid),
+			Gid: uint32(gid),
+		},
+	}
+
+	return cmd
 }
 
 // Cleanup removes the network namespace and iptables rules
