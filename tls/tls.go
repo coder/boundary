@@ -30,14 +30,10 @@ type CertificateManager struct {
 }
 
 // NewCertificateManager creates a new certificate manager
-func NewCertificateManager(configDir string, logger *slog.Logger) (*CertificateManager, error) {
-	// If no configDir provided, determine it automatically
-	if configDir == "" {
-		var err error
-		configDir, err = getConfigDir()
-		if err != nil {
-			return nil, fmt.Errorf("failed to determine config directory: %v", err)
-		}
+func NewCertificateManager(logger *slog.Logger) (*CertificateManager, error) {
+	configDir, err := getConfigDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine config directory: %v", err)
 	}
 
 	cm := &CertificateManager{
@@ -47,7 +43,7 @@ func NewCertificateManager(configDir string, logger *slog.Logger) (*CertificateM
 	}
 
 	// Load or generate CA certificate
-	err := cm.loadOrGenerateCA()
+	err = cm.loadOrGenerateCA()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load or generate CA: %v", err)
 	}
