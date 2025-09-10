@@ -66,4 +66,3 @@ func TestCurlGithub(t *testing.T) {
 		t.Fatalf("error curling github: %v", err)
 	}
 }
-
