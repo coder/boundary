@@ -127,13 +127,6 @@ func Run(config Config, args []string) error {
 	// Create auditor
 	auditor := audit.NewLoggingAuditor(logger)
 
-	// Get configuration directory
-	configDir, err := tls.GetConfigDir()
-	if err != nil {
-		logger.Error("Failed to get config directory", "error", err)
-		return fmt.Errorf("failed to get config directory: %v", err)
-	}
-
 	// Create network namespace configuration
 	nsConfig := namespace.Config{
 		HTTPPort:  8040,
@@ -152,6 +145,13 @@ func Run(config Config, args []string) error {
 	var tlsConfig *cryptotls.Config
 
 	if !config.NoTLSIntercept {
+		// Get configuration directory
+		configDir, err := tls.GetConfigDir()
+		if err != nil {
+			logger.Error("Failed to get config directory", "error", err)
+			return fmt.Errorf("failed to get config directory: %v", err)
+		}
+
 		certManager, err = tls.NewCertificateManager(configDir, logger)
 		if err != nil {
 			logger.Error("Failed to create certificate manager", "error", err)
@@ -182,30 +182,24 @@ func Run(config Config, args []string) error {
 		commander.SetEnv("GIT_SSL_CAINFO", caCertPath)      // Git
 		commander.SetEnv("REQUESTS_CA_BUNDLE", caCertPath)  // Python requests
 		commander.SetEnv("NODE_EXTRA_CA_CERTS", caCertPath) // Node.js
-		commander.SetEnv("JAIL_CA_CERT", string(caCertPEM)) // Keep for backward compatibility
 	}
 
 	// Create proxy server
-	proxyConfig := proxy.Config{
+	proxyServer := proxy.NewProxyServer(proxy.Config{
 		HTTPPort:   8040,
 		HTTPSPort:  8043,
 		RuleEngine: ruleEngine,
 		Auditor:    auditor,
 		Logger:     logger,
 		TLSConfig:  tlsConfig,
-	}
+	})
 
-	proxyServer := proxy.NewProxyServer(proxyConfig)
-
-	// Create jail configuration with constructed dependencies
-	jailConfig := jail.Config{
+	// Create jail instance
+	jailInstance := jail.New(jail.Config{
 		Commander:   commander,
 		ProxyServer: proxyServer,
 		Logger:      logger,
-	}
-
-	// Create jail instance
-	jailInstance := jail.New(jailConfig)
+	})
 
 	// Setup signal handling BEFORE any setup
 	sigChan := make(chan os.Signal, 1)
