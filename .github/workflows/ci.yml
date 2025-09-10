@@ -44,5 +44,5 @@ jobs:
     - name: Run tests
       run: go test -v -race ./...
 
-    - name: Run build
+    - name: Check build
       run: go build -v ./...
