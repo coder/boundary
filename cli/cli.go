@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	cryptotls "crypto/tls"
 	"fmt"
 	"log/slog"
 	"os"
@@ -11,7 +12,10 @@ import (
 	"syscall"
 
 	"github.com/coder/jail"
+	"github.com/coder/jail/audit"
 	"github.com/coder/jail/namespace"
+	"github.com/coder/jail/proxy"
+	"github.com/coder/jail/rules"
 	"github.com/coder/jail/tls"
 	"github.com/coder/serpent"
 )
@@ -119,11 +123,37 @@ func Run(config Config, args []string) error {
 		logger.Warn("No allow rules specified; all network traffic will be denied by default")
 	}
 
+	// Parse allow rules
+	allowRules, err := rules.ParseAllowSpecs(config.AllowStrings)
+	if err != nil {
+		logger.Error("Failed to parse allow rules", "error", err)
+		return fmt.Errorf("failed to parse allow rules: %v", err)
+	}
+
+	// Create rule engine
+	ruleEngine := rules.NewRuleEngine(allowRules, logger)
+
+	// Create auditor
+	auditor := audit.NewLoggingAuditor(logger)
+
 	// Get configuration directory
 	configDir, err := tls.GetConfigDir()
 	if err != nil {
 		logger.Error("Failed to get config directory", "error", err)
 		return fmt.Errorf("failed to get config directory: %v", err)
+	}
+
+	// Create certificate manager (if TLS interception is enabled)
+	var certManager *tls.CertificateManager
+	var tlsConfig *cryptotls.Config
+
+	if !config.NoTLSIntercept {
+		certManager, err = tls.NewCertificateManager(configDir, logger)
+		if err != nil {
+			logger.Error("Failed to create certificate manager", "error", err)
+			return fmt.Errorf("failed to create certificate manager: %v", err)
+		}
+		tlsConfig = certManager.GetTLSConfig()
 	}
 
 	// Create environment map for CA certificate
@@ -144,23 +174,30 @@ func Run(config Config, args []string) error {
 		return fmt.Errorf("failed to create network namespace: %v", err)
 	}
 
-	// Create jail configuration
+	// Create proxy server
+	proxyConfig := proxy.Config{
+		HTTPPort:   8040,
+		HTTPSPort:  8043,
+		RuleEngine: ruleEngine,
+		Auditor:    auditor,
+		Logger:     logger,
+		TLSConfig:  tlsConfig,
+	}
+
+	proxyServer := proxy.NewProxyServer(proxyConfig)
+
+	// Create jail configuration with constructed dependencies
 	jailConfig := jail.Config{
 		CommandExecutor: networkInstance,
-		AllowRules:      config.AllowStrings,
-		NoTLSIntercept:  config.NoTLSIntercept,
+		ProxyServer:     proxyServer,
+		CertManager:     certManager,
+		RuleEngine:      ruleEngine,
+		Auditor:         auditor,
 		Logger:          logger,
-		ConfigDir:       configDir,
-		HTTPPort:        8040,
-		HTTPSPort:       8043,
 	}
 
 	// Create jail instance
-	jailInstance, err := jail.New(jailConfig)
-	if err != nil {
-		logger.Error("Failed to create jail", "error", err)
-		return fmt.Errorf("failed to create jail: %v", err)
-	}
+	jailInstance := jail.New(jailConfig)
 
 	// Setup signal handling BEFORE any setup
 	sigChan := make(chan os.Signal, 1)
@@ -189,9 +226,9 @@ func Run(config Config, args []string) error {
 	}()
 
 	// Setup CA certificate environment variables if TLS interception is enabled
-	if !config.NoTLSIntercept {
+	if !config.NoTLSIntercept && certManager != nil {
 		// Get CA certificate for environment
-		caCertPEM, err := jailInstance.GetCACertPEM()
+		caCertPEM, err := certManager.GetCACertPEM()
 		if err != nil {
 			logger.Error("Failed to get CA certificate", "error", err)
 			return fmt.Errorf("failed to get CA certificate: %v", err)

@@ -2,7 +2,6 @@ package jail
 
 import (
 	"context"
-	cryptotls "crypto/tls"
 	"fmt"
 	"log/slog"
 	"os/exec"
@@ -22,12 +21,11 @@ type Commander interface {
 
 type Config struct {
 	CommandExecutor Commander
-	AllowRules      []string
-	NoTLSIntercept  bool
+	ProxyServer     *proxy.ProxyServer
+	CertManager     *tls.CertificateManager
+	RuleEngine      *rules.RuleEngine
+	Auditor         *audit.LoggingAuditor
 	Logger          *slog.Logger
-	ConfigDir       string
-	HTTPPort        int
-	HTTPSPort       int
 }
 
 type Jail struct {
@@ -41,57 +39,19 @@ type Jail struct {
 	ctx             context.Context
 }
 
-func New(config Config) (*Jail, error) {
-	// Parse allow rules
-	allowRules, err := rules.ParseAllowSpecs(config.AllowRules)
-	if err != nil {
-		config.Logger.Error("Failed to parse allow rules", "error", err)
-		return nil, fmt.Errorf("failed to parse allow rules: %v", err)
-	}
-
-	// Create rule engine
-	ruleEngine := rules.NewRuleEngine(allowRules, config.Logger)
-
-	// Create auditor
-	auditor := audit.NewLoggingAuditor(config.Logger)
-
-	// Create certificate manager (if TLS interception is enabled)
-	var certManager *tls.CertificateManager
-	var tlsConfig *cryptotls.Config
-
-	if !config.NoTLSIntercept {
-		certManager, err = tls.NewCertificateManager(config.ConfigDir, config.Logger)
-		if err != nil {
-			config.Logger.Error("Failed to create certificate manager", "error", err)
-			return nil, fmt.Errorf("failed to create certificate manager: %v", err)
-		}
-		tlsConfig = certManager.GetTLSConfig()
-	}
-
-	// Create proxy server
-	proxyConfig := proxy.Config{
-		HTTPPort:   config.HTTPPort,
-		HTTPSPort:  config.HTTPSPort,
-		RuleEngine: ruleEngine,
-		Auditor:    auditor,
-		Logger:     config.Logger,
-		TLSConfig:  tlsConfig,
-	}
-
-	proxyServer := proxy.NewProxyServer(proxyConfig)
-
+func New(config Config) *Jail {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Jail{
 		commandExecutor: config.CommandExecutor,
-		proxyServer:     proxyServer,
-		certManager:     certManager,
-		ruleEngine:      ruleEngine,
-		auditor:         auditor,
+		proxyServer:     config.ProxyServer,
+		certManager:     config.CertManager,
+		ruleEngine:      config.RuleEngine,
+		auditor:         config.Auditor,
 		logger:          config.Logger,
 		ctx:             ctx,
 		cancel:          cancel,
-	}, nil
+	}
 }
 
 func (j *Jail) Open() error {
