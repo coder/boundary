@@ -68,7 +68,7 @@ jobs:
         fi
         
         # Build using Go directly for cross-compilation
-        go build -ldflags="-s -w -X main.version=$VERSION" -o ${{ matrix.name }} .
+        go build -ldflags="-s -w -X main.version=$VERSION" -o ${{ matrix.name }} ./cmd/jail
 
     - name: Upload binary as artifact
       uses: actions/upload-artifact@v4

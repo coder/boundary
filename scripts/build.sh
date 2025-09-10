@@ -39,7 +39,7 @@ for config in "${configs[@]}"; do
     
     env GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 go build \
         -ldflags="-s -w -X main.version=$VERSION" \
-        -o "$BUILD_DIR/$name" .
+        -o "$BUILD_DIR/$name" ./cmd/jail
     
     if [ $? -eq 0 ]; then
         size=$(du -h "$BUILD_DIR/$name" | cut -f1)

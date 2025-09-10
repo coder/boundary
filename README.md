@@ -31,7 +31,7 @@ sudo mv jail /usr/local/bin/
 ```bash
 git clone https://github.com/coder/jail
 cd jail
-make build  # or: go build -o jail .
+make build  # or: go build -o jail ./cmd/jail
 ```
 
 ### Usage
@@ -162,7 +162,7 @@ cd jail
 make build
 
 # Or directly with Go
-go build -o jail .
+go build -o jail ./cmd/jail
 ```
 
 ## Command-Line Options
@@ -207,14 +207,14 @@ make lint
 
 ```bash
 # Build directly with Go
-go build -o jail .
+go build -o jail ./cmd/jail
 
 # Run tests
 go test ./...
 
 # Cross-compile manually
-GOOS=linux GOARCH=amd64 go build -o jail-linux .
-GOOS=darwin GOARCH=amd64 go build -o jail-macos .
+GOOS=linux GOARCH=amd64 go build -o jail-linux ./cmd/jail
+GOOS=darwin GOARCH=amd64 go build -o jail-macos ./cmd/jail
 
 # Use build script for all platforms
 ./scripts/build.sh

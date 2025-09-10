@@ -15,7 +15,7 @@ all: build
 build:
 	@echo "Building $(BINARY_NAME) for current platform..."
 	@echo "Version: $(VERSION)"
-	go build -ldflags="$(LDFLAGS)" -o $(BINARY_NAME) .
+	go build -ldflags="$(LDFLAGS)" -o $(BINARY_NAME) ./cmd/jail
 	@echo "✓ Built $(BINARY_NAME)"
 
 # Build for all supported platforms
@@ -25,13 +25,13 @@ build-all:
 	@echo "Version: $(VERSION)"
 	@mkdir -p $(BUILD_DIR)
 	@echo "Building Linux amd64..."
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 .
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./cmd/jail
 	@echo "Building Linux arm64..."
-	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 .
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./cmd/jail
 	@echo "Building macOS amd64..."
-	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 .
+	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 ./cmd/jail
 	@echo "Building macOS arm64..."
-	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 .
+	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 ./cmd/jail
 	@echo "✓ All binaries built successfully!"
 	@echo "Binaries are in the '$(BUILD_DIR)' directory:"
 	@ls -la $(BUILD_DIR)/
