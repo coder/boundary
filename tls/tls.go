@@ -62,6 +62,28 @@ func (cm *CertificateManager) GetCACertPEM() ([]byte, error) {
 	}), nil
 }
 
+// SetupTLSAndWriteCACert sets up TLS config and writes CA certificate to file
+// Returns the TLS config, CA cert path, and CA cert PEM data
+func (cm *CertificateManager) SetupTLSAndWriteCACert() (*tls.Config, string, []byte, error) {
+	// Get TLS config
+	tlsConfig := cm.GetTLSConfig()
+
+	// Get CA certificate PEM
+	caCertPEM, err := cm.GetCACertPEM()
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("failed to get CA certificate: %v", err)
+	}
+
+	// Write CA certificate to file
+	caCertPath := filepath.Join(cm.configDir, "ca-cert.pem")
+	err = os.WriteFile(caCertPath, caCertPEM, 0644)
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("failed to write CA certificate file: %v", err)
+	}
+
+	return tlsConfig, caCertPath, caCertPEM, nil
+}
+
 // loadOrGenerateCA loads existing CA or generates a new one
 func (cm *CertificateManager) loadOrGenerateCA() error {
 	caKeyPath := filepath.Join(cm.configDir, "ca-key.pem")

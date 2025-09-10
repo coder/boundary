@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -155,21 +154,13 @@ func Run(config Config, args []string) error {
 			logger.Error("Failed to create certificate manager", "error", err)
 			return fmt.Errorf("failed to create certificate manager: %v", err)
 		}
-		tlsConfig = certManager.GetTLSConfig()
 
-		// Get CA certificate for environment
-		caCertPEM, err := certManager.GetCACertPEM()
+		// Setup TLS config and write CA certificate to file
+		var caCertPath string
+		tlsConfig, caCertPath, _, err = certManager.SetupTLSAndWriteCACert()
 		if err != nil {
-			logger.Error("Failed to get CA certificate", "error", err)
-			return fmt.Errorf("failed to get CA certificate: %v", err)
-		}
-
-		// Write CA certificate to a temporary file for tools that need a file path
-		caCertPath := filepath.Join(configDir, "ca-cert.pem")
-		err = os.WriteFile(caCertPath, caCertPEM, 0644)
-		if err != nil {
-			logger.Error("Failed to write CA certificate file", "error", err)
-			return fmt.Errorf("failed to write CA certificate file: %v", err)
+			logger.Error("Failed to setup TLS and CA certificate", "error", err)
+			return fmt.Errorf("failed to setup TLS and CA certificate: %v", err)
 		}
 
 		// Set standard CA certificate environment variables for common tools
