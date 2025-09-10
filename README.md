@@ -154,22 +154,6 @@ sudo mv jail /usr/local/bin/
 
 ### Build from Source
 
-#### Prerequisites
-
-**Linux:**
-- Linux kernel 3.8+ (network namespace support)
-- iptables
-- Go 1.25+ (for building)
-- sudo access
-
-**macOS:**
-- macOS 10.15+ (Catalina or later)
-- pfctl (included)
-- Go 1.25+ (for building)
-- sudo access
-
-#### Building
-
 ```bash
 git clone https://github.com/coder/jail
 cd jail
@@ -179,21 +163,6 @@ make build
 
 # Or directly with Go
 go build -o jail .
-```
-
-## TLS Interception
-
-jail automatically generates a Certificate Authority (CA) to intercept HTTPS traffic:
-
-- CA stored in `~/.config/jail/` (or `$XDG_CONFIG_HOME/jail/`)
-- CA certificate provided via `JAIL_CA_CERT` environment variable
-- Certificates generated on-demand for intercepted domains
-- CA expires after 1 year
-
-### Disable TLS Interception
-
-```bash
-jail --no-tls-intercept --allow "*" -- ./app
 ```
 
 ## Command-Line Options
