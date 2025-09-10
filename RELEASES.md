@@ -69,6 +69,8 @@ make fmt
 make lint
 ```
 
+**Note**: The `lint` target requires [golangci-lint](https://golangci-lint.run/) to be installed.
+
 ### Quick Build
 
 Build for your current platform:

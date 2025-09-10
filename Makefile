@@ -71,10 +71,5 @@ fmt:
 .PHONY: lint
 lint:
 	@echo "Linting code..."
-	@if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run; \
-	else \
-		echo "golangci-lint not found, running go vet instead..."; \
-		go vet ./...; \
-	fi
+	golangci-lint run
 	@echo "✓ Linting complete!"
