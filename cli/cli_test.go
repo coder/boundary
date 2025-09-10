@@ -8,10 +8,10 @@ import (
 	"github.com/coder/serpent"
 )
 
-func ensureSudo(t *testing.T) {
+func ensureRoot(t *testing.T) {
 	t.Helper()
 	if os.Getgid() != 0 {
-		t.Fatal("test requires root priviledges")
+		t.Skip("skipping test because no root privileges")
 	}
 }
 
@@ -86,7 +86,7 @@ func TestPtySetupWorks(t *testing.T) {
 }
 
 func TestCurlGithub(t *testing.T) {
-	ensureSudo(t)
+	ensureRoot(t)
 
 	cmd := NewCommand()
 	inv := cmd.Invoke("--allow", "\"github.com\"", "--", "curl", "https://github.com")
