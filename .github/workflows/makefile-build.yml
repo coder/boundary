@@ -30,8 +30,11 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-go-
 
-    - name: Set up development environment
-      run: make dev-setup
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Verify dependencies
+      run: go mod verify
 
     - name: Run tests
       run: make test

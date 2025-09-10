@@ -56,14 +56,17 @@ make build-all
 # Run tests
 make test
 
+# Run tests with coverage
+make test-coverage
+
 # Clean build artifacts
 make clean
 
-# Install to system PATH
-make install
+# Format code
+make fmt
 
-# Show all available targets
-make help
+# Lint code
+make lint
 ```
 
 ### Quick Build
