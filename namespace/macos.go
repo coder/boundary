@@ -243,7 +243,7 @@ func (m *MacOSNetJail) getDefaultInterface() (string, error) {
 	return "en0", nil
 }
 
-// createPFRules creates PF rules for traffic diversion
+// createPFRules creates PF rules for comprehensive TCP traffic diversion
 func (m *MacOSNetJail) createPFRules() (string, error) {
 	// Get the default network interface
 	iface, err := m.getDefaultInterface()
@@ -251,35 +251,34 @@ func (m *MacOSNetJail) createPFRules() (string, error) {
 		return "", fmt.Errorf("failed to get default interface: %v", err)
 	}
 
-	// Create PF rules following httpjail's working pattern
-	rules := fmt.Sprintf(`# boundary PF rules for GID %d on interface %s
-# First, redirect traffic arriving on lo0 to our proxy ports
-rdr pass on lo0 inet proto tcp from any to any port 80 -> 127.0.0.1 port %d
-rdr pass on lo0 inet proto tcp from any to any port 443 -> 127.0.0.1 port %d
+	// Create comprehensive PF rules for ALL TCP traffic interception
+	// This prevents bypass via non-standard ports (8080, 3306, 22, etc.)
+	rules := fmt.Sprintf(`# comprehensive TCP jailing PF rules for GID %d on interface %s
+# COMPREHENSIVE APPROACH: Intercept ALL TCP traffic from the jailed group
+# This ensures NO TCP traffic can bypass the proxy by using alternative ports
 
-# Route boundary group traffic to lo0 where it will be redirected
-pass out route-to (lo0 127.0.0.1) inet proto tcp from any to any port 80 group %d keep state
-pass out route-to (lo0 127.0.0.1) inet proto tcp from any to any port 443 group %d keep state
+# First, redirect ALL TCP traffic arriving on lo0 to our HTTPS proxy port
+# The HTTPS proxy can handle both HTTP and HTTPS traffic
+rdr pass on lo0 inet proto tcp from any to any -> 127.0.0.1 port %d
 
-# Also handle traffic on the specific interface
-pass out on %s route-to (lo0 127.0.0.1) inet proto tcp from any to any port 80 group %d keep state
-pass out on %s route-to (lo0 127.0.0.1) inet proto tcp from any to any port 443 group %d keep state
+# Route ALL TCP traffic from boundary group to lo0 where it will be redirected
+pass out route-to (lo0 127.0.0.1) inet proto tcp from any to any group %d keep state
+
+# Also handle ALL TCP traffic on the specific interface from the group
+pass out on %s route-to (lo0 127.0.0.1) inet proto tcp from any to any group %d keep state
 
 # Allow all loopback traffic
 pass on lo0 all
 `,
 		m.groupID,
 		iface,
-		m.config.HTTPPort,
-		m.config.HTTPSPort,
-		m.groupID,
-		m.groupID,
-		iface,
+		m.config.HTTPSPort, // Use HTTPS proxy port for all TCP traffic
 		m.groupID,
 		iface,
 		m.groupID,
 	)
 
+	m.logger.Debug("Comprehensive TCP jailing enabled for macOS", "group_id", m.groupID, "proxy_port", m.config.HTTPSPort)
 	return rules, nil
 }
 
