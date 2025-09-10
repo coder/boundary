@@ -16,21 +16,38 @@ jail creates an isolated network environment for target processes, intercepting 
 
 ## Quick Start
 
-```bash
-# Build the tool
-go build -o jail .
+### Installation
 
+**From GitHub Releases (Recommended):**
+```bash
+# Download the latest release for your platform
+wget https://github.com/coder/jail/releases/latest/download/jail-linux-amd64.tar.gz
+tar -xzf jail-linux-amd64.tar.gz
+chmod +x jail
+sudo mv jail /usr/local/bin/
+```
+
+**Build from Source:**
+```bash
+git clone https://github.com/coder/jail
+cd jail
+make build  # or: go build -o jail .
+```
+
+### Usage
+
+```bash
 # Allow only requests to github.com
-./jail --allow "github.com" -- curl https://github.com
+jail --allow "github.com" -- curl https://github.com
 
 # Allow full access to GitHub issues API, but only GET/HEAD elsewhere on GitHub
-./jail \
+jail \
   --allow "github.com/api/issues/*" \
   --allow "GET,HEAD github.com" \
   -- npm install
 
 # Default deny-all: everything is blocked unless explicitly allowed
-./jail -- curl https://example.com
+jail -- curl https://example.com
 ```
 
 ## Allow Rules
@@ -111,25 +128,56 @@ For more help: https://github.com/coder/jail
 
 ## Installation
 
-### Prerequisites
+### From GitHub Releases (Recommended)
+
+Download pre-built binaries from [GitHub Releases](https://github.com/coder/jail/releases):
+
+```bash
+# Linux x64
+wget https://github.com/coder/jail/releases/latest/download/jail-linux-amd64.tar.gz
+tar -xzf jail-linux-amd64.tar.gz
+chmod +x jail
+sudo mv jail /usr/local/bin/
+
+# macOS (Intel)
+wget https://github.com/coder/jail/releases/latest/download/jail-darwin-amd64.tar.gz
+tar -xzf jail-darwin-amd64.tar.gz
+chmod +x jail
+sudo mv jail /usr/local/bin/
+
+# macOS (Apple Silicon)
+wget https://github.com/coder/jail/releases/latest/download/jail-darwin-arm64.tar.gz
+tar -xzf jail-darwin-arm64.tar.gz
+chmod +x jail
+sudo mv jail /usr/local/bin/
+```
+
+### Build from Source
+
+#### Prerequisites
 
 **Linux:**
 - Linux kernel 3.8+ (network namespace support)
 - iptables
-- Go 1.21+ (for building)
+- Go 1.25+ (for building)
 - sudo access
 
 **macOS:**
 - macOS 10.15+ (Catalina or later)
 - pfctl (included)
-- Go 1.21+ (for building)
+- Go 1.25+ (for building)
 - sudo access
 
-### Build from Source
+#### Building
 
 ```bash
 git clone https://github.com/coder/jail
 cd jail
+
+# Using Makefile (recommended)
+make build
+
+# Or directly with Go
 go build -o jail .
 ```
 
@@ -164,15 +212,43 @@ OPTIONS:
 ## Development
 
 ```bash
-# Build
+# Build for current platform
+make build
+
+# Build for all platforms
+make build-all
+
+# Run tests
+make test
+
+# Run tests with coverage
+make test-coverage
+
+# Clean build artifacts
+make clean
+
+# Format code
+make fmt
+
+# Lint code (requires golangci-lint)
+make lint
+```
+
+### Manual Commands
+
+```bash
+# Build directly with Go
 go build -o jail .
 
-# Test
+# Run tests
 go test ./...
 
-# Cross-compile
+# Cross-compile manually
 GOOS=linux GOARCH=amd64 go build -o jail-linux .
 GOOS=darwin GOARCH=amd64 go build -o jail-macos .
+
+# Use build script for all platforms
+./scripts/build.sh
 ```
 
 ## License
