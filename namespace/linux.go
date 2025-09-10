@@ -141,10 +141,6 @@ func (l *Linux) Command(command []string) *exec.Cmd {
 
 // Cleanup removes the network namespace and iptables rules
 func (l *Linux) Close() error {
-	if l.config.SkipCleanup {
-		return nil
-	}
-
 	// Remove iptables rules
 	err := l.removeIptables()
 	if err != nil {

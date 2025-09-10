@@ -145,10 +145,6 @@ func (m *MacOSNetJail) Command(command []string) *exec.Cmd {
 // Cleanup removes PF rules and cleans up temporary files
 func (m *MacOSNetJail) Close() error {
 	m.logger.Debug("Starting cleanup process")
-	if m.config.SkipCleanup {
-		m.logger.Debug("Skipping cleanup (SkipCleanup=true)")
-		return nil
-	}
 
 	// Remove PF rules
 	m.logger.Debug("Removing PF rules")

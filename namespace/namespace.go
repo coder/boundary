@@ -15,10 +15,9 @@ const (
 
 // JailConfig holds configuration for network jail
 type Config struct {
-	HTTPPort    int
-	HTTPSPort   int
-	SkipCleanup bool
-	Env         map[string]string
+	HTTPPort  int
+	HTTPSPort int
+	Env       map[string]string
 }
 
 // NewJail creates a new NetJail instance for the current platform

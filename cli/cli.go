@@ -25,7 +25,6 @@ type Config struct {
 	AllowStrings   []string
 	NoTLSIntercept bool
 	LogLevel       string
-	NoJailCleanup  bool
 }
 
 // NewCommand creates and returns the root serpent command
@@ -69,14 +68,6 @@ Examples:
 				Description: "Set log level (error, warn, info, debug).",
 				Default:     "warn",
 				Value:       serpent.StringOf(&config.LogLevel),
-			},
-			{
-				Name:        "no-jail-cleanup",
-				Flag:        "no-jail-cleanup",
-				Env:         "JAIL_NO_JAIL_CLEANUP",
-				Description: "Skip jail cleanup (hidden flag for testing).",
-				Value:       serpent.BoolOf(&config.NoJailCleanup),
-				Hidden:      true,
 			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
@@ -161,10 +152,9 @@ func Run(config Config, args []string) error {
 
 	// Create network namespace configuration
 	nsConfig := namespace.Config{
-		HTTPPort:    8040,
-		HTTPSPort:   8043,
-		SkipCleanup: config.NoJailCleanup,
-		Env:         extraEnv,
+		HTTPPort:  8040,
+		HTTPSPort: 8043,
+		Env:       extraEnv,
 	}
 
 	// Create network namespace instance
