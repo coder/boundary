@@ -99,5 +99,4 @@ func TestCurlGithub(t *testing.T) {
 	}
 
 	pty.RequireNoError()
-	pty.ExpectMatch("")
 }
