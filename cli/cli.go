@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	cryptotls "crypto/tls"
 	"fmt"
 	"log/slog"
 	"os"
@@ -21,9 +20,8 @@ import (
 
 // Config holds all configuration for the CLI
 type Config struct {
-	AllowStrings   []string
-	NoTLSIntercept bool
-	LogLevel       string
+	AllowStrings []string
+	LogLevel     string
 }
 
 // NewCommand creates and returns the root serpent command
@@ -52,13 +50,6 @@ Examples:
 				Env:         "JAIL_ALLOW",
 				Description: "Allow rule (can be specified multiple times). Format: 'pattern' or 'METHOD[,METHOD] pattern'.",
 				Value:       serpent.StringArrayOf(&config.AllowStrings),
-			},
-			{
-				Name:        "no-tls-intercept",
-				Flag:        "no-tls-intercept",
-				Env:         "JAIL_NO_TLS_INTERCEPT",
-				Description: "Disable HTTPS interception.",
-				Value:       serpent.BoolOf(&config.NoTLSIntercept),
 			},
 			{
 				Name:        "log-level",
@@ -139,32 +130,29 @@ func Run(config Config, args []string) error {
 		return fmt.Errorf("failed to create network namespace: %v", err)
 	}
 
-	// Create certificate manager (if TLS interception is enabled)
-	var tlsConfig *cryptotls.Config
-	if !config.NoTLSIntercept {
-		certManager, err := tls.NewCertificateManager(logger)
-		if err != nil {
-			logger.Error("Failed to create certificate manager", "error", err)
-			return fmt.Errorf("failed to create certificate manager: %v", err)
-		}
-
-		// Setup TLS config and write CA certificate to file
-		var caCertPath, configDir string
-		tlsConfig, caCertPath, configDir, err = certManager.SetupTLSAndWriteCACert()
-		if err != nil {
-			logger.Error("Failed to setup TLS and CA certificate", "error", err)
-			return fmt.Errorf("failed to setup TLS and CA certificate: %v", err)
-		}
-
-		// Set standard CA certificate environment variables for common tools
-		// This makes tools like curl, git, etc. trust our dynamically generated CA
-		commander.SetEnv("SSL_CERT_FILE", caCertPath)       // OpenSSL/LibreSSL-based tools
-		commander.SetEnv("SSL_CERT_DIR", configDir)         // OpenSSL certificate directory
-		commander.SetEnv("CURL_CA_BUNDLE", caCertPath)      // curl
-		commander.SetEnv("GIT_SSL_CAINFO", caCertPath)      // Git
-		commander.SetEnv("REQUESTS_CA_BUNDLE", caCertPath)  // Python requests
-		commander.SetEnv("NODE_EXTRA_CA_CERTS", caCertPath) // Node.js
+	// Create certificate manager
+	certManager, err := tls.NewCertificateManager(logger)
+	if err != nil {
+		logger.Error("Failed to create certificate manager", "error", err)
+		return fmt.Errorf("failed to create certificate manager: %v", err)
 	}
+
+	// Setup TLS config and write CA certificate to file
+	var caCertPath, configDir string
+	tlsConfig, caCertPath, configDir, err := certManager.SetupTLSAndWriteCACert()
+	if err != nil {
+		logger.Error("Failed to setup TLS and CA certificate", "error", err)
+		return fmt.Errorf("failed to setup TLS and CA certificate: %v", err)
+	}
+
+	// Set standard CA certificate environment variables for common tools
+	// This makes tools like curl, git, etc. trust our dynamically generated CA
+	commander.SetEnv("SSL_CERT_FILE", caCertPath)       // OpenSSL/LibreSSL-based tools
+	commander.SetEnv("SSL_CERT_DIR", configDir)         // OpenSSL certificate directory
+	commander.SetEnv("CURL_CA_BUNDLE", caCertPath)      // curl
+	commander.SetEnv("GIT_SSL_CAINFO", caCertPath)      // Git
+	commander.SetEnv("REQUESTS_CA_BUNDLE", caCertPath)  // Python requests
+	commander.SetEnv("NODE_EXTRA_CA_CERTS", caCertPath) // Node.js
 
 	// Create proxy server
 	proxyServer := proxy.NewProxyServer(proxy.Config{
