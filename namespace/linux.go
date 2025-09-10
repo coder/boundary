@@ -115,6 +115,11 @@ func (l *Linux) Open() error {
 	return nil
 }
 
+// SetEnv sets an environment variable for commands run in the namespace
+func (l *Linux) SetEnv(key string, value string) {
+
+}
+
 // Command returns an exec.Cmd configured to run within the network namespace
 func (l *Linux) Command(command []string) *exec.Cmd {
 	l.logger.Debug("Command called", "command", command)

@@ -121,6 +121,11 @@ func (m *MacOSNetJail) Open() error {
 	return nil
 }
 
+// SetEnv sets an environment variable for commands run in the namespace
+func (m *MacOSNetJail) SetEnv(key string, value string) {
+
+}
+
 // Execute runs the command with the network jail group membership
 func (m *MacOSNetJail) Command(command []string) *exec.Cmd {
 	m.logger.Debug("Command called", "command", command)

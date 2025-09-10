@@ -12,6 +12,7 @@ import (
 
 type Commander interface {
 	Open() error
+	SetEnv(key string, value string)
 	Command(command []string) *exec.Cmd
 	Close() error
 }
