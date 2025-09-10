@@ -7,6 +7,11 @@ import (
 	"github.com/coder/jail/cli"
 )
 
+// Version information injected at build time
+var (
+	version = "dev" // Set via -ldflags "-X main.version=v1.0.0"
+)
+
 func main() {
 	cmd := cli.NewCommand()
 
