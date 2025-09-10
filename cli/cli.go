@@ -140,8 +140,8 @@ func Run(config Config, args []string) error {
 		HTTPSPort: 8043,
 	}
 
-	// Create network namespace instance
-	networkInstance, err := namespace.New(nsConfig, logger)
+	// Create commander
+	commander, err := namespace.New(nsConfig, logger)
 	if err != nil {
 		logger.Error("Failed to create network namespace", "error", err)
 		return fmt.Errorf("failed to create network namespace: %v", err)
@@ -176,13 +176,13 @@ func Run(config Config, args []string) error {
 
 		// Set standard CA certificate environment variables for common tools
 		// This makes tools like curl, git, etc. trust our dynamically generated CA
-		networkInstance.SetEnv("SSL_CERT_FILE", caCertPath)       // OpenSSL/LibreSSL-based tools
-		networkInstance.SetEnv("SSL_CERT_DIR", configDir)         // OpenSSL certificate directory
-		networkInstance.SetEnv("CURL_CA_BUNDLE", caCertPath)      // curl
-		networkInstance.SetEnv("GIT_SSL_CAINFO", caCertPath)      // Git
-		networkInstance.SetEnv("REQUESTS_CA_BUNDLE", caCertPath)  // Python requests
-		networkInstance.SetEnv("NODE_EXTRA_CA_CERTS", caCertPath) // Node.js
-		networkInstance.SetEnv("JAIL_CA_CERT", string(caCertPEM)) // Keep for backward compatibility
+		commander.SetEnv("SSL_CERT_FILE", caCertPath)       // OpenSSL/LibreSSL-based tools
+		commander.SetEnv("SSL_CERT_DIR", configDir)         // OpenSSL certificate directory
+		commander.SetEnv("CURL_CA_BUNDLE", caCertPath)      // curl
+		commander.SetEnv("GIT_SSL_CAINFO", caCertPath)      // Git
+		commander.SetEnv("REQUESTS_CA_BUNDLE", caCertPath)  // Python requests
+		commander.SetEnv("NODE_EXTRA_CA_CERTS", caCertPath) // Node.js
+		commander.SetEnv("JAIL_CA_CERT", string(caCertPEM)) // Keep for backward compatibility
 	}
 
 	// Create proxy server
@@ -199,9 +199,9 @@ func Run(config Config, args []string) error {
 
 	// Create jail configuration with constructed dependencies
 	jailConfig := jail.Config{
-		CommandExecutor: networkInstance,
-		ProxyServer:     proxyServer,
-		Logger:          logger,
+		Commander:   commander,
+		ProxyServer: proxyServer,
+		Logger:      logger,
 	}
 
 	// Create jail instance

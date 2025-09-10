@@ -18,9 +18,9 @@ type Commander interface {
 }
 
 type Config struct {
-	CommandExecutor Commander
-	ProxyServer     *proxy.ProxyServer
-	Logger          *slog.Logger
+	Commander   Commander
+	ProxyServer *proxy.ProxyServer
+	Logger      *slog.Logger
 }
 
 type Jail struct {
@@ -35,7 +35,7 @@ func New(config Config) *Jail {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Jail{
-		commandExecutor: config.CommandExecutor,
+		commandExecutor: config.Commander,
 		proxyServer:     config.ProxyServer,
 		logger:          config.Logger,
 		ctx:             ctx,
