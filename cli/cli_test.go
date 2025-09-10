@@ -1,11 +1,19 @@
 package cli
 
 import (
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/coder/serpent"
 )
+
+func ensureSudo(t *testing.T) {
+	t.Helper()
+	if os.Getgid() != 0 {
+		t.Fatal("test requires root priviledges")
+	}
+}
 
 // MockPTY provides a simple mock for PTY-like testing
 // This is a simplified version inspired by coder/coder's ptytest.
@@ -38,6 +46,30 @@ func (m *MockPTY) Clear() {
 	m.stderr = strings.Builder{}
 }
 
+func (m *MockPTY) ExpectMatch(content string) {
+	if !strings.Contains(m.stdout.String(), content) {
+		m.t.Fatalf("expected \"%s\", got: %s", content, m.stdout.String())
+	}
+}
+
+func (m *MockPTY) ExpectError(content string) {
+	if !strings.Contains(m.stderr.String(), content) {
+		m.t.Fatalf("expected error with \"%s\", got: %s", content, m.stderr.String())
+	}
+}
+
+func (m *MockPTY) RequireError() {
+	if m.stderr.String() == "" {
+		m.t.Fatal("expected error")
+	}
+}
+
+func (m *MockPTY) RequireNoError() {
+	if m.stderr.String() != "" {
+		m.t.Fatalf("expected nothing in stderr, but got: %s", m.stderr.String())
+	}
+}
+
 func TestPtySetupWorks(t *testing.T) {
 	cmd := NewCommand()
 	inv := cmd.Invoke("--help")
@@ -49,13 +81,13 @@ func TestPtySetupWorks(t *testing.T) {
 		t.Fatalf("could not run with simple --help arg: %v", err)
 	}
 
-	// TODO: A snapshot test setup is usually a good idea for CLI messages like this
-	if !strings.Contains(pty.Stdout(), "Monitor and restrict HTTP/HTTPS requests from processes") {
-		t.Fatalf("expected help to display summary, got: %s", pty.Stdout())
-	}
+	pty.RequireNoError()
+	pty.ExpectMatch("Monitor and restrict HTTP/HTTPS requests from processes")
 }
 
 func TestCurlGithub(t *testing.T) {
+	ensureSudo(t)
+
 	cmd := NewCommand()
 	inv := cmd.Invoke("--allow", "\"github.com\"", "--", "curl", "https://github.com")
 
@@ -65,4 +97,7 @@ func TestCurlGithub(t *testing.T) {
 	if err := inv.Run(); err != nil {
 		t.Fatalf("error curling github: %v", err)
 	}
+
+	pty.RequireNoError()
+	pty.ExpectMatch("")
 }
