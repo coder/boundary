@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	cryptotls "crypto/tls"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -141,6 +142,11 @@ func Run(config Config, args []string) error {
 	if err != nil {
 		logger.Error("Failed to get config directory", "error", err)
 		return fmt.Errorf("failed to get config directory: %v", err)
+	}
+
+	if configDir == "" {
+		logger.Error("Config dir received was the empty string")
+		return errors.New("config dir received was the empty string")
 	}
 
 	// Create certificate manager (if TLS interception is enabled)
