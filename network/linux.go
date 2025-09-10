@@ -221,56 +221,24 @@ func (l *LinuxJail) setupNetworking() error {
 	vethHost := fmt.Sprintf("veth_h_%s", uniqueID)                // veth_h_1234567 = 14 chars
 	vethNetJail := fmt.Sprintf("veth_n_%s", uniqueID)             // veth_n_1234567 = 14 chars
 
-	cmd := exec.Command("ip", "link", "add", vethHost, "type", "veth", "peer", "name", vethNetJail)
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("failed to create veth pair: %v", err)
+	setupCmds := []struct {
+		description string
+		command     *exec.Cmd
+	}{
+		{"create veth pair", exec.Command("ip", "link", "add", vethHost, "type", "veth", "peer", "name", vethNetJail)},
+		{"move veth to namespace", exec.Command("ip", "link", "set", vethNetJail, "netns", l.namespace)},
+		{"configure host veth", exec.Command("ip", "addr", "add", "192.168.100.1/24", "dev", vethHost)},
+		{"bring up host veth", exec.Command("ip", "link", "set", vethHost, "up")},
+		{"configure namespace veth", exec.Command("ip", "netns", "exec", l.namespace, "ip", "addr", "add", "192.168.100.2/24", "dev", vethNetJail)},
+		{"bring up namespace veth", exec.Command("ip", "netns", "exec", l.namespace, "ip", "link", "set", vethNetJail, "up")},
+		{"bring up loopback", exec.Command("ip", "netns", "exec", l.namespace, "ip", "link", "set", "lo", "up")},
+		{"set default route in namespace", exec.Command("ip", "netns", "exec", l.namespace, "ip", "route", "add", "default", "via", "192.168.100.1")},
 	}
 
-	// Move netjail end to namespace
-	cmd = exec.Command("ip", "link", "set", vethNetJail, "netns", l.namespace)
-	err = cmd.Run()
-	if err != nil {
-		return fmt.Errorf("failed to move veth to namespace: %v", err)
-	}
-
-	// Configure host side of veth pair
-	cmd = exec.Command("ip", "addr", "add", "192.168.100.1/24", "dev", vethHost)
-	err = cmd.Run()
-	if err != nil {
-		return fmt.Errorf("failed to configure host veth: %v", err)
-	}
-
-	cmd = exec.Command("ip", "link", "set", vethHost, "up")
-	err = cmd.Run()
-	if err != nil {
-		return fmt.Errorf("failed to bring up host veth: %v", err)
-	}
-
-	// Configure namespace side of veth pair
-	cmd = exec.Command("ip", "netns", "exec", l.namespace, "ip", "addr", "add", "192.168.100.2/24", "dev", vethNetJail)
-	err = cmd.Run()
-	if err != nil {
-		return fmt.Errorf("failed to configure namespace veth: %v", err)
-	}
-
-	cmd = exec.Command("ip", "netns", "exec", l.namespace, "ip", "link", "set", vethNetJail, "up")
-	err = cmd.Run()
-	if err != nil {
-		return fmt.Errorf("failed to bring up namespace veth: %v", err)
-	}
-
-	cmd = exec.Command("ip", "netns", "exec", l.namespace, "ip", "link", "set", "lo", "up")
-	err = cmd.Run()
-	if err != nil {
-		return fmt.Errorf("failed to bring up loopback: %v", err)
-	}
-
-	// Set default route in namespace
-	cmd = exec.Command("ip", "netns", "exec", l.namespace, "ip", "route", "add", "default", "via", "192.168.100.1")
-	err = cmd.Run()
-	if err != nil {
-		return fmt.Errorf("failed to set default route: %v", err)
+	for _, command := range setupCmds {
+		if err := command.command.Run(); err != nil {
+			return fmt.Errorf("failed to %s: %v", command.description, err)
+		}
 	}
 
 	return nil
