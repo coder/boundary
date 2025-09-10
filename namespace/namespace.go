@@ -17,7 +17,6 @@ const (
 type Config struct {
 	HTTPPort  int
 	HTTPSPort int
-	Env       map[string]string
 }
 
 // NewJail creates a new NetJail instance for the current platform

@@ -147,14 +147,10 @@ func Run(config Config, args []string) error {
 		tlsConfig = certManager.GetTLSConfig()
 	}
 
-	// Create environment map for CA certificate
-	var extraEnv map[string]string = make(map[string]string)
-
 	// Create network namespace configuration
 	nsConfig := namespace.Config{
 		HTTPPort:  8040,
 		HTTPSPort: 8043,
-		Env:       extraEnv,
 	}
 
 	// Create network namespace instance
@@ -212,6 +208,13 @@ func Run(config Config, args []string) error {
 		}
 	}()
 
+	// Open jail (starts network namespace and proxy server)
+	err = jailInstance.Open()
+	if err != nil {
+		logger.Error("Failed to open jail", "error", err)
+		return fmt.Errorf("failed to open jail: %v", err)
+	}
+
 	// Setup CA certificate environment variables if TLS interception is enabled
 	if !config.NoTLSIntercept && certManager != nil {
 		// Get CA certificate for environment
@@ -231,20 +234,13 @@ func Run(config Config, args []string) error {
 
 		// Set standard CA certificate environment variables for common tools
 		// This makes tools like curl, git, etc. trust our dynamically generated CA
-		extraEnv["SSL_CERT_FILE"] = caCertPath       // OpenSSL/LibreSSL-based tools
-		extraEnv["SSL_CERT_DIR"] = configDir         // OpenSSL certificate directory
-		extraEnv["CURL_CA_BUNDLE"] = caCertPath      // curl
-		extraEnv["GIT_SSL_CAINFO"] = caCertPath      // Git
-		extraEnv["REQUESTS_CA_BUNDLE"] = caCertPath  // Python requests
-		extraEnv["NODE_EXTRA_CA_CERTS"] = caCertPath // Node.js
-		extraEnv["JAIL_CA_CERT"] = string(caCertPEM) // Keep for backward compatibility
-	}
-
-	// Open jail (starts network namespace and proxy server)
-	err = jailInstance.Open()
-	if err != nil {
-		logger.Error("Failed to open jail", "error", err)
-		return fmt.Errorf("failed to open jail: %v", err)
+		jailInstance.CommandExecutor().SetEnv("SSL_CERT_FILE", caCertPath)       // OpenSSL/LibreSSL-based tools
+		jailInstance.CommandExecutor().SetEnv("SSL_CERT_DIR", configDir)         // OpenSSL certificate directory
+		jailInstance.CommandExecutor().SetEnv("CURL_CA_BUNDLE", caCertPath)      // curl
+		jailInstance.CommandExecutor().SetEnv("GIT_SSL_CAINFO", caCertPath)      // Git
+		jailInstance.CommandExecutor().SetEnv("REQUESTS_CA_BUNDLE", caCertPath)  // Python requests
+		jailInstance.CommandExecutor().SetEnv("NODE_EXTRA_CA_CERTS", caCertPath) // Node.js
+		jailInstance.CommandExecutor().SetEnv("JAIL_CA_CERT", string(caCertPEM)) // Keep for backward compatibility
 	}
 
 	// Create context for graceful shutdown

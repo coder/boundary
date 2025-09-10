@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"os/user"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -18,7 +19,7 @@ type Linux struct {
 	config      Config
 	namespace   string
 	logger      *slog.Logger
-	preparedEnv []string
+	preparedEnv map[string]string
 	procAttr    *syscall.SysProcAttr
 }
 
@@ -62,11 +63,13 @@ func (l *Linux) Open() error {
 
 	// Prepare environment once during setup
 	l.logger.Debug("Preparing environment")
-	env := os.Environ()
+	l.preparedEnv = make(map[string]string)
 
-	// Add extra environment variables from config
-	for key, value := range l.config.Env {
-		env = append(env, fmt.Sprintf("%s=%s", key, value))
+	// Start with current environment
+	for _, envVar := range os.Environ() {
+		if parts := strings.SplitN(envVar, "=", 2); len(parts) == 2 {
+			l.preparedEnv[parts[0]] = parts[1]
+		}
 	}
 
 	// When running under sudo, restore essential user environment variables
@@ -75,17 +78,14 @@ func (l *Linux) Open() error {
 		user, err := user.Lookup(sudoUser)
 		if err == nil {
 			// Set HOME to original user's home directory
-			env = append(env, fmt.Sprintf("HOME=%s", user.HomeDir))
+			l.preparedEnv["HOME"] = user.HomeDir
 			// Set USER to original username
-			env = append(env, fmt.Sprintf("USER=%s", sudoUser))
+			l.preparedEnv["USER"] = sudoUser
 			// Set LOGNAME to original username (some tools check this instead of USER)
-			env = append(env, fmt.Sprintf("LOGNAME=%s", sudoUser))
+			l.preparedEnv["LOGNAME"] = sudoUser
 			l.logger.Debug("Restored user environment", "home", user.HomeDir, "user", sudoUser)
 		}
 	}
-
-	// Store prepared environment for use in Command method
-	l.preparedEnv = env
 
 	// Prepare process credentials once during setup
 	l.logger.Debug("Preparing process credentials")
@@ -117,7 +117,7 @@ func (l *Linux) Open() error {
 
 // SetEnv sets an environment variable for commands run in the namespace
 func (l *Linux) SetEnv(key string, value string) {
-
+	l.preparedEnv[key] = value
 }
 
 // Command returns an exec.Cmd configured to run within the network namespace
@@ -133,7 +133,11 @@ func (l *Linux) Command(command []string) *exec.Cmd {
 	cmd := exec.Command("ip", cmdArgs[1:]...)
 
 	// Use prepared environment from Open method
-	cmd.Env = l.preparedEnv
+	env := make([]string, 0, len(l.preparedEnv))
+	for key, value := range l.preparedEnv {
+		env = append(env, fmt.Sprintf("%s=%s", key, value))
+	}
+	cmd.Env = env
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

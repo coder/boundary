@@ -25,7 +25,7 @@ type MacOSNetJail struct {
 	pfRulesPath   string
 	mainRulesPath string
 	logger        *slog.Logger
-	preparedEnv   []string
+	preparedEnv   map[string]string
 	procAttr      *syscall.SysProcAttr
 }
 
@@ -63,11 +63,13 @@ func (m *MacOSNetJail) Open() error {
 
 	// Prepare environment once during setup
 	m.logger.Debug("Preparing environment")
-	env := os.Environ()
+	m.preparedEnv = make(map[string]string)
 
-	// Add extra environment variables from config
-	for key, value := range m.config.Env {
-		env = append(env, fmt.Sprintf("%s=%s", key, value))
+	// Start with current environment
+	for _, envVar := range os.Environ() {
+		if parts := strings.SplitN(envVar, "=", 2); len(parts) == 2 {
+			m.preparedEnv[parts[0]] = parts[1]
+		}
 	}
 
 	// When running under sudo, restore essential user environment variables
@@ -76,17 +78,14 @@ func (m *MacOSNetJail) Open() error {
 		user, err := user.Lookup(sudoUser)
 		if err == nil {
 			// Set HOME to original user's home directory
-			env = append(env, fmt.Sprintf("HOME=%s", user.HomeDir))
+			m.preparedEnv["HOME"] = user.HomeDir
 			// Set USER to original username
-			env = append(env, fmt.Sprintf("USER=%s", sudoUser))
+			m.preparedEnv["USER"] = sudoUser
 			// Set LOGNAME to original username (some tools check this instead of USER)
-			env = append(env, fmt.Sprintf("LOGNAME=%s", sudoUser))
+			m.preparedEnv["LOGNAME"] = sudoUser
 			m.logger.Debug("Restored user environment", "home", user.HomeDir, "user", sudoUser)
 		}
 	}
-
-	// Store prepared environment for use in Command method
-	m.preparedEnv = env
 
 	// Prepare process credentials once during setup
 	m.logger.Debug("Preparing process credentials")
@@ -123,7 +122,7 @@ func (m *MacOSNetJail) Open() error {
 
 // SetEnv sets an environment variable for commands run in the namespace
 func (m *MacOSNetJail) SetEnv(key string, value string) {
-
+	m.preparedEnv[key] = value
 }
 
 // Execute runs the command with the network jail group membership
@@ -136,7 +135,11 @@ func (m *MacOSNetJail) Command(command []string) *exec.Cmd {
 	m.logger.Debug("Full command args", "args", command)
 
 	// Use prepared environment from Open method
-	cmd.Env = m.preparedEnv
+	env := make([]string, 0, len(m.preparedEnv))
+	for key, value := range m.preparedEnv {
+		env = append(env, fmt.Sprintf("%s=%s", key, value))
+	}
+	cmd.Env = env
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
