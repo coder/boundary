@@ -94,14 +94,8 @@ func Run(config Config, args []string) error {
 		return fmt.Errorf("failed to create jail: %v", err)
 	}
 
-	// Start the jail
-	if err := j.Start(); err != nil {
-		return fmt.Errorf("failed to start jail: %v", err)
-	}
-	defer j.Stop()
-
-	// Execute the command in the jail
-	return j.Execute(args, nil)
+	// Run the command in the jail
+	return j.Run(args, nil)
 }
 
 // setupLogging configures and returns a logger based on the log level
