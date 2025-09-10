@@ -16,7 +16,7 @@ git push origin v1.0.0
 
 This triggers the **Release** workflow which:
 1. Builds binaries for all supported platforms
-2. Creates compressed archives (`.tar.gz` for Unix, `.zip` for Windows)
+2. Creates compressed archives (`.tar.gz` for Unix)
 3. Creates a GitHub release with all binaries attached
 4. Generates release notes with download instructions
 
@@ -29,83 +29,6 @@ This triggers the **Release** workflow which:
 | macOS | Intel | `jail-darwin-amd64` | `.tar.gz` |
 | macOS | Apple Silicon | `jail-darwin-arm64` | `.tar.gz` |
 
-### Development Builds
-
-Every push to `main` and every PR automatically builds binaries available as **GitHub Actions artifacts**:
-
-1. Go to the **Actions** tab
-2. Click on the latest **Build Binaries** workflow run
-3. Scroll down to **Artifacts** section
-4. Download the binary for your platform
-
-Artifacts are kept for 30 days.
-
-## Local Development
-
-### Using Makefile (Recommended)
-
-The project includes a Makefile with common development tasks:
-
-```bash
-# Build for current platform
-make build
-
-# Build for all platforms
-make build-all
-
-# Run tests
-make test
-
-# Run tests with coverage
-make test-coverage
-
-# Clean build artifacts
-make clean
-
-# Format code
-make fmt
-
-# Lint code
-make lint
-```
-
-**Note**: The `lint` target requires [golangci-lint](https://golangci-lint.run/) to be installed.
-
-### Quick Build
-
-Build for your current platform:
-
-```bash
-go build -o jail .
-```
-
-### Cross-Platform Build Script
-
-Use the provided script to build for all platforms:
-
-```bash
-./scripts/build.sh
-```
-
-This creates a `build/` directory with binaries for all supported platforms.
-
-### Manual Cross-Platform Build
-
-```bash
-# Linux x64
-GOOS=linux GOARCH=amd64 go build -o jail-linux-amd64 .
-
-# macOS ARM64 (Apple Silicon)
-GOOS=darwin GOARCH=arm64 go build -o jail-darwin-arm64 .
-```
-
-### Build with Version Info
-
-```bash
-VERSION="v1.0.0"
-go build -ldflags="-X main.version=$VERSION" -o jail .
-```
-
 ## Release Process
 
 ### For Maintainers
@@ -113,7 +36,7 @@ go build -ldflags="-X main.version=$VERSION" -o jail .
 1. **Prepare Release**:
    - Ensure all changes are merged to `main`
    - Update version in relevant files if needed
-   - Test the build locally: `./scripts/build.sh`
+   - Test the build locally
 
 2. **Create Release**:
    ```bash
@@ -152,12 +75,6 @@ jail --help
 ```
 
 ## Troubleshooting
-
-### Build Issues
-
-- **Go version**: Ensure you're using Go 1.25+
-- **Dependencies**: Run `go mod download` and `go mod verify`
-- **Cross-compilation**: Some platforms may require specific build tags
 
 ### Release Issues
 
