@@ -285,11 +285,11 @@ func (cm *CertificateManager) generateServerCertificate(hostname string) (*tls.C
 			PostalCode:    []string{""},
 			CommonName:    hostname,
 		},
-		NotBefore:    time.Now(),
-		NotAfter:     time.Now().Add(24 * time.Hour), // 1 day
-		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		DNSNames:     []string{hostname},
+		NotBefore:   time.Now(),
+		NotAfter:    time.Now().Add(24 * time.Hour), // 1 day
+		KeyUsage:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		DNSNames:    []string{hostname},
 	}
 
 	// Add IP address if hostname is an IP
