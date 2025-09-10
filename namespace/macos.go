@@ -26,6 +26,7 @@ type MacOSNetJail struct {
 	mainRulesPath string
 	logger        *slog.Logger
 	preparedEnv   []string
+	procAttr      *syscall.SysProcAttr
 }
 
 // newMacOSJail creates a new macOS network jail instance
@@ -87,6 +88,35 @@ func (m *MacOSNetJail) Open() error {
 	// Store prepared environment for use in Command method
 	m.preparedEnv = env
 
+	// Prepare process credentials once during setup
+	m.logger.Debug("Preparing process credentials")
+	procAttr := &syscall.SysProcAttr{
+		Credential: &syscall.Credential{
+			Gid: uint32(m.groupID),
+		},
+	}
+
+	// Drop privileges to original user if running under sudo
+	sudoUID := os.Getenv("SUDO_UID")
+	if sudoUID != "" {
+		uid, err := strconv.Atoi(sudoUID)
+		if err != nil {
+			m.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", sudoUID, "error", err)
+		} else {
+			// Use original user ID but KEEP the jail group for network isolation
+			procAttr = &syscall.SysProcAttr{
+				Credential: &syscall.Credential{
+					Uid: uint32(uid),
+					Gid: uint32(m.groupID), // Keep jail group, not original user's group
+				},
+			}
+			m.logger.Debug("Dropping privileges to original user with jail group", "uid", uid, "jail_gid", m.groupID)
+		}
+	}
+
+	// Store prepared process attributes for use in Command method
+	m.procAttr = procAttr
+
 	m.logger.Debug("Setup completed successfully")
 	return nil
 }
@@ -106,30 +136,8 @@ func (m *MacOSNetJail) Command(command []string) *exec.Cmd {
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 
-	// Set group ID using syscall
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Credential: &syscall.Credential{
-			Gid: uint32(m.groupID),
-		},
-	}
-
-	// Drop privileges to original user if running under sudo
-	sudoUID := os.Getenv("SUDO_UID")
-	if sudoUID != "" {
-		uid, err := strconv.Atoi(sudoUID)
-		if err != nil {
-			m.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", sudoUID, "error", err)
-		} else {
-			// Use original user ID but KEEP the jail group for network isolation
-			cmd.SysProcAttr = &syscall.SysProcAttr{
-				Credential: &syscall.Credential{
-					Uid: uint32(uid),
-					Gid: uint32(m.groupID), // Keep jail group, not original user's group
-				},
-			}
-			m.logger.Debug("Dropping privileges to original user with jail group", "uid", uid, "jail_gid", m.groupID)
-		}
-	}
+	// Use prepared process attributes from Open method
+	cmd.SysProcAttr = m.procAttr
 
 	return cmd
 }

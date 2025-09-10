@@ -19,6 +19,7 @@ type Linux struct {
 	namespace   string
 	logger      *slog.Logger
 	preparedEnv []string
+	procAttr    *syscall.SysProcAttr
 }
 
 // newLinux creates a new Linux network jail instance
@@ -86,6 +87,30 @@ func (l *Linux) Open() error {
 	// Store prepared environment for use in Command method
 	l.preparedEnv = env
 
+	// Prepare process credentials once during setup
+	l.logger.Debug("Preparing process credentials")
+	var gid, uid int
+	sudoUID := os.Getenv("SUDO_UID")
+	if sudoUID != "" {
+		uid, err = strconv.Atoi(sudoUID)
+		if err != nil {
+			l.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", sudoUID, "error", err)
+		}
+	}
+	sudoGID := os.Getenv("SUDO_GID")
+	if sudoGID != "" {
+		gid, err = strconv.Atoi(sudoGID)
+		if err != nil {
+			l.logger.Warn("Invalid SUDO_GID, subprocess will run as root", "sudo_gid", sudoGID, "error", err)
+		}
+	}
+	l.procAttr = &syscall.SysProcAttr{
+		Credential: &syscall.Credential{
+			Uid: uint32(uid),
+			Gid: uint32(gid),
+		},
+	}
+
 	l.logger.Debug("Setup completed successfully")
 	return nil
 }
@@ -108,29 +133,8 @@ func (l *Linux) Command(command []string) *exec.Cmd {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	// Drop privileges to original user if running under sudo
-	var gid, uid int
-	var err error
-	sudoUID := os.Getenv("SUDO_UID")
-	if sudoUID != "" {
-		uid, err = strconv.Atoi(sudoUID)
-		if err != nil {
-			l.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", sudoUID, "error", err)
-		}
-	}
-	sudoGID := os.Getenv("SUDO_GID")
-	if sudoGID != "" {
-		gid, err = strconv.Atoi(sudoGID)
-		if err != nil {
-			l.logger.Warn("Invalid SUDO_GID, subprocess will run as root", "sudo_gid", sudoGID, "error", err)
-		}
-	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Credential: &syscall.Credential{
-			Uid: uint32(uid),
-			Gid: uint32(gid),
-		},
-	}
+	// Use prepared process attributes from Open method
+	cmd.SysProcAttr = l.procAttr
 
 	return cmd
 }
