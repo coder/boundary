@@ -11,6 +11,7 @@ import (
 
 	"github.com/coder/jail"
 	"github.com/coder/jail/audit"
+	"github.com/coder/jail/namespace"
 	"github.com/coder/jail/rules"
 	"github.com/coder/jail/tls"
 	"github.com/coder/serpent"
@@ -93,6 +94,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	logger := setupLogging(config.LogLevel)
+	userInfo := getUserInfo()
 
 	// Get command arguments
 	if len(args) == 0 {
@@ -120,7 +122,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 	// Create certificate manager
 	certManager, err := tls.NewCertificateManager(tls.Config{
 		Logger:    logger,
-		ConfigDir: "TODO",
+		ConfigDir: userInfo.ConfigDir,
 	})
 	if err != nil {
 		logger.Error("Failed to create certificate manager", "error", err)
@@ -175,4 +177,10 @@ func Run(ctx context.Context, config Config, args []string) error {
 	}
 
 	return nil
+}
+
+func getUserInfo() namespace.UserInfo {
+	// get the user info of the original user even if we are running under sudo
+	//
+	return namespace.UserInfo{}
 }

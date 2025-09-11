@@ -20,8 +20,9 @@ type Config struct {
 }
 
 type UserInfo struct {
-	Username string
-	Uid      int
-	Gid      int
-	HomeDir  string
+	Username  string
+	Uid       int
+	Gid       int
+	HomeDir   string
+	ConfigDir string
 }
