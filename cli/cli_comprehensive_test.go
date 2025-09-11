@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"runtime"
 	"strings"
 	"testing"
@@ -205,14 +206,26 @@ func TestGetCurrentUserInfo(t *testing.T) {
 }
 
 func TestGetConfigDir(t *testing.T) {
+	// Save original XDG_CONFIG_HOME and restore after test
+	originalXDG := os.Getenv("XDG_CONFIG_HOME")
+	defer func() {
+		if originalXDG != "" {
+			os.Setenv("XDG_CONFIG_HOME", originalXDG)
+		} else {
+			os.Unsetenv("XDG_CONFIG_HOME")
+		}
+	}()
+	
 	tests := []struct {
-		name    string
-		homeDir string
-		expected func(string) bool // validation function
+		name       string
+		homeDir    string
+		xdgConfig  string  // XDG_CONFIG_HOME value to set
+		expected   func(string) bool // validation function
 	}{
 		{
 			name:    "normal home directory",
 			homeDir: "/home/testuser",
+			xdgConfig: "", // unset XDG_CONFIG_HOME
 			expected: func(configDir string) bool {
 				return strings.HasPrefix(configDir, "/home/testuser") && 
 				       (strings.Contains(configDir, ".config") || strings.Contains(configDir, "jail"))
@@ -221,6 +234,7 @@ func TestGetConfigDir(t *testing.T) {
 		{
 			name:    "root home directory",
 			homeDir: "/root",
+			xdgConfig: "", // unset XDG_CONFIG_HOME
 			expected: func(configDir string) bool {
 				return strings.HasPrefix(configDir, "/root")
 			},
@@ -228,14 +242,30 @@ func TestGetConfigDir(t *testing.T) {
 		{
 			name:    "empty home directory",
 			homeDir: "",
+			xdgConfig: "", // unset XDG_CONFIG_HOME
 			expected: func(configDir string) bool {
 				return configDir != "" // should have some fallback
+			},
+		},
+		{
+			name:    "XDG_CONFIG_HOME set",
+			homeDir: "/home/testuser",
+			xdgConfig: "/custom/config",
+			expected: func(configDir string) bool {
+				return configDir == "/custom/config/coder_jail"
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Set up environment for this test
+			if tt.xdgConfig != "" {
+				os.Setenv("XDG_CONFIG_HOME", tt.xdgConfig)
+			} else {
+				os.Unsetenv("XDG_CONFIG_HOME")
+			}
+			
 			configDir := getConfigDir(tt.homeDir)
 			
 			if configDir == "" {
@@ -244,7 +274,7 @@ func TestGetConfigDir(t *testing.T) {
 			}
 			
 			if !tt.expected(configDir) {
-				t.Errorf("config directory %s does not match expected pattern for home %s", configDir, tt.homeDir)
+				t.Errorf("config directory %s does not match expected pattern for home %s (XDG_CONFIG_HOME=%s)", configDir, tt.homeDir, tt.xdgConfig)
 			}
 		})
 	}
