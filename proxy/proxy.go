@@ -14,39 +14,32 @@ import (
 	"github.com/coder/jail/rules"
 )
 
-type RuleEvaluator interface {
-	Evaluate(method, url string) rules.EvaluationResult
-}
+// Server handles HTTP and HTTPS requests with rule-based filtering
+type Server struct {
+	ruleEngine rules.Evaluator
+	auditor    audit.Auditor
+	logger     *slog.Logger
+	tlsConfig  *tls.Config
+	httpPort   int
+	httpsPort  int
 
-type Auditor interface {
-	AuditRequest(req audit.Request)
-}
-
-// ProxyServer handles HTTP and HTTPS requests with rule-based filtering
-type ProxyServer struct {
 	httpServer  *http.Server
 	httpsServer *http.Server
-	ruleEngine  RuleEvaluator
-	auditor     Auditor
-	logger      *slog.Logger
-	tlsConfig   *tls.Config
-	httpPort    int
-	httpsPort   int
 }
 
 // Config holds configuration for the proxy server
 type Config struct {
 	HTTPPort   int
 	HTTPSPort  int
-	RuleEngine RuleEvaluator
-	Auditor    Auditor
+	RuleEngine rules.Evaluator
+	Auditor    audit.Auditor
 	Logger     *slog.Logger
 	TLSConfig  *tls.Config
 }
 
 // NewProxyServer creates a new proxy server instance
-func NewProxyServer(config Config) *ProxyServer {
-	return &ProxyServer{
+func NewProxyServer(config Config) *Server {
+	return &Server{
 		ruleEngine: config.RuleEngine,
 		auditor:    config.Auditor,
 		logger:     config.Logger,
@@ -57,7 +50,7 @@ func NewProxyServer(config Config) *ProxyServer {
 }
 
 // Start starts both HTTP and HTTPS proxy servers
-func (p *ProxyServer) Start(ctx context.Context) error {
+func (p *Server) Start(ctx context.Context) error {
 	// Create HTTP server
 	p.httpServer = &http.Server{
 		Addr:    fmt.Sprintf(":%d", p.httpPort),
@@ -95,7 +88,7 @@ func (p *ProxyServer) Start(ctx context.Context) error {
 }
 
 // Stop stops both proxy servers
-func (p *ProxyServer) Stop() error {
+func (p *Server) Stop() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -114,7 +107,7 @@ func (p *ProxyServer) Stop() error {
 }
 
 // handleHTTP handles regular HTTP requests
-func (p *ProxyServer) handleHTTP(w http.ResponseWriter, r *http.Request) {
+func (p *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	// Check if request should be allowed
 	result := p.ruleEngine.Evaluate(r.Method, r.URL.String())
 
@@ -136,7 +129,7 @@ func (p *ProxyServer) handleHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleHTTPS handles HTTPS requests (after TLS termination)
-func (p *ProxyServer) handleHTTPS(w http.ResponseWriter, r *http.Request) {
+func (p *Server) handleHTTPS(w http.ResponseWriter, r *http.Request) {
 	// Check if request should be allowed
 	result := p.ruleEngine.Evaluate(r.Method, r.URL.String())
 
@@ -158,7 +151,7 @@ func (p *ProxyServer) handleHTTPS(w http.ResponseWriter, r *http.Request) {
 }
 
 // forwardHTTPRequest forwards a regular HTTP request
-func (p *ProxyServer) forwardHTTPRequest(w http.ResponseWriter, r *http.Request) {
+func (p *Server) forwardHTTPRequest(w http.ResponseWriter, r *http.Request) {
 	// Create a new request to the target server
 	targetURL := r.URL
 	if targetURL.Scheme == "" {
@@ -212,7 +205,7 @@ func (p *ProxyServer) forwardHTTPRequest(w http.ResponseWriter, r *http.Request)
 }
 
 // forwardHTTPSRequest forwards an HTTPS request
-func (p *ProxyServer) forwardHTTPSRequest(w http.ResponseWriter, r *http.Request) {
+func (p *Server) forwardHTTPSRequest(w http.ResponseWriter, r *http.Request) {
 	// Create target URL
 	targetURL := &url.URL{
 		Scheme:   "https",
@@ -271,7 +264,7 @@ func (p *ProxyServer) forwardHTTPSRequest(w http.ResponseWriter, r *http.Request
 }
 
 // writeBlockedResponse writes a blocked response
-func (p *ProxyServer) writeBlockedResponse(w http.ResponseWriter, r *http.Request) {
+func (p *Server) writeBlockedResponse(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusForbidden)
 

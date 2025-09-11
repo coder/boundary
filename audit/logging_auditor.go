@@ -2,7 +2,7 @@ package audit
 
 import "log/slog"
 
-// LoggingAuditor implements Auditor by logging to slog
+// LoggingAuditor implements proxy.Auditor by logging to slog
 type LoggingAuditor struct {
 	logger *slog.Logger
 }
