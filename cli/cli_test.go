@@ -41,11 +41,6 @@ func (m *MockPTY) Stderr() string {
 	return m.stderr.String()
 }
 
-func (m *MockPTY) Clear() {
-	m.stdout = strings.Builder{}
-	m.stderr = strings.Builder{}
-}
-
 func (m *MockPTY) ExpectInStdout(content string) {
 	if !strings.Contains(m.stdout.String(), content) {
 		m.t.Fatalf("expected \"%s\", got: %s", content, m.stdout.String())
@@ -85,14 +80,14 @@ func TestCurlPastebin(t *testing.T) {
 		t.Fatalf("error curling pastebin test fixture: %v", err)
 	}
 	pty.ExpectInStdout("foo")
-	pty.Clear()
 
 	// Allowing all with a glob should allow the request
+	cmd = NewCommand()
 	inv = cmd.Invoke("--allow", "*", "--", "curl", "https://pastebin.com/raw/2q6kyAyQ")
+	pty = NewMockPTY(t)
 	pty.Attach(inv)
 	if err := inv.Run(); err != nil {
 		t.Fatalf("error curling pastebin test fixture: %v", err)
 	}
 	pty.ExpectInStdout("foo")
-	pty.Clear()
 }
