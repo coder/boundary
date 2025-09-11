@@ -6,6 +6,9 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"os/user"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -181,6 +184,74 @@ func Run(ctx context.Context, config Config, args []string) error {
 
 func getUserInfo() namespace.UserInfo {
 	// get the user info of the original user even if we are running under sudo
-	//
-	return namespace.UserInfo{}
+	sudoUser := os.Getenv("SUDO_USER")
+	
+	// If running under sudo, get original user information
+	if sudoUser != "" {
+		user, err := user.Lookup(sudoUser)
+		if err != nil {
+			// Fallback to current user if lookup fails
+			return getCurrentUserInfo()
+		}
+		
+		// Parse SUDO_UID and SUDO_GID
+		uid := 0
+		gid := 0
+		
+		if sudoUID := os.Getenv("SUDO_UID"); sudoUID != "" {
+			if parsedUID, err := strconv.Atoi(sudoUID); err == nil {
+				uid = parsedUID
+			}
+		}
+		
+		if sudoGID := os.Getenv("SUDO_GID"); sudoGID != "" {
+			if parsedGID, err := strconv.Atoi(sudoGID); err == nil {
+				gid = parsedGID
+			}
+		}
+		
+		configDir := getConfigDir(user.HomeDir)
+		
+		return namespace.UserInfo{
+			Username:  sudoUser,
+			Uid:       uid,
+			Gid:       gid,
+			HomeDir:   user.HomeDir,
+			ConfigDir: configDir,
+		}
+	}
+	
+	// Not running under sudo, use current user
+	return getCurrentUserInfo()
+}
+
+// getCurrentUserInfo gets information for the current user
+func getCurrentUserInfo() namespace.UserInfo {
+	currentUser, err := user.Current()
+	if err != nil {
+		// Fallback with empty values if we can't get user info
+		return namespace.UserInfo{}
+	}
+	
+	uid, _ := strconv.Atoi(currentUser.Uid)
+	gid, _ := strconv.Atoi(currentUser.Gid)
+	
+	configDir := getConfigDir(currentUser.HomeDir)
+	
+	return namespace.UserInfo{
+		Username:  currentUser.Username,
+		Uid:       uid,
+		Gid:       gid,
+		HomeDir:   currentUser.HomeDir,
+		ConfigDir: configDir,
+	}
+}
+
+// getConfigDir determines the config directory based on XDG_CONFIG_HOME or fallback
+func getConfigDir(homeDir string) string {
+	// Use XDG_CONFIG_HOME if set, otherwise fallback to ~/.config/coder_jail
+	if xdgConfigHome := os.Getenv("XDG_CONFIG_HOME"); xdgConfigHome != "" {
+		return filepath.Join(xdgConfigHome, "coder_jail")
+	}
+	return filepath.Join(homeDir, ".config", "coder_jail")
 }

@@ -91,21 +91,6 @@ func (m *MacOSNetJail) Start() error {
 	// Set LOGNAME to original username (some tools check this instead of USER)
 	m.preparedEnv["LOGNAME"] = m.userInfo.Username
 
-	// When running under sudo, restore essential user environment variables
-	// sudoUser := os.Getenv("SUDO_USER")
-	// if sudoUser != "" {
-	// 	user, err := user.Lookup(sudoUser)
-	// 	if err == nil {
-	// 		// Set HOME to original user's home directory
-	// 		m.preparedEnv["HOME"] = user.HomeDir
-	// 		// Set USER to original username
-	// 		m.preparedEnv["USER"] = sudoUser
-	// 		// Set LOGNAME to original username (some tools check this instead of USER)
-	// 		m.preparedEnv["LOGNAME"] = sudoUser
-	// 		m.logger.Debug("Restored user environment", "home", user.HomeDir, "user", sudoUser)
-	// 	}
-	// }
-
 	// Prepare process credentials once during setup
 	m.logger.Debug("Preparing process credentials")
 	// Use original user ID but KEEP the jail group for network isolation
@@ -115,24 +100,6 @@ func (m *MacOSNetJail) Start() error {
 			Gid: uint32(m.restrictedGid),
 		},
 	}
-
-	// Drop privileges to original user if running under sudo
-	// sudoUID := os.Getenv("SUDO_UID")
-	// if sudoUID != "" {
-	// 	uid, err := strconv.Atoi(sudoUID)
-	// 	if err != nil {
-	// 		m.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", sudoUID, "error", err)
-	// 	} else {
-	// 		// Use original user ID but KEEP the jail group for network isolation
-	// 		procAttr = &syscall.SysProcAttr{
-	// 			Credential: &syscall.Credential{
-	// 				Uid: uint32(uid),
-	// 				Gid: uint32(m.restrictedGid), // Keep jail group, not original user's group
-	// 			},
-	// 		}
-	// 		m.logger.Debug("Dropping privileges to original user with jail group", "uid", uid, "jail_gid", m.restrictedGid)
-	// 	}
-	// }
 
 	// Store prepared process attributes for use in Command method
 	m.procAttr = procAttr
