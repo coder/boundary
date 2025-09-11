@@ -1,8 +1,6 @@
 package audit
 
-import (
-	"net/http"
-)
+import "net/http"
 
 // Request represents information about an HTTP request for auditing
 type Request struct {

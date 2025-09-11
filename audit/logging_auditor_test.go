@@ -11,13 +11,13 @@ import (
 func TestLoggingAuditor(t *testing.T) {
 	tests := []struct {
 		name           string
-		request        *Request
+		request        Request
 		expectedLevel  string
 		expectedFields []string
 	}{
 		{
 			name: "allow request",
-			request: &Request{
+			request: Request{
 				Method:  "GET",
 				URL:     "https://github.com",
 				Allowed: true,
@@ -28,7 +28,7 @@ func TestLoggingAuditor(t *testing.T) {
 		},
 		{
 			name: "deny request",
-			request: &Request{
+			request: Request{
 				Method:  "POST",
 				URL:     "https://example.com",
 				Allowed: false,
@@ -38,7 +38,7 @@ func TestLoggingAuditor(t *testing.T) {
 		},
 		{
 			name: "allow with empty rule",
-			request: &Request{
+			request: Request{
 				Method:  "PUT",
 				URL:     "https://api.github.com/repos",
 				Allowed: true,
@@ -49,7 +49,7 @@ func TestLoggingAuditor(t *testing.T) {
 		},
 		{
 			name: "deny HTTPS request",
-			request: &Request{
+			request: Request{
 				Method:  "GET",
 				URL:     "https://malware.bad.com/payload",
 				Allowed: false,
@@ -59,7 +59,7 @@ func TestLoggingAuditor(t *testing.T) {
 		},
 		{
 			name: "allow with wildcard rule",
-			request: &Request{
+			request: Request{
 				Method:  "POST",
 				URL:     "https://api.github.com/graphql",
 				Allowed: true,
@@ -70,7 +70,7 @@ func TestLoggingAuditor(t *testing.T) {
 		},
 		{
 			name: "deny HTTP request",
-			request: &Request{
+			request: Request{
 				Method:  "GET",
 				URL:     "http://insecure.example.com",
 				Allowed: false,
@@ -80,7 +80,7 @@ func TestLoggingAuditor(t *testing.T) {
 		},
 		{
 			name: "allow HEAD request",
-			request: &Request{
+			request: Request{
 				Method:  "HEAD",
 				URL:     "https://cdn.jsdelivr.net/health",
 				Allowed: true,
@@ -91,7 +91,7 @@ func TestLoggingAuditor(t *testing.T) {
 		},
 		{
 			name: "deny OPTIONS request",
-			request: &Request{
+			request: Request{
 				Method:  "OPTIONS",
 				URL:     "https://restricted.api.com/cors",
 				Allowed: false,
@@ -101,7 +101,7 @@ func TestLoggingAuditor(t *testing.T) {
 		},
 		{
 			name: "allow with port number",
-			request: &Request{
+			request: Request{
 				Method:  "GET",
 				URL:     "https://localhost:3000/api/health",
 				Allowed: true,
@@ -112,7 +112,7 @@ func TestLoggingAuditor(t *testing.T) {
 		},
 		{
 			name: "deny DELETE request",
-			request: &Request{
+			request: Request{
 				Method:  "DELETE",
 				URL:     "https://api.production.com/users/admin",
 				Allowed: false,
@@ -153,13 +153,13 @@ func TestLoggingAuditor(t *testing.T) {
 func TestLoggingAuditor_EdgeCases(t *testing.T) {
 	tests := []struct {
 		name           string
-		request        *Request
+		request        Request
 		expectedLevel  string
 		expectedFields []string
 	}{
 		{
 			name: "empty fields",
-			request: &Request{
+			request: Request{
 				Method:  "",
 				URL:     "",
 				Allowed: true,
@@ -170,7 +170,7 @@ func TestLoggingAuditor_EdgeCases(t *testing.T) {
 		},
 		{
 			name: "special characters in URL",
-			request: &Request{
+			request: Request{
 				Method:  "POST",
 				URL:     "https://api.example.com/users?name=John%20Doe&id=123",
 				Allowed: true,
@@ -181,7 +181,7 @@ func TestLoggingAuditor_EdgeCases(t *testing.T) {
 		},
 		{
 			name: "very long URL",
-			request: &Request{
+			request: Request{
 				Method:  "GET",
 				URL:     "https://example.com/" + strings.Repeat("a", 1000),
 				Allowed: false,
@@ -191,7 +191,7 @@ func TestLoggingAuditor_EdgeCases(t *testing.T) {
 		},
 		{
 			name: "deny with custom URL",
-			request: &Request{
+			request: Request{
 				Method:  "DELETE",
 				URL:     "https://malicious.com",
 				Allowed: false,
@@ -233,13 +233,13 @@ func TestLoggingAuditor_DifferentLogLevels(t *testing.T) {
 	tests := []struct {
 		name         string
 		logLevel     slog.Level
-		request      *Request
+		request      Request
 		expectOutput bool
 	}{
 		{
 			name:     "info level allows info logs",
 			logLevel: slog.LevelInfo,
-			request: &Request{
+			request: Request{
 				Method:  "GET",
 				URL:     "https://github.com",
 				Allowed: true,
@@ -250,7 +250,7 @@ func TestLoggingAuditor_DifferentLogLevels(t *testing.T) {
 		{
 			name:     "warn level blocks info logs",
 			logLevel: slog.LevelWarn,
-			request: &Request{
+			request: Request{
 				Method:  "GET",
 				URL:     "https://github.com",
 				Allowed: true,
@@ -261,7 +261,7 @@ func TestLoggingAuditor_DifferentLogLevels(t *testing.T) {
 		{
 			name:     "warn level allows warn logs",
 			logLevel: slog.LevelWarn,
-			request: &Request{
+			request: Request{
 				Method:  "POST",
 				URL:     "https://example.com",
 				Allowed: false,
@@ -271,7 +271,7 @@ func TestLoggingAuditor_DifferentLogLevels(t *testing.T) {
 		{
 			name:     "error level blocks warn logs",
 			logLevel: slog.LevelError,
-			request: &Request{
+			request: Request{
 				Method:  "POST",
 				URL:     "https://example.com",
 				Allowed: false,
@@ -312,7 +312,7 @@ func TestLoggingAuditor_NilLogger(t *testing.T) {
 	}()
 
 	auditor := &LoggingAuditor{logger: nil}
-	req := &Request{
+	req := Request{
 		Method:  "GET",
 		URL:     "https://example.com",
 		Allowed: true,
@@ -331,7 +331,7 @@ func TestLoggingAuditor_JSONHandler(t *testing.T) {
 	}))
 
 	auditor := NewLoggingAuditor(logger)
-	req := &Request{
+	req := Request{
 		Method:  "GET",
 		URL:     "https://github.com",
 		Allowed: true,
@@ -364,7 +364,7 @@ func TestLoggingAuditor_DiscardHandler(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
 
 	auditor := NewLoggingAuditor(logger)
-	req := &Request{
+	req := Request{
 		Method:  "GET",
 		URL:     "https://example.com",
 		Allowed: true,

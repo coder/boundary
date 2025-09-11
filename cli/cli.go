@@ -12,8 +12,6 @@ import (
 
 	"github.com/coder/jail"
 	"github.com/coder/jail/audit"
-	"github.com/coder/jail/namespace"
-	"github.com/coder/jail/proxy"
 	"github.com/coder/jail/rules"
 	"github.com/coder/jail/tls"
 	"github.com/coder/serpent"
@@ -116,20 +114,7 @@ func Run(config Config, stdin io.Reader, stdout, stderr io.Writer, args []string
 	ruleEngine := rules.NewRuleEngine(allowRules, logger)
 
 	// Create auditor
-	auditor := audit.NewLoggingAuditor(logger)
-
-	// Create network namespace configuration
-	nsConfig := namespace.Config{
-		HTTPPort:  8040,
-		HTTPSPort: 8043,
-	}
-
-	// Create commander
-	commander, err := namespace.New(nsConfig, logger)
-	if err != nil {
-		logger.Error("Failed to create network namespace", "error", err)
-		return fmt.Errorf("failed to create network namespace: %v", err)
-	}
+	// auditor := audit.NewLoggingAuditor(logger)
 
 	// Create certificate manager
 	certManager, err := tls.NewCertificateManager(logger)
@@ -138,39 +123,17 @@ func Run(config Config, stdin io.Reader, stdout, stderr io.Writer, args []string
 		return fmt.Errorf("failed to create certificate manager: %v", err)
 	}
 
-	// Setup TLS config and write CA certificate to file
-	var caCertPath, configDir string
-	tlsConfig, caCertPath, configDir, err := certManager.SetupTLSAndWriteCACert()
-	if err != nil {
-		logger.Error("Failed to setup TLS and CA certificate", "error", err)
-		return fmt.Errorf("failed to setup TLS and CA certificate: %v", err)
-	}
-
-	// Set standard CA certificate environment variables for common tools
-	// This makes tools like curl, git, etc. trust our dynamically generated CA
-	commander.SetEnv("SSL_CERT_FILE", caCertPath)       // OpenSSL/LibreSSL-based tools
-	commander.SetEnv("SSL_CERT_DIR", configDir)         // OpenSSL certificate directory
-	commander.SetEnv("CURL_CA_BUNDLE", caCertPath)      // curl
-	commander.SetEnv("GIT_SSL_CAINFO", caCertPath)      // Git
-	commander.SetEnv("REQUESTS_CA_BUNDLE", caCertPath)  // Python requests
-	commander.SetEnv("NODE_EXTRA_CA_CERTS", caCertPath) // Node.js
-
-	// Create proxy server
-	proxyServer := proxy.NewProxyServer(proxy.Config{
-		HTTPPort:   8040,
-		HTTPSPort:  8043,
-		RuleEngine: ruleEngine,
-		Auditor:    auditor,
-		Logger:     logger,
-		TLSConfig:  tlsConfig,
-	})
-
 	// Create jail instance
-	jailInstance := jail.New(jail.Config{
-		Commander:   commander,
-		ProxyServer: proxyServer,
+	jailInstance, err := jail.New(context.Background(), jail.Config{
+		RuleEngine:  ruleEngine,
+		Auditor:     audit.NewLoggingAuditor(logger),
 		Logger:      logger,
+		CertManager: certManager,
 	})
+	if err != nil {
+		logger.Error("Failed to create jail instance", "error", err)
+		return fmt.Errorf("failed to create jail instance: %v", err)
+	}
 
 	// Setup signal handling BEFORE any setup
 	sigChan := make(chan os.Signal, 1)
@@ -199,7 +162,7 @@ func Run(config Config, stdin io.Reader, stdout, stderr io.Writer, args []string
 	}()
 
 	// Open jail (starts network namespace and proxy server)
-	err = jailInstance.Open()
+	err = jailInstance.Start()
 	if err != nil {
 		logger.Error("Failed to open jail", "error", err)
 		return fmt.Errorf("failed to open jail: %v", err)

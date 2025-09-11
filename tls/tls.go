@@ -51,22 +51,6 @@ func NewCertificateManager(logger *slog.Logger) (*CertificateManager, error) {
 	return cm, nil
 }
 
-// GetTLSConfig returns a TLS config that generates certificates on-demand
-func (cm *CertificateManager) GetTLSConfig() *tls.Config {
-	return &tls.Config{
-		GetCertificate: cm.getCertificate,
-		MinVersion:     tls.VersionTLS12,
-	}
-}
-
-// GetCACertPEM returns the CA certificate in PEM format
-func (cm *CertificateManager) GetCACertPEM() ([]byte, error) {
-	return pem.EncodeToMemory(&pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: cm.caCert.Raw,
-	}), nil
-}
-
 // SetupTLSAndWriteCACert sets up TLS config and writes CA certificate to file
 // Returns the TLS config, CA cert path, and config directory
 func (cm *CertificateManager) SetupTLSAndWriteCACert() (*tls.Config, string, string, error) {
@@ -77,10 +61,10 @@ func (cm *CertificateManager) SetupTLSAndWriteCACert() (*tls.Config, string, str
 	}
 
 	// Get TLS config
-	tlsConfig := cm.GetTLSConfig()
+	tlsConfig := cm.getTLSConfig()
 
 	// Get CA certificate PEM
-	caCertPEM, err := cm.GetCACertPEM()
+	caCertPEM, err := cm.getCACertPEM()
 	if err != nil {
 		return nil, "", "", fmt.Errorf("failed to get CA certificate: %v", err)
 	}
@@ -109,6 +93,22 @@ func (cm *CertificateManager) loadOrGenerateCA() error {
 	// Generate new CA
 	cm.logger.Info("Generating new CA certificate")
 	return cm.generateCA(caKeyPath, caCertPath)
+}
+
+// getTLSConfig returns a TLS config that generates certificates on-demand
+func (cm *CertificateManager) getTLSConfig() *tls.Config {
+	return &tls.Config{
+		GetCertificate: cm.getCertificate,
+		MinVersion:     tls.VersionTLS12,
+	}
+}
+
+// getCACertPEM returns the CA certificate in PEM format
+func (cm *CertificateManager) getCACertPEM() ([]byte, error) {
+	return pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: cm.caCert.Raw,
+	}), nil
 }
 
 // loadExistingCA attempts to load existing CA files

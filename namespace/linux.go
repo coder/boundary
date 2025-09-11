@@ -16,26 +16,34 @@ import (
 
 // Linux implements jail.Commander using Linux network namespaces
 type Linux struct {
-	config      Config
-	namespace   string
-	vethHost    string // Host-side veth interface name for iptables rules
-	logger      *slog.Logger
-	preparedEnv map[string]string
-	procAttr    *syscall.SysProcAttr
+	namespace      string
+	vethHost       string // Host-side veth interface name for iptables rules
+	logger         *slog.Logger
+	preparedEnv    map[string]string
+	procAttr       *syscall.SysProcAttr
+	httpProxyPort  int
+	httpsProxyPort int
 }
 
-// newLinux creates a new Linux network jail instance
-func newLinux(config Config, logger *slog.Logger) (*Linux, error) {
+// NewLinux creates a new Linux network jail instance
+func NewLinux(config Config) (*Linux, error) {
+	// Initialize preparedEnv with config environment variables
+	preparedEnv := make(map[string]string)
+	for key, value := range config.Env {
+		preparedEnv[key] = value
+	}
+
 	return &Linux{
-		config:      config,
-		namespace:   newNamespaceName(),
-		logger:      logger,
-		preparedEnv: make(map[string]string),
+		namespace:      newNamespaceName(),
+		logger:         config.Logger,
+		preparedEnv:    preparedEnv,
+		httpProxyPort:  config.HttpProxyPort,
+		httpsProxyPort: config.HttpsProxyPort,
 	}, nil
 }
 
 // Setup creates network namespace and configures iptables rules
-func (l *Linux) Open() error {
+func (l *Linux) Start() error {
 	l.logger.Debug("Setup called")
 
 	// Setup DNS configuration BEFORE creating namespace
@@ -69,7 +77,7 @@ func (l *Linux) Open() error {
 	// Start with current environment
 	for _, envVar := range os.Environ() {
 		if parts := strings.SplitN(envVar, "=", 2); len(parts) == 2 {
-			// Only set if not already set by SetEnv
+			// Only set if not already set by config
 			if _, exists := l.preparedEnv[parts[0]]; !exists {
 				l.preparedEnv[parts[0]] = parts[1]
 			}
@@ -117,11 +125,6 @@ func (l *Linux) Open() error {
 
 	l.logger.Debug("Setup completed successfully")
 	return nil
-}
-
-// SetEnv sets an environment variable for commands run in the namespace
-func (l *Linux) SetEnv(key string, value string) {
-	l.preparedEnv[key] = value
 }
 
 // Command returns an exec.Cmd configured to run within the network namespace
@@ -266,20 +269,20 @@ func (l *Linux) setupIptables() error {
 	// COMPREHENSIVE APPROACH: Intercept ALL TCP traffic from namespace
 	// Use PREROUTING on host to catch traffic after it exits namespace but before routing
 	// This ensures NO TCP traffic can bypass the proxy
-	cmd = exec.Command("iptables", "-t", "nat", "-A", "PREROUTING", "-i", l.vethHost, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.config.HTTPSPort))
+	cmd = exec.Command("iptables", "-t", "nat", "-A", "PREROUTING", "-i", l.vethHost, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.httpsProxyPort))
 	err = cmd.Run()
 	if err != nil {
 		return fmt.Errorf("failed to add comprehensive TCP redirect rule: %v", err)
 	}
 
-	l.logger.Debug("Comprehensive TCP jailing enabled", "interface", l.vethHost, "proxy_port", l.config.HTTPSPort)
+	l.logger.Debug("Comprehensive TCP jailing enabled", "interface", l.vethHost, "proxy_port", l.httpsProxyPort)
 	return nil
 }
 
 // removeIptables removes iptables rules
 func (l *Linux) removeIptables() error {
 	// Remove comprehensive TCP redirect rule
-	cmd := exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-i", l.vethHost, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.config.HTTPSPort))
+	cmd := exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-i", l.vethHost, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.httpsProxyPort))
 	cmd.Run() // Ignore errors during cleanup
 
 	// Remove NAT rule
