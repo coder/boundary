@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	"os/user"
 	"strconv"
 	"strings"
 	"syscall"
@@ -20,7 +19,7 @@ const (
 
 // MacOSNetJail implements network jail using macOS PF (Packet Filter) and group-based isolation
 type MacOSNetJail struct {
-	groupID        int
+	restrictedGid  int
 	pfRulesPath    string
 	mainRulesPath  string
 	logger         *slog.Logger
@@ -28,6 +27,7 @@ type MacOSNetJail struct {
 	procAttr       *syscall.SysProcAttr
 	httpProxyPort  int
 	httpsProxyPort int
+	userInfo       UserInfo
 }
 
 // NewMacOS creates a new macOS network jail instance
@@ -49,6 +49,7 @@ func NewMacOS(config Config) (*MacOSNetJail, error) {
 		preparedEnv:    preparedEnv,
 		httpProxyPort:  config.HttpProxyPort,
 		httpsProxyPort: config.HttpsProxyPort,
+		userInfo:       config.UserInfo,
 	}, nil
 }
 
@@ -83,46 +84,55 @@ func (m *MacOSNetJail) Start() error {
 		}
 	}
 
+	// Set HOME to original user's home directory
+	m.preparedEnv["HOME"] = m.userInfo.HomeDir
+	// Set USER to original username
+	m.preparedEnv["USER"] = m.userInfo.Username
+	// Set LOGNAME to original username (some tools check this instead of USER)
+	m.preparedEnv["LOGNAME"] = m.userInfo.Username
+
 	// When running under sudo, restore essential user environment variables
-	sudoUser := os.Getenv("SUDO_USER")
-	if sudoUser != "" {
-		user, err := user.Lookup(sudoUser)
-		if err == nil {
-			// Set HOME to original user's home directory
-			m.preparedEnv["HOME"] = user.HomeDir
-			// Set USER to original username
-			m.preparedEnv["USER"] = sudoUser
-			// Set LOGNAME to original username (some tools check this instead of USER)
-			m.preparedEnv["LOGNAME"] = sudoUser
-			m.logger.Debug("Restored user environment", "home", user.HomeDir, "user", sudoUser)
-		}
-	}
+	// sudoUser := os.Getenv("SUDO_USER")
+	// if sudoUser != "" {
+	// 	user, err := user.Lookup(sudoUser)
+	// 	if err == nil {
+	// 		// Set HOME to original user's home directory
+	// 		m.preparedEnv["HOME"] = user.HomeDir
+	// 		// Set USER to original username
+	// 		m.preparedEnv["USER"] = sudoUser
+	// 		// Set LOGNAME to original username (some tools check this instead of USER)
+	// 		m.preparedEnv["LOGNAME"] = sudoUser
+	// 		m.logger.Debug("Restored user environment", "home", user.HomeDir, "user", sudoUser)
+	// 	}
+	// }
 
 	// Prepare process credentials once during setup
 	m.logger.Debug("Preparing process credentials")
+	// Use original user ID but KEEP the jail group for network isolation
 	procAttr := &syscall.SysProcAttr{
 		Credential: &syscall.Credential{
-			Gid: uint32(m.groupID),
+			Uid: uint32(m.userInfo.Uid),
+			Gid: uint32(m.restrictedGid),
 		},
 	}
 
 	// Drop privileges to original user if running under sudo
-	sudoUID := os.Getenv("SUDO_UID")
-	if sudoUID != "" {
-		uid, err := strconv.Atoi(sudoUID)
-		if err != nil {
-			m.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", sudoUID, "error", err)
-		} else {
-			// Use original user ID but KEEP the jail group for network isolation
-			procAttr = &syscall.SysProcAttr{
-				Credential: &syscall.Credential{
-					Uid: uint32(uid),
-					Gid: uint32(m.groupID), // Keep jail group, not original user's group
-				},
-			}
-			m.logger.Debug("Dropping privileges to original user with jail group", "uid", uid, "jail_gid", m.groupID)
-		}
-	}
+	// sudoUID := os.Getenv("SUDO_UID")
+	// if sudoUID != "" {
+	// 	uid, err := strconv.Atoi(sudoUID)
+	// 	if err != nil {
+	// 		m.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", sudoUID, "error", err)
+	// 	} else {
+	// 		// Use original user ID but KEEP the jail group for network isolation
+	// 		procAttr = &syscall.SysProcAttr{
+	// 			Credential: &syscall.Credential{
+	// 				Uid: uint32(uid),
+	// 				Gid: uint32(m.restrictedGid), // Keep jail group, not original user's group
+	// 			},
+	// 		}
+	// 		m.logger.Debug("Dropping privileges to original user with jail group", "uid", uid, "jail_gid", m.restrictedGid)
+	// 	}
+	// }
 
 	// Store prepared process attributes for use in Command method
 	m.procAttr = procAttr
@@ -136,7 +146,7 @@ func (m *MacOSNetJail) Command(command []string) *exec.Cmd {
 	m.logger.Debug("Command called", "command", command)
 
 	// Create command directly (no sg wrapper needed)
-	m.logger.Debug("Creating command with group membership", "groupID", m.groupID)
+	m.logger.Debug("Creating command with group membership", "groupID", m.restrictedGid)
 	cmd := exec.Command(command[0], command[1:]...)
 	m.logger.Debug("Full command args", "args", command)
 
@@ -190,7 +200,7 @@ func (m *MacOSNetJail) ensureGroup() error {
 					if err != nil {
 						return fmt.Errorf("failed to parse GID: %v", err)
 					}
-					m.groupID = gid
+					m.restrictedGid = gid
 					return nil
 				}
 			}
@@ -219,7 +229,7 @@ func (m *MacOSNetJail) ensureGroup() error {
 				if err != nil {
 					return fmt.Errorf("failed to parse GID: %v", err)
 				}
-				m.groupID = gid
+				m.restrictedGid = gid
 				return nil
 			}
 		}
@@ -276,15 +286,15 @@ pass out on %s route-to (lo0 127.0.0.1) inet proto tcp from any to any group %d 
 # Allow all loopback traffic
 pass on lo0 all
 `,
-		m.groupID,
+		m.restrictedGid,
 		iface,
 		m.httpsProxyPort, // Use HTTPS proxy port for all TCP traffic
-		m.groupID,
+		m.restrictedGid,
 		iface,
-		m.groupID,
+		m.restrictedGid,
 	)
 
-	m.logger.Debug("Comprehensive TCP jailing enabled for macOS", "group_id", m.groupID, "proxy_port", m.httpsProxyPort)
+	m.logger.Debug("Comprehensive TCP jailing enabled for macOS", "group_id", m.restrictedGid, "proxy_port", m.httpsProxyPort)
 	return rules, nil
 }
 

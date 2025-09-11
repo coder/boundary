@@ -118,7 +118,10 @@ func Run(ctx context.Context, config Config, args []string) error {
 	auditor := audit.NewLoggingAuditor(logger)
 
 	// Create certificate manager
-	certManager, err := tls.NewCertificateManager(logger)
+	certManager, err := tls.NewCertificateManager(tls.Config{
+		Logger:    logger,
+		ConfigDir: "TODO",
+	})
 	if err != nil {
 		logger.Error("Failed to create certificate manager", "error", err)
 		return fmt.Errorf("failed to create certificate manager: %v", err)

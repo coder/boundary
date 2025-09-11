@@ -1,14 +1,8 @@
 package namespace
 
 import (
-	"fmt"
 	"log/slog"
 	"os/exec"
-	"time"
-)
-
-const (
-	namespacePrefix = "coder_jail"
 )
 
 type Commander interface {
@@ -17,14 +11,17 @@ type Commander interface {
 	Close() error
 }
 
-// JailConfig holds configuration for network jail
 type Config struct {
 	Logger         *slog.Logger
 	HttpProxyPort  int
 	HttpsProxyPort int
 	Env            map[string]string
+	UserInfo       UserInfo
 }
 
-func newNamespaceName() string {
-	return fmt.Sprintf("%s_%d", namespacePrefix, time.Now().UnixNano()%10000000)
+type UserInfo struct {
+	Username string
+	Uid      int
+	Gid      int
+	HomeDir  string
 }

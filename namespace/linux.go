@@ -7,8 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	"os/user"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -23,6 +21,10 @@ type Linux struct {
 	procAttr       *syscall.SysProcAttr
 	httpProxyPort  int
 	httpsProxyPort int
+	user           string
+	homeDir        string
+	uid            int
+	gid            int
 }
 
 // NewLinux creates a new Linux network jail instance
@@ -84,44 +86,52 @@ func (l *Linux) Start() error {
 		}
 	}
 
-	// When running under sudo, restore essential user environment variables
-	sudoUser := os.Getenv("SUDO_USER")
-	if sudoUser != "" {
-		user, err := user.Lookup(sudoUser)
-		if err == nil {
-			// Set HOME to original user's home directory
-			l.preparedEnv["HOME"] = user.HomeDir
-			// Set USER to original username
-			l.preparedEnv["USER"] = sudoUser
-			// Set LOGNAME to original username (some tools check this instead of USER)
-			l.preparedEnv["LOGNAME"] = sudoUser
-			l.logger.Debug("Restored user environment", "home", user.HomeDir, "user", sudoUser)
-		}
-	}
+	// Set HOME to original user's home directory
+	l.preparedEnv["HOME"] = l.homeDir
+	// Set USER to original username
+	l.preparedEnv["USER"] = l.user
+	// Set LOGNAME to original username (some tools check this instead of USER)
+	l.preparedEnv["LOGNAME"] = l.user
 
-	// Prepare process credentials once during setup
-	l.logger.Debug("Preparing process credentials")
-	var gid, uid int
-	sudoUID := os.Getenv("SUDO_UID")
-	if sudoUID != "" {
-		uid, err = strconv.Atoi(sudoUID)
-		if err != nil {
-			l.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", sudoUID, "error", err)
-		}
-	}
-	sudoGID := os.Getenv("SUDO_GID")
-	if sudoGID != "" {
-		gid, err = strconv.Atoi(sudoGID)
-		if err != nil {
-			l.logger.Warn("Invalid SUDO_GID, subprocess will run as root", "sudo_gid", sudoGID, "error", err)
-		}
-	}
 	l.procAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{
-			Uid: uint32(uid),
-			Gid: uint32(gid),
+			Uid: uint32(l.uid),
+			Gid: uint32(l.gid),
 		},
 	}
+
+	// When running under sudo, restore essential user environment variables
+	// sudoUser := os.Getenv("SUDO_USER")
+	// if sudoUser != "" {
+	// 	user, err := user.Lookup(sudoUser)
+	// 	if err == nil {
+	// 		// Set HOME to original user's home directory
+	// 		l.preparedEnv["HOME"] = user.HomeDir
+	// 		// Set USER to original username
+	// 		l.preparedEnv["USER"] = sudoUser
+	// 		// Set LOGNAME to original username (some tools check this instead of USER)
+	// 		l.preparedEnv["LOGNAME"] = sudoUser
+	// 		l.logger.Debug("Restored user environment", "home", user.HomeDir, "user", sudoUser)
+	// 	}
+	// }
+
+	// Prepare process credentials once during setup
+	// l.logger.Debug("Preparing process credentials")
+	// var gid, uid int
+	// sudoUID := os.Getenv("SUDO_UID")
+	// if sudoUID != "" {
+	// 	uid, err = strconv.Atoi(sudoUID)
+	// 	if err != nil {
+	// 		l.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", sudoUID, "error", err)
+	// 	}
+	// }
+	// sudoGID := os.Getenv("SUDO_GID")
+	// if sudoGID != "" {
+	// 	gid, err = strconv.Atoi(sudoGID)
+	// 	if err != nil {
+	// 		l.logger.Warn("Invalid SUDO_GID, subprocess will run as root", "sudo_gid", sudoGID, "error", err)
+	// 	}
+	// }
 
 	l.logger.Debug("Setup completed successfully")
 	return nil
