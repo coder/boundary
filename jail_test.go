@@ -191,7 +191,10 @@ func TestJail_StartStop(t *testing.T) {
 		t.Skipf("skipping test: failed to create jail: %v", err)
 	}
 
+	// Use a channel to coordinate shutdown
+	done := make(chan struct{})
 	defer func() {
+		close(done)
 		if closeErr := jail.Close(); closeErr != nil {
 			t.Logf("error closing jail: %v", closeErr)
 		}
@@ -208,8 +211,8 @@ func TestJail_StartStop(t *testing.T) {
 		t.Fatalf("failed to start jail: %v", err)
 	}
 
-	// Give it time to start
-	time.Sleep(200 * time.Millisecond)
+	// Give it more time to start properly
+	time.Sleep(500 * time.Millisecond)
 
 	// Test Command method
 	cmd := jail.Command([]string{"echo", "test"})
