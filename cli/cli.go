@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"os/user"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -15,6 +17,63 @@ import (
 	"github.com/coder/jail/tls"
 	"github.com/coder/serpent"
 )
+
+// SudoData contains processed sudo environment information
+type SudoData struct {
+	// Raw environment values
+	SudoUser      string
+	SudoUID       string
+	SudoGID       string
+	XDGConfigHome string
+	
+	// Processed values
+	IsUnderSudo bool
+	UserInfo    *user.User // Original user info when under sudo
+	UID         int        // Parsed UID, 0 if not available
+	GID         int        // Parsed GID, 0 if not available
+}
+
+// readSudoData reads and processes sudo-related environment variables
+func readSudoData(logger *slog.Logger) SudoData {
+	data := SudoData{
+		SudoUser:      os.Getenv("SUDO_USER"),
+		SudoUID:       os.Getenv("SUDO_UID"),
+		SudoGID:       os.Getenv("SUDO_GID"),
+		XDGConfigHome: os.Getenv("XDG_CONFIG_HOME"),
+	}
+	
+	data.IsUnderSudo = data.SudoUser != ""
+	
+	// Process user information if under sudo
+	if data.IsUnderSudo {
+		if userInfo, err := user.Lookup(data.SudoUser); err == nil {
+			data.UserInfo = userInfo
+			logger.Debug("Found original user info", "user", data.SudoUser, "home", userInfo.HomeDir)
+		} else {
+			logger.Warn("Failed to lookup original user", "user", data.SudoUser, "error", err)
+		}
+		
+		// Parse UID
+		if data.SudoUID != "" {
+			if uid, err := strconv.Atoi(data.SudoUID); err == nil {
+				data.UID = uid
+			} else {
+				logger.Warn("Invalid SUDO_UID, using 0", "sudo_uid", data.SudoUID, "error", err)
+			}
+		}
+		
+		// Parse GID
+		if data.SudoGID != "" {
+			if gid, err := strconv.Atoi(data.SudoGID); err == nil {
+				data.GID = gid
+			} else {
+				logger.Warn("Invalid SUDO_GID, using 0", "sudo_gid", data.SudoGID, "error", err)
+			}
+		}
+	}
+	
+	return data
+}
 
 // Config holds all configuration for the CLI
 type Config struct {
@@ -94,6 +153,9 @@ func Run(ctx context.Context, config Config, args []string) error {
 	defer cancel()
 	logger := setupLogging(config.LogLevel)
 
+	// Read and process sudo environment data once
+	sudoData := readSudoData(logger)
+
 	// Get command arguments
 	if len(args) == 0 {
 		return fmt.Errorf("no command specified")
@@ -119,10 +181,10 @@ func Run(ctx context.Context, config Config, args []string) error {
 
 	// Create certificate manager with environment variables
 	certManager, err := tls.NewCertificateManager(logger, tls.EnvConfig{
-		SudoUser:      os.Getenv("SUDO_USER"),
-		SudoUID:       os.Getenv("SUDO_UID"),
-		SudoGID:       os.Getenv("SUDO_GID"),
-		XDGConfigHome: os.Getenv("XDG_CONFIG_HOME"),
+		SudoUser:      sudoData.SudoUser,
+		SudoUID:       sudoData.SudoUID,
+		SudoGID:       sudoData.SudoGID,
+		XDGConfigHome: sudoData.XDGConfigHome,
 	})
 	if err != nil {
 		logger.Error("Failed to create certificate manager", "error", err)
@@ -136,9 +198,9 @@ func Run(ctx context.Context, config Config, args []string) error {
 		CertManager: certManager,
 		Logger:      logger,
 	}, jail.EnvConfig{
-		SudoUser: os.Getenv("SUDO_USER"),
-		SudoUID:  os.Getenv("SUDO_UID"),
-		SudoGID:  os.Getenv("SUDO_GID"),
+		SudoUser: sudoData.SudoUser,
+		SudoUID:  sudoData.SudoUID,
+		SudoGID:  sudoData.SudoGID,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create jail instance: %v", err)
