@@ -6,6 +6,10 @@ import (
 	"strings"
 )
 
+type Evaluator interface {
+	Evaluate(method, url string) Result
+}
+
 // Rule represents an allow rule with optional HTTP method restrictions
 type Rule struct {
 	Pattern string          // wildcard pattern for matching
@@ -119,18 +123,18 @@ func NewRuleEngine(rules []*Rule, logger *slog.Logger) *RuleEngine {
 	}
 }
 
-// EvaluationResult contains the result of rule evaluation
-type EvaluationResult struct {
+// Result contains the result of rule evaluation
+type Result struct {
 	Allowed bool
 	Rule    string // The rule that matched (if any)
 }
 
 // Evaluate evaluates a request and returns both result and matching rule
-func (re *RuleEngine) Evaluate(method, url string) EvaluationResult {
+func (re *RuleEngine) Evaluate(method, url string) Result {
 	// Check if any allow rule matches
 	for _, rule := range re.rules {
 		if rule.Matches(method, url) {
-			return EvaluationResult{
+			return Result{
 				Allowed: true,
 				Rule:    rule.Raw,
 			}
@@ -138,7 +142,7 @@ func (re *RuleEngine) Evaluate(method, url string) EvaluationResult {
 	}
 
 	// Default deny if no allow rules match
-	return EvaluationResult{
+	return Result{
 		Allowed: false,
 		Rule:    "",
 	}

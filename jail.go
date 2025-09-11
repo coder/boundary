@@ -2,37 +2,29 @@ package jail
 
 import (
 	"context"
-	cryptotls "crypto/tls"
 	"fmt"
 	"log/slog"
 	"os/exec"
 	"runtime"
 	"time"
 
+	"github.com/coder/jail/audit"
 	"github.com/coder/jail/namespace"
 	"github.com/coder/jail/proxy"
+	"github.com/coder/jail/rules"
+	"github.com/coder/jail/tls"
 )
 
-type Commander interface {
-	Start() error
-	Command(command []string) *exec.Cmd
-	Close() error
-}
-
-type CertificateManager interface {
-	SetupTLSAndWriteCACert() (*cryptotls.Config, string, string, error)
-}
-
 type Config struct {
-	RuleEngine  proxy.RuleEvaluator
-	Auditor     proxy.Auditor
-	CertManager CertificateManager
+	RuleEngine  rules.Evaluator
+	Auditor     audit.Auditor
+	CertManager tls.Manager
 	Logger      *slog.Logger
 }
 
 type Jail struct {
-	commander   Commander
-	proxyServer *proxy.ProxyServer
+	commander   namespace.Commander
+	proxyServer *proxy.Server
 	logger      *slog.Logger
 	ctx         context.Context
 	cancel      context.CancelFunc
@@ -56,7 +48,7 @@ func New(ctx context.Context, config Config) (*Jail, error) {
 	})
 
 	// Create commander
-	commander, err := newCommander(namespace.Config{
+	commander, err := newNamespaceCommander(namespace.Config{
 		Logger:         config.Logger,
 		HttpProxyPort:  8080,
 		HttpsProxyPort: 8443,
@@ -125,8 +117,8 @@ func (j *Jail) Close() error {
 	return j.commander.Close()
 }
 
-// newCommander creates a new NetJail instance for the current platform
-func newCommander(config namespace.Config) (Commander, error) {
+// newNamespaceCommander creates a new namespace instance for the current platform
+func newNamespaceCommander(config namespace.Config) (namespace.Commander, error) {
 	switch runtime.GOOS {
 	case "darwin":
 		return namespace.NewMacOS(config)

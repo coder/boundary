@@ -1,5 +1,9 @@
 package audit
 
+type Auditor interface {
+	AuditRequest(req Request)
+}
+
 // Request represents information about an HTTP request for auditing
 type Request struct {
 	Method  string

@@ -19,6 +19,10 @@ import (
 	"time"
 )
 
+type Manager interface {
+	SetupTLSAndWriteCACert() (*tls.Config, string, string, error)
+}
+
 // CertificateManager manages TLS certificates for the proxy
 type CertificateManager struct {
 	caKey     *rsa.PrivateKey

@@ -3,12 +3,19 @@ package namespace
 import (
 	"fmt"
 	"log/slog"
+	"os/exec"
 	"time"
 )
 
 const (
 	namespacePrefix = "coder_jail"
 )
+
+type Commander interface {
+	Start() error
+	Command(command []string) *exec.Cmd
+	Close() error
+}
 
 // JailConfig holds configuration for network jail
 type Config struct {
