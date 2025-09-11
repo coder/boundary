@@ -1,6 +1,6 @@
 module github.com/coder/jail
 
-go 1.25
+go 1.24
 
 require github.com/coder/serpent v0.10.0
 
