@@ -373,8 +373,8 @@ func TestRun_ConfigValidation(t *testing.T) {
 			name:        "valid config with command",
 			config:      Config{AllowStrings: []string{"example.com"}, LogLevel: "info"},
 			args:        []string{"echo", "hello"},
-			expectError: true, // Will fail due to system constraints in test environment
-			errorContains: "", // Don't check specific error as it depends on environment
+			expectError: false, // Command should succeed when properly configured
+			errorContains: "",
 		},
 	}
 
@@ -396,6 +396,13 @@ func TestRun_ConfigValidation(t *testing.T) {
 				t.Logf("Got expected error: %v", err)
 			} else {
 				if err != nil {
+					// Skip if it's a permission or system capability error
+					if strings.Contains(err.Error(), "permission denied") ||
+						strings.Contains(err.Error(), "operation not permitted") ||
+						strings.Contains(err.Error(), "failed to create /etc/netns") ||
+						strings.Contains(err.Error(), "insufficient privileges") {
+						t.Skipf("skipping test: insufficient system capabilities: %v", err)
+					}
 					t.Errorf("unexpected error: %v", err)
 				}
 			}
