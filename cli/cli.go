@@ -60,7 +60,7 @@ Examples:
 			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
-			return Run(config, inv.Stdin, inv.Stdout, inv.Stderr, inv.Args)
+			return Run(inv.Context(), inv.Stdin, inv.Stdout, inv.Stderr, config, inv.Args)
 		},
 	}
 }
@@ -90,7 +90,9 @@ func setupLogging(logLevel string) *slog.Logger {
 }
 
 // Run executes the jail command with the given configuration and arguments
-func Run(config Config, stdin io.Reader, stdout, stderr io.Writer, args []string) error {
+func Run(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, config Config, args []string) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	logger := setupLogging(config.LogLevel)
 
 	// Get command arguments
@@ -114,7 +116,7 @@ func Run(config Config, stdin io.Reader, stdout, stderr io.Writer, args []string
 	ruleEngine := rules.NewRuleEngine(allowRules, logger)
 
 	// Create auditor
-	// auditor := audit.NewLoggingAuditor(logger)
+	auditor := audit.NewLoggingAuditor(logger)
 
 	// Create certificate manager
 	certManager, err := tls.NewCertificateManager(logger)
@@ -124,14 +126,13 @@ func Run(config Config, stdin io.Reader, stdout, stderr io.Writer, args []string
 	}
 
 	// Create jail instance
-	jailInstance, err := jail.New(context.Background(), jail.Config{
+	jailInstance, err := jail.New(ctx, jail.Config{
 		RuleEngine:  ruleEngine,
-		Auditor:     audit.NewLoggingAuditor(logger),
-		Logger:      logger,
+		Auditor:     auditor,
 		CertManager: certManager,
+		Logger:      logger,
 	})
 	if err != nil {
-		logger.Error("Failed to create jail instance", "error", err)
 		return fmt.Errorf("failed to create jail instance: %v", err)
 	}
 
@@ -139,38 +140,18 @@ func Run(config Config, stdin io.Reader, stdout, stderr io.Writer, args []string
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Handle signals immediately in background
-	go func() {
-		sig := <-sigChan
-		logger.Info("Received signal during setup, cleaning up...", "signal", sig)
-		err := jailInstance.Close()
-		if err != nil {
-			logger.Error("Emergency cleanup failed", "error", err)
-		}
-		os.Exit(1)
-	}()
-
-	// Ensure cleanup happens no matter what
-	defer func() {
-		logger.Debug("Starting cleanup process")
-		err := jailInstance.Close()
-		if err != nil {
-			logger.Error("Failed to cleanup jail", "error", err)
-		} else {
-			logger.Debug("Cleanup completed successfully")
-		}
-	}()
-
 	// Open jail (starts network namespace and proxy server)
 	err = jailInstance.Start()
 	if err != nil {
-		logger.Error("Failed to open jail", "error", err)
 		return fmt.Errorf("failed to open jail: %v", err)
 	}
-
-	// Create context for graceful shutdown
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	defer func() {
+		logger.Info("Closing jail...")
+		err := jailInstance.Close()
+		if err != nil {
+			logger.Error("Failed to close jail", "error", err)
+		}
+	}()
 
 	// Execute command in jail
 	go func() {

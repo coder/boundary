@@ -6,10 +6,6 @@ import (
 
 type noop struct{}
 
-func newNoop(_ Config) (*noop, error) {
-	return &noop{}, nil
-}
-
 func (n *noop) Command(_ []string) *exec.Cmd {
 	return exec.Command("true")
 }
