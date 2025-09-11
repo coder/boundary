@@ -27,10 +27,16 @@ type Linux struct {
 
 // NewLinux creates a new Linux network jail instance
 func NewLinux(config Config) (*Linux, error) {
+	// Initialize preparedEnv with config environment variables
+	preparedEnv := make(map[string]string)
+	for key, value := range config.Env {
+		preparedEnv[key] = value
+	}
+
 	return &Linux{
 		namespace:      newNamespaceName(),
 		logger:         config.Logger,
-		preparedEnv:    make(map[string]string),
+		preparedEnv:    preparedEnv,
 		httpProxyPort:  config.HttpProxyPort,
 		httpsProxyPort: config.HttpsProxyPort,
 	}, nil
@@ -71,7 +77,7 @@ func (l *Linux) Start() error {
 	// Start with current environment
 	for _, envVar := range os.Environ() {
 		if parts := strings.SplitN(envVar, "=", 2); len(parts) == 2 {
-			// Only set if not already set by SetEnv
+			// Only set if not already set by config
 			if _, exists := l.preparedEnv[parts[0]]; !exists {
 				l.preparedEnv[parts[0]] = parts[1]
 			}
@@ -119,11 +125,6 @@ func (l *Linux) Start() error {
 
 	l.logger.Debug("Setup completed successfully")
 	return nil
-}
-
-// SetEnv sets an environment variable for commands run in the namespace
-func (l *Linux) SetEnv(key string, value string) {
-	l.preparedEnv[key] = value
 }
 
 // Command returns an exec.Cmd configured to run within the network namespace

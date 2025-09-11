@@ -36,11 +36,17 @@ func NewMacOS(config Config) (*MacOSNetJail, error) {
 	pfRulesPath := fmt.Sprintf("/tmp/%s.pf", ns)
 	mainRulesPath := fmt.Sprintf("/tmp/%s_main.pf", ns)
 
+	// Initialize preparedEnv with config environment variables
+	preparedEnv := make(map[string]string)
+	for key, value := range config.Env {
+		preparedEnv[key] = value
+	}
+
 	return &MacOSNetJail{
 		pfRulesPath:    pfRulesPath,
 		mainRulesPath:  mainRulesPath,
 		logger:         config.Logger,
-		preparedEnv:    make(map[string]string),
+		preparedEnv:    preparedEnv,
 		httpProxyPort:  config.HttpProxyPort,
 		httpsProxyPort: config.HttpsProxyPort,
 	}, nil
@@ -70,7 +76,7 @@ func (m *MacOSNetJail) Start() error {
 	// Start with current environment
 	for _, envVar := range os.Environ() {
 		if parts := strings.SplitN(envVar, "=", 2); len(parts) == 2 {
-			// Only set if not already set by SetEnv
+			// Only set if not already set by config
 			if _, exists := m.preparedEnv[parts[0]]; !exists {
 				m.preparedEnv[parts[0]] = parts[1]
 			}
@@ -125,12 +131,7 @@ func (m *MacOSNetJail) Start() error {
 	return nil
 }
 
-// SetEnv sets an environment variable for commands run in the namespace
-func (m *MacOSNetJail) SetEnv(key string, value string) {
-	m.preparedEnv[key] = value
-}
-
-// Execute runs the command with the network jail group membership
+// Command runs the command with the network jail group membership
 func (m *MacOSNetJail) Command(command []string) *exec.Cmd {
 	m.logger.Debug("Command called", "command", command)
 
