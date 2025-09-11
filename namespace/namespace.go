@@ -15,17 +15,16 @@ const (
 
 // JailConfig holds configuration for network jail
 type Config struct {
-	HTTPPort  int
-	HTTPSPort int
+	Logger *slog.Logger
 }
 
 // NewJail creates a new NetJail instance for the current platform
-func New(config Config, logger *slog.Logger) (jail.Commander, error) {
+func New(config Config) (jail.Commander, error) {
 	switch runtime.GOOS {
 	case "darwin":
-		return newMacOSJail(config, logger)
+		return newMacOSJail(config)
 	case "linux":
-		return newLinux(config, logger)
+		return newLinux(config)
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}

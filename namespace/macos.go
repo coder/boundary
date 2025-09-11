@@ -20,33 +20,36 @@ const (
 
 // MacOSNetJail implements network jail using macOS PF (Packet Filter) and group-based isolation
 type MacOSNetJail struct {
-	config        Config
-	groupID       int
-	pfRulesPath   string
-	mainRulesPath string
-	logger        *slog.Logger
-	preparedEnv   map[string]string
-	procAttr      *syscall.SysProcAttr
+	groupID        int
+	pfRulesPath    string
+	mainRulesPath  string
+	logger         *slog.Logger
+	preparedEnv    map[string]string
+	procAttr       *syscall.SysProcAttr
+	httpProxyPort  int
+	httpsProxyPort int
 }
 
 // newMacOSJail creates a new macOS network jail instance
-func newMacOSJail(config Config, logger *slog.Logger) (*MacOSNetJail, error) {
+func newMacOSJail(config Config) (*MacOSNetJail, error) {
 	ns := newNamespaceName()
 	pfRulesPath := fmt.Sprintf("/tmp/%s.pf", ns)
 	mainRulesPath := fmt.Sprintf("/tmp/%s_main.pf", ns)
 
 	return &MacOSNetJail{
-		config:        config,
 		pfRulesPath:   pfRulesPath,
 		mainRulesPath: mainRulesPath,
-		logger:        logger,
+		logger:        config.Logger,
 		preparedEnv:   make(map[string]string),
 	}, nil
 }
 
 // Setup creates the network jail group and configures PF rules
-func (m *MacOSNetJail) Open() error {
+func (m *MacOSNetJail) Start(httpProxyPort int, httpsProxyPort int) error {
 	m.logger.Debug("Setup called")
+
+	m.httpProxyPort = httpProxyPort
+	m.httpsProxyPort = httpsProxyPort
 
 	// Create or get network jail group
 	m.logger.Debug("Creating or ensuring network jail group")
@@ -275,13 +278,13 @@ pass on lo0 all
 `,
 		m.groupID,
 		iface,
-		m.config.HTTPSPort, // Use HTTPS proxy port for all TCP traffic
+		m.httpsProxyPort, // Use HTTPS proxy port for all TCP traffic
 		m.groupID,
 		iface,
 		m.groupID,
 	)
 
-	m.logger.Debug("Comprehensive TCP jailing enabled for macOS", "group_id", m.groupID, "proxy_port", m.config.HTTPSPort)
+	m.logger.Debug("Comprehensive TCP jailing enabled for macOS", "group_id", m.groupID, "proxy_port", m.httpsProxyPort)
 	return rules, nil
 }
 

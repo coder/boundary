@@ -2,36 +2,36 @@ package jail
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"os/exec"
 	"time"
+
+	"github.com/coder/jail/proxy"
+	"github.com/coder/jail/rules"
 )
 
 type Commander interface {
-	Open() error
+	Start(httpProxyPort int, httpsProxyPort int) error
 	SetEnv(key string, value string)
 	Command(command []string) *exec.Cmd
 	Close() error
 }
 
-type ProxyServer interface {
-	Start(ctx context.Context) error
-	Stop() error
-}
-
 type Config struct {
-	Commander   Commander
-	ProxyServer ProxyServer
-	Logger      *slog.Logger
+	Commander  Commander
+	RuleEngine *rules.RuleEngine
+	Logger     *slog.Logger
+	TLSConfig  *tls.Config
 }
 
 type Jail struct {
 	commandExecutor Commander
-	proxyServer     ProxyServer
+	proxyServer     *proxy.ProxyServer
 	logger          *slog.Logger
-	cancel          context.CancelFunc
 	ctx             context.Context
+	cancel          context.CancelFunc
 }
 
 func New(config Config) *Jail {
@@ -39,16 +39,22 @@ func New(config Config) *Jail {
 
 	return &Jail{
 		commandExecutor: config.Commander,
-		proxyServer:     config.ProxyServer,
-		logger:          config.Logger,
-		ctx:             ctx,
-		cancel:          cancel,
+		proxyServer: proxy.NewProxyServer(proxy.Config{
+			HTTPPort:   8080,
+			HTTPSPort:  8443,
+			RuleEngine: config.RuleEngine,
+			Logger:     config.Logger,
+			TLSConfig:  config.TLSConfig,
+		}),
+		logger: config.Logger,
+		ctx:    ctx,
+		cancel: cancel,
 	}
 }
 
-func (j *Jail) Open() error {
+func (j *Jail) Start() error {
 	// Open the command executor (network namespace)
-	err := j.commandExecutor.Open()
+	err := j.commandExecutor.Start(8080, 8443)
 	if err != nil {
 		return fmt.Errorf("failed to open command executor: %v", err)
 	}
@@ -72,11 +78,6 @@ func (j *Jail) Command(command []string) *exec.Cmd {
 }
 
 func (j *Jail) Close() error {
-	// Cancel context to stop proxy server
-	if j.cancel != nil {
-		j.cancel()
-	}
-
 	// Stop proxy server
 	if j.proxyServer != nil {
 		err := j.proxyServer.Stop()

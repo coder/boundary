@@ -10,9 +10,7 @@ import (
 	"syscall"
 
 	"github.com/coder/jail"
-	"github.com/coder/jail/audit"
 	"github.com/coder/jail/namespace"
-	"github.com/coder/jail/proxy"
 	"github.com/coder/jail/rules"
 	"github.com/coder/jail/tls"
 	"github.com/coder/serpent"
@@ -115,16 +113,12 @@ func Run(config Config, args []string) error {
 	ruleEngine := rules.NewRuleEngine(allowRules, logger)
 
 	// Create auditor
-	auditor := audit.NewLoggingAuditor(logger)
-
-	// Create network namespace configuration
-	nsConfig := namespace.Config{
-		HTTPPort:  8040,
-		HTTPSPort: 8043,
-	}
+	// auditor := audit.NewLoggingAuditor(logger)
 
 	// Create commander
-	commander, err := namespace.New(nsConfig, logger)
+	commander, err := namespace.New(namespace.Config{
+		Logger: logger,
+	})
 	if err != nil {
 		logger.Error("Failed to create network namespace", "error", err)
 		return fmt.Errorf("failed to create network namespace: %v", err)
@@ -154,21 +148,12 @@ func Run(config Config, args []string) error {
 	commander.SetEnv("REQUESTS_CA_BUNDLE", caCertPath)  // Python requests
 	commander.SetEnv("NODE_EXTRA_CA_CERTS", caCertPath) // Node.js
 
-	// Create proxy server
-	proxyServer := proxy.NewProxyServer(proxy.Config{
-		HTTPPort:   8040,
-		HTTPSPort:  8043,
-		RuleEngine: ruleEngine,
-		Auditor:    auditor,
-		Logger:     logger,
-		TLSConfig:  tlsConfig,
-	})
-
 	// Create jail instance
 	jailInstance := jail.New(jail.Config{
-		Commander:   commander,
-		ProxyServer: proxyServer,
-		Logger:      logger,
+		Commander:  commander,
+		RuleEngine: ruleEngine,
+		Logger:     logger,
+		TLSConfig:  tlsConfig,
 	})
 
 	// Setup signal handling BEFORE any setup
@@ -198,7 +183,7 @@ func Run(config Config, args []string) error {
 	}()
 
 	// Open jail (starts network namespace and proxy server)
-	err = jailInstance.Open()
+	err = jailInstance.Start()
 	if err != nil {
 		logger.Error("Failed to open jail", "error", err)
 		return fmt.Errorf("failed to open jail: %v", err)

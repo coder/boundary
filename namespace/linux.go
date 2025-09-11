@@ -16,27 +16,30 @@ import (
 
 // Linux implements jail.Commander using Linux network namespaces
 type Linux struct {
-	config      Config
-	namespace   string
-	vethHost    string // Host-side veth interface name for iptables rules
-	logger      *slog.Logger
-	preparedEnv map[string]string
-	procAttr    *syscall.SysProcAttr
+	namespace      string
+	vethHost       string // Host-side veth interface name for iptables rules
+	logger         *slog.Logger
+	preparedEnv    map[string]string
+	procAttr       *syscall.SysProcAttr
+	httpProxyPort  int
+	httpsProxyPort int
 }
 
 // newLinux creates a new Linux network jail instance
-func newLinux(config Config, logger *slog.Logger) (*Linux, error) {
+func newLinux(config Config) (*Linux, error) {
 	return &Linux{
-		config:      config,
 		namespace:   newNamespaceName(),
-		logger:      logger,
+		logger:      config.Logger,
 		preparedEnv: make(map[string]string),
 	}, nil
 }
 
 // Setup creates network namespace and configures iptables rules
-func (l *Linux) Open() error {
+func (l *Linux) Start(httpProxyPort int, httpsProxyPort int) error {
 	l.logger.Debug("Setup called")
+
+	l.httpProxyPort = httpProxyPort
+	l.httpsProxyPort = httpsProxyPort
 
 	// Setup DNS configuration BEFORE creating namespace
 	// This ensures the namespace-specific resolv.conf is available when namespace is created
@@ -269,20 +272,20 @@ func (l *Linux) setupIptables() error {
 	// COMPREHENSIVE APPROACH: Intercept ALL TCP traffic from namespace
 	// Use PREROUTING on host to catch traffic after it exits namespace but before routing
 	// This ensures NO TCP traffic can bypass the proxy
-	cmd = exec.Command("iptables", "-t", "nat", "-A", "PREROUTING", "-i", l.vethHost, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.config.HTTPSPort))
+	cmd = exec.Command("iptables", "-t", "nat", "-A", "PREROUTING", "-i", l.vethHost, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.httpsProxyPort))
 	err = cmd.Run()
 	if err != nil {
 		return fmt.Errorf("failed to add comprehensive TCP redirect rule: %v", err)
 	}
 
-	l.logger.Debug("Comprehensive TCP jailing enabled", "interface", l.vethHost, "proxy_port", l.config.HTTPSPort)
+	l.logger.Debug("Comprehensive TCP jailing enabled", "interface", l.vethHost, "proxy_port", l.httpsProxyPort)
 	return nil
 }
 
 // removeIptables removes iptables rules
 func (l *Linux) removeIptables() error {
 	// Remove comprehensive TCP redirect rule
-	cmd := exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-i", l.vethHost, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.config.HTTPSPort))
+	cmd := exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-i", l.vethHost, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.httpsProxyPort))
 	cmd.Run() // Ignore errors during cleanup
 
 	// Remove NAT rule

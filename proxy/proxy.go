@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/coder/jail/audit"
 	"github.com/coder/jail/rules"
 )
 
@@ -19,7 +18,6 @@ type ProxyServer struct {
 	httpServer  *http.Server
 	httpsServer *http.Server
 	ruleEngine  *rules.RuleEngine
-	auditor     *audit.LoggingAuditor
 	logger      *slog.Logger
 	tlsConfig   *tls.Config
 	httpPort    int
@@ -31,7 +29,6 @@ type Config struct {
 	HTTPPort   int
 	HTTPSPort  int
 	RuleEngine *rules.RuleEngine
-	Auditor    *audit.LoggingAuditor
 	Logger     *slog.Logger
 	TLSConfig  *tls.Config
 }
@@ -40,7 +37,6 @@ type Config struct {
 func NewProxyServer(config Config) *ProxyServer {
 	return &ProxyServer{
 		ruleEngine: config.RuleEngine,
-		auditor:    config.Auditor,
 		logger:     config.Logger,
 		tlsConfig:  config.TLSConfig,
 		httpPort:   config.HTTPPort,
@@ -110,11 +106,11 @@ func (p *ProxyServer) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	// Check if request should be allowed
 	result := p.ruleEngine.Evaluate(r.Method, r.URL.String())
 
-	// Audit the request
-	auditReq := audit.HTTPRequestToAuditRequest(r)
-	auditReq.Allowed = result.Allowed
-	auditReq.Rule = result.Rule
-	p.auditRequest(auditReq)
+	// // Audit the request
+	// auditReq := audit.HTTPRequestToAuditRequest(r)
+	// auditReq.Allowed = result.Allowed
+	// auditReq.Rule = result.Rule
+	// p.auditRequest(auditReq)
 
 	if !result.Allowed {
 		p.writeBlockedResponse(w, r)
@@ -127,23 +123,17 @@ func (p *ProxyServer) handleHTTP(w http.ResponseWriter, r *http.Request) {
 
 // handleHTTPS handles HTTPS requests (after TLS termination)
 func (p *ProxyServer) handleHTTPS(w http.ResponseWriter, r *http.Request) {
-	// Reconstruct the full URL for HTTPS requests
-	fullURL := fmt.Sprintf("https://%s%s", r.Host, r.URL.Path)
-	if r.URL.RawQuery != "" {
-		fullURL += "?" + r.URL.RawQuery
-	}
-
 	// Check if request should be allowed
-	result := p.ruleEngine.Evaluate(r.Method, fullURL)
+	result := p.ruleEngine.Evaluate(r.Method, r.URL.String())
 
 	// Audit the request
-	auditReq := &audit.Request{
-		Method:  r.Method,
-		URL:     fullURL,
-		Allowed: result.Allowed,
-		Rule:    result.Rule,
-	}
-	p.auditRequest(auditReq)
+	// auditReq := &audit.Request{
+	// 	Method:  r.Method,
+	// 	URL:     fullURL,
+	// 	Allowed: result.Allowed,
+	// 	Rule:    result.Rule,
+	// }
+	// p.auditRequest(auditReq)
 
 	if !result.Allowed {
 		p.writeBlockedResponse(w, r)
@@ -290,9 +280,4 @@ To allow this request, restart jail with:
 For more help: https://github.com/coder/jail
 `,
 		r.Method, r.URL.Path, host, host, r.Method, host, r.Method)
-}
-
-// auditRequest handles auditing of requests
-func (p *ProxyServer) auditRequest(req *audit.Request) {
-	p.auditor.AuditRequest(req)
 }
