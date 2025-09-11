@@ -41,6 +41,11 @@ func (m *MockPTY) Stderr() string {
 	return m.stderr.String()
 }
 
+func (m *MockPTY) Clear() {
+	m.stderr = strings.Builder{}
+	m.stdout = strings.Builder{}
+}
+
 func (m *MockPTY) ExpectInStdout(content string) {
 	if !strings.Contains(m.stdout.String(), content) {
 		m.t.Fatalf("expected \"%s\", got: %s", content, m.stdout.String())
@@ -54,42 +59,34 @@ func (m *MockPTY) ExpectInStderr(content string) {
 }
 
 func TestPtySetupWorks(t *testing.T) {
-	cmd := NewCommand()
-	inv := cmd.Invoke("--help")
 
-	pty := NewMockPTY(t)
-	pty.Attach(inv)
+	t.Run("help command", func(t *testing.T) {
+		inv := NewCommand().Invoke("--help")
+		pty := NewMockPTY(t)
+		pty.Attach(inv)
+		if err := inv.Run(); err != nil {
+			t.Fatalf("could not run with simple --help arg: %v", err)
+		}
+		pty.ExpectInStdout("Monitor and restrict HTTP/HTTPS requests from processes")
+	})
 
-	if err := inv.Run(); err != nil {
-		t.Fatalf("could not run with simple --help arg: %v", err)
-	}
+	t.Run("just a url", func(t *testing.T) {
+		inv := NewCommand().Invoke("--allow", "\"pastebin.com\"", "--", "curl", "https://pastebin.com/raw/2q6kyAyQ")
+		pty := NewMockPTY(t)
+		pty.Attach(inv)
+		if err := inv.Run(); err != nil {
+			t.Fatalf("error curling pastebin test fixture: %v", err)
+		}
+		pty.ExpectInStdout("foo")
+	})
 
-	pty.ExpectInStdout("Monitor and restrict HTTP/HTTPS requests from processes")
-}
-
-// For these tests, I have a fixture in the form of a pastebin: https://pastebin.com/raw/2q6kyAyQ
-func TestCurlPastebin(t *testing.T) {
-	ensureRoot(t)
-	cmd := NewCommand()
-	inv := cmd.Invoke("--allow", "\"pastebin.com\"", "--", "curl", "https://pastebin.com/raw/2q6kyAyQ")
-
-	pty := NewMockPTY(t)
-	pty.Attach(inv)
-
-	if err := inv.Run(); err != nil {
-		t.Fatalf("error curling pastebin test fixture: %v", err)
-	}
-	pty.ExpectInStdout("foo")
-}
-
-func TestCurlPastebinWithAllowAll(t *testing.T) {
-	// Allowing all with a glob should allow the request
-	cmd := NewCommand()
-	inv := cmd.Invoke("--allow", "\"*\"", "--", "curl", "https://pastebin.com/raw/2q6kyAyQ")
-	pty := NewMockPTY(t)
-	pty.Attach(inv)
-	if err := inv.Run(); err != nil {
-		t.Fatalf("error curling pastebin test fixture: %v", err)
-	}
-	pty.ExpectInStdout("foo")
+	t.Run("allow all with asterisk", func(t *testing.T) {
+		inv := NewCommand().Invoke("--allow", "\"*\"", "--", "curl", "https://pastebin.com/raw/2q6kyAyQ")
+		pty := NewMockPTY(t)
+		pty.Attach(inv)
+		if err := inv.Run(); err != nil {
+			t.Fatalf("error curling pastebin test fixture: %v", err)
+		}
+		pty.ExpectInStdout("foo")
+	})
 }

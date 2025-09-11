@@ -160,6 +160,7 @@ func TestWildcardMatch(t *testing.T) {
 
 		// Wildcard * tests
 		{"star matches all", "*", "anything.com", true},
+		{"star matches all with path", "*", "anything.com/whatever", true},
 		{"star matches empty", "*", "", true},
 		{"prefix star", "github.*", "github.com", true},
 		{"prefix star long", "github.*", "github.com/user/repo", true},
