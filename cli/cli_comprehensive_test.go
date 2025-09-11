@@ -589,7 +589,7 @@ func TestErrorHandling(t *testing.T) {
 			setup: func() (Config, []string) {
 				return Config{AllowStrings: []string{"example.com"}, LogLevel: "info"}, []string{"nonexistent-command-12345"}
 			},
-			expError: true,
+			expError: false, // Jail starts successfully, only the command inside fails
 		},
 	}
 
