@@ -68,30 +68,6 @@ Examples:
 	}
 }
 
-// setupLogging creates a slog logger with the specified level
-func setupLogging(logLevel string) *slog.Logger {
-	var level slog.Level
-	switch strings.ToLower(logLevel) {
-	case "error":
-		level = slog.LevelError
-	case "warn":
-		level = slog.LevelWarn
-	case "info":
-		level = slog.LevelInfo
-	case "debug":
-		level = slog.LevelDebug
-	default:
-		level = slog.LevelWarn // Default to warn if invalid level
-	}
-
-	// Create a standard slog logger with the appropriate level
-	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: level,
-	})
-
-	return slog.New(handler)
-}
-
 // Run executes the jail command with the given configuration and arguments
 func Run(ctx context.Context, config Config, args []string) error {
 	ctx, cancel := context.WithCancel(ctx)
@@ -185,7 +161,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 func getUserInfo() namespace.UserInfo {
 	// get the user info of the original user even if we are running under sudo
 	sudoUser := os.Getenv("SUDO_USER")
-	
+
 	// If running under sudo, get original user information
 	if sudoUser != "" {
 		user, err := user.Lookup(sudoUser)
@@ -193,25 +169,25 @@ func getUserInfo() namespace.UserInfo {
 			// Fallback to current user if lookup fails
 			return getCurrentUserInfo()
 		}
-		
+
 		// Parse SUDO_UID and SUDO_GID
 		uid := 0
 		gid := 0
-		
+
 		if sudoUID := os.Getenv("SUDO_UID"); sudoUID != "" {
 			if parsedUID, err := strconv.Atoi(sudoUID); err == nil {
 				uid = parsedUID
 			}
 		}
-		
+
 		if sudoGID := os.Getenv("SUDO_GID"); sudoGID != "" {
 			if parsedGID, err := strconv.Atoi(sudoGID); err == nil {
 				gid = parsedGID
 			}
 		}
-		
+
 		configDir := getConfigDir(user.HomeDir)
-		
+
 		return namespace.UserInfo{
 			Username:  sudoUser,
 			Uid:       uid,
@@ -220,9 +196,33 @@ func getUserInfo() namespace.UserInfo {
 			ConfigDir: configDir,
 		}
 	}
-	
+
 	// Not running under sudo, use current user
 	return getCurrentUserInfo()
+}
+
+// setupLogging creates a slog logger with the specified level
+func setupLogging(logLevel string) *slog.Logger {
+	var level slog.Level
+	switch strings.ToLower(logLevel) {
+	case "error":
+		level = slog.LevelError
+	case "warn":
+		level = slog.LevelWarn
+	case "info":
+		level = slog.LevelInfo
+	case "debug":
+		level = slog.LevelDebug
+	default:
+		level = slog.LevelWarn // Default to warn if invalid level
+	}
+
+	// Create a standard slog logger with the appropriate level
+	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: level,
+	})
+
+	return slog.New(handler)
 }
 
 // getCurrentUserInfo gets information for the current user
@@ -232,12 +232,12 @@ func getCurrentUserInfo() namespace.UserInfo {
 		// Fallback with empty values if we can't get user info
 		return namespace.UserInfo{}
 	}
-	
+
 	uid, _ := strconv.Atoi(currentUser.Uid)
 	gid, _ := strconv.Atoi(currentUser.Gid)
-	
+
 	configDir := getConfigDir(currentUser.HomeDir)
-	
+
 	return namespace.UserInfo{
 		Username:  currentUser.Username,
 		Uid:       uid,
