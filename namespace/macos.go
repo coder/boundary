@@ -20,32 +20,40 @@ const (
 
 // MacOSNetJail implements network jail using macOS PF (Packet Filter) and group-based isolation
 type MacOSNetJail struct {
-	config        Config
-	groupID       int
-	pfRulesPath   string
-	mainRulesPath string
-	logger        *slog.Logger
-	preparedEnv   map[string]string
-	procAttr      *syscall.SysProcAttr
+	groupID        int
+	pfRulesPath    string
+	mainRulesPath  string
+	logger         *slog.Logger
+	preparedEnv    map[string]string
+	procAttr       *syscall.SysProcAttr
+	httpProxyPort  int
+	httpsProxyPort int
 }
 
-// newMacOSJail creates a new macOS network jail instance
-func newMacOSJail(config Config, logger *slog.Logger) (*MacOSNetJail, error) {
+// NewMacOS creates a new macOS network jail instance
+func NewMacOS(config Config) (*MacOSNetJail, error) {
 	ns := newNamespaceName()
 	pfRulesPath := fmt.Sprintf("/tmp/%s.pf", ns)
 	mainRulesPath := fmt.Sprintf("/tmp/%s_main.pf", ns)
 
+	// Initialize preparedEnv with config environment variables
+	preparedEnv := make(map[string]string)
+	for key, value := range config.Env {
+		preparedEnv[key] = value
+	}
+
 	return &MacOSNetJail{
-		config:        config,
-		pfRulesPath:   pfRulesPath,
-		mainRulesPath: mainRulesPath,
-		logger:        logger,
-		preparedEnv:   make(map[string]string),
+		pfRulesPath:    pfRulesPath,
+		mainRulesPath:  mainRulesPath,
+		logger:         config.Logger,
+		preparedEnv:    preparedEnv,
+		httpProxyPort:  config.HttpProxyPort,
+		httpsProxyPort: config.HttpsProxyPort,
 	}, nil
 }
 
 // Setup creates the network jail group and configures PF rules
-func (m *MacOSNetJail) Open() error {
+func (m *MacOSNetJail) Start() error {
 	m.logger.Debug("Setup called")
 
 	// Create or get network jail group
@@ -68,7 +76,7 @@ func (m *MacOSNetJail) Open() error {
 	// Start with current environment
 	for _, envVar := range os.Environ() {
 		if parts := strings.SplitN(envVar, "=", 2); len(parts) == 2 {
-			// Only set if not already set by SetEnv
+			// Only set if not already set by config
 			if _, exists := m.preparedEnv[parts[0]]; !exists {
 				m.preparedEnv[parts[0]] = parts[1]
 			}
@@ -123,12 +131,7 @@ func (m *MacOSNetJail) Open() error {
 	return nil
 }
 
-// SetEnv sets an environment variable for commands run in the namespace
-func (m *MacOSNetJail) SetEnv(key string, value string) {
-	m.preparedEnv[key] = value
-}
-
-// Execute runs the command with the network jail group membership
+// Command runs the command with the network jail group membership
 func (m *MacOSNetJail) Command(command []string) *exec.Cmd {
 	m.logger.Debug("Command called", "command", command)
 
@@ -275,13 +278,13 @@ pass on lo0 all
 `,
 		m.groupID,
 		iface,
-		m.config.HTTPSPort, // Use HTTPS proxy port for all TCP traffic
+		m.httpsProxyPort, // Use HTTPS proxy port for all TCP traffic
 		m.groupID,
 		iface,
 		m.groupID,
 	)
 
-	m.logger.Debug("Comprehensive TCP jailing enabled for macOS", "group_id", m.groupID, "proxy_port", m.config.HTTPSPort)
+	m.logger.Debug("Comprehensive TCP jailing enabled for macOS", "group_id", m.groupID, "proxy_port", m.httpsProxyPort)
 	return rules, nil
 }
 
