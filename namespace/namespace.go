@@ -28,8 +28,8 @@ type Config struct {
 // EnvConfig holds environment variable values for namespace implementations
 type EnvConfig struct {
 	SudoUser string
-	SudoUID  string
-	SudoGID  string
+	SudoUID  int
+	SudoGID  int
 }
 
 func newNamespaceName() string {

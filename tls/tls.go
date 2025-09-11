@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -26,9 +25,9 @@ type Manager interface {
 // EnvConfig holds environment variable values
 type EnvConfig struct {
 	SudoUser      string
+	SudoUID       int
+	SudoGID       int
 	XDGConfigHome string
-	SudoUID       string
-	SudoGID       string
 }
 
 // CertificateManager manages TLS certificates for the proxy
@@ -193,15 +192,11 @@ func (cm *CertificateManager) generateCA(keyPath, certPath string) error {
 	}
 
 	// When running under sudo, ensure the directory is owned by the original user
-	if cm.envConfig.SudoUser != "" && cm.envConfig.SudoUID != "" && cm.envConfig.SudoGID != "" {
-		uid, err1 := strconv.Atoi(cm.envConfig.SudoUID)
-		gid, err2 := strconv.Atoi(cm.envConfig.SudoGID)
-		if err1 == nil && err2 == nil {
-			// Change ownership of the config directory to the original user
-			err := os.Chown(cm.configDir, uid, gid)
-			if err != nil {
-				cm.logger.Warn("Failed to change config directory ownership", "error", err)
-			}
+	if cm.envConfig.SudoUser != "" && cm.envConfig.SudoUID != 0 && cm.envConfig.SudoGID != 0 {
+		// Change ownership of the config directory to the original user
+		err := os.Chown(cm.configDir, cm.envConfig.SudoUID, cm.envConfig.SudoGID)
+		if err != nil {
+			cm.logger.Warn("Failed to change config directory ownership", "error", err)
 		}
 	}
 

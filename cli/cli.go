@@ -20,54 +20,78 @@ import (
 
 // SudoData contains processed sudo environment information
 type SudoData struct {
-	// Raw environment values
-	SudoUser      string
-	SudoUID       string
-	SudoGID       string
-	XDGConfigHome string
-	
 	// Processed values
-	IsUnderSudo bool
-	UserInfo    *user.User // Original user info when under sudo
-	UID         int        // Parsed UID, 0 if not available
-	GID         int        // Parsed GID, 0 if not available
+	IsUnderSudo   bool
+	UserInfo      *user.User // Original user info when under sudo
+	UID           int        // Parsed UID, 0 if not available
+	GID           int        // Parsed GID, 0 if not available
+	XDGConfigHome string     // XDG config home directory
+}
+
+// ToTLSEnvConfig converts SudoData to tls.EnvConfig
+func (s SudoData) ToTLSEnvConfig() tls.EnvConfig {
+	sudoUser := ""
+	if s.UserInfo != nil {
+		sudoUser = s.UserInfo.Username
+	}
+	return tls.EnvConfig{
+		SudoUser:      sudoUser,
+		SudoUID:       s.UID,
+		SudoGID:       s.GID,
+		XDGConfigHome: s.XDGConfigHome,
+	}
+}
+
+// ToJailEnvConfig converts SudoData to jail.EnvConfig
+func (s SudoData) ToJailEnvConfig() jail.EnvConfig {
+	sudoUser := ""
+	if s.UserInfo != nil {
+		sudoUser = s.UserInfo.Username
+	}
+	return jail.EnvConfig{
+		SudoUser: sudoUser,
+		SudoUID:  s.UID,
+		SudoGID:  s.GID,
+	}
 }
 
 // readSudoData reads and processes sudo-related environment variables
 func readSudoData(logger *slog.Logger) SudoData {
-	data := SudoData{
-		SudoUser:      os.Getenv("SUDO_USER"),
-		SudoUID:       os.Getenv("SUDO_UID"),
-		SudoGID:       os.Getenv("SUDO_GID"),
-		XDGConfigHome: os.Getenv("XDG_CONFIG_HOME"),
-	}
+	// Read raw environment values
+	sudoUser := os.Getenv("SUDO_USER")
+	sudoUID := os.Getenv("SUDO_UID")
+	sudoGID := os.Getenv("SUDO_GID")
+	xdgConfigHome := os.Getenv("XDG_CONFIG_HOME")
 	
-	data.IsUnderSudo = data.SudoUser != ""
+	data := SudoData{
+		IsUnderSudo:   sudoUser != "",
+		XDGConfigHome: xdgConfigHome,
+	}
 	
 	// Process user information if under sudo
 	if data.IsUnderSudo {
-		if userInfo, err := user.Lookup(data.SudoUser); err == nil {
+		if userInfo, err := user.Lookup(sudoUser); err == nil {
 			data.UserInfo = userInfo
-			logger.Debug("Found original user info", "user", data.SudoUser, "home", userInfo.HomeDir)
+			logger.Debug("Found original user info", "user", sudoUser, "home", userInfo.HomeDir)
 		} else {
-			logger.Warn("Failed to lookup original user", "user", data.SudoUser, "error", err)
+			logger.Warn("Failed to lookup original user", "user", sudoUser, "error", err)
 		}
 		
 		// Parse UID
-		if data.SudoUID != "" {
-			if uid, err := strconv.Atoi(data.SudoUID); err == nil {
+		if sudoUID != "" {
+			if uid, err := strconv.Atoi(sudoUID); err == nil {
 				data.UID = uid
 			} else {
-				logger.Warn("Invalid SUDO_UID, using 0", "sudo_uid", data.SudoUID, "error", err)
+				logger.Warn("Invalid SUDO_UID, using 0", "sudo_uid", sudoUID, "error", err)
 			}
 		}
 		
 		// Parse GID
-		if data.SudoGID != "" {
-			if gid, err := strconv.Atoi(data.SudoGID); err == nil {
+		if sudoGID != "" {
+			if gid, err := strconv.Atoi(sudoGID); err == nil {
 				data.GID = gid
 			} else {
-				logger.Warn("Invalid SUDO_GID, using 0", "sudo_gid", data.SudoGID, "error", err)
+				logger.Warn("Invalid SUDO_GID, using 0", "sudo_gid", sudoGID, "error", err)
 			}
 		}
 	}
@@ -180,12 +204,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 	auditor := audit.NewLoggingAuditor(logger)
 
 	// Create certificate manager with environment variables
-	certManager, err := tls.NewCertificateManager(logger, tls.EnvConfig{
-		SudoUser:      sudoData.SudoUser,
-		SudoUID:       sudoData.SudoUID,
-		SudoGID:       sudoData.SudoGID,
-		XDGConfigHome: sudoData.XDGConfigHome,
-	})
+	certManager, err := tls.NewCertificateManager(logger, sudoData.ToTLSEnvConfig())
 	if err != nil {
 		logger.Error("Failed to create certificate manager", "error", err)
 		return fmt.Errorf("failed to create certificate manager: %v", err)
@@ -197,11 +216,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 		Auditor:     auditor,
 		CertManager: certManager,
 		Logger:      logger,
-	}, jail.EnvConfig{
-		SudoUser: sudoData.SudoUser,
-		SudoUID:  sudoData.SudoUID,
-		SudoGID:  sudoData.SudoGID,
-	})
+	}, sudoData.ToJailEnvConfig())
 	if err != nil {
 		return fmt.Errorf("failed to create jail instance: %v", err)
 	}

@@ -25,8 +25,8 @@ type Config struct {
 // EnvConfig holds environment variable values for jail components
 type EnvConfig struct {
 	SudoUser string
-	SudoUID  string
-	SudoGID  string
+	SudoUID  int
+	SudoGID  int
 }
 
 type Jail struct {

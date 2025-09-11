@@ -108,18 +108,13 @@ func (m *MacOSNetJail) Start() error {
 	}
 
 	// Drop privileges to original user if running under sudo
-	if m.envConfig.SudoUID != "" {
-		uid, err := strconv.Atoi(m.envConfig.SudoUID)
-		if err != nil {
-			m.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", m.envConfig.SudoUID, "error", err)
-		} else {
-			// Use original user ID but KEEP the jail group for network isolation
-			procAttr = &syscall.SysProcAttr{
-				Credential: &syscall.Credential{
-					Uid: uint32(uid),
-					Gid: uint32(m.groupID), // Keep jail group, not original user's group
-				},
-			}
+	if m.envConfig.SudoUID != 0 {
+		// Use original user ID but KEEP the jail group for network isolation
+		procAttr = &syscall.SysProcAttr{
+			Credential: &syscall.Credential{
+				Uid: uint32(m.envConfig.SudoUID),
+				Gid: uint32(m.groupID), // Keep jail group, not original user's group
+			},
 		}
 	}
 	m.procAttr = procAttr

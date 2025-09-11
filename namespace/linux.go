@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -103,17 +102,11 @@ func (l *Linux) Start() error {
 	// Prepare process credentials once during setup
 	l.logger.Debug("Preparing process credentials")
 	var gid, uid int
-	if l.envConfig.SudoUID != "" {
-		uid, err = strconv.Atoi(l.envConfig.SudoUID)
-		if err != nil {
-			l.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", l.envConfig.SudoUID, "error", err)
-		}
+	if l.envConfig.SudoUID != 0 {
+		uid = l.envConfig.SudoUID
 	}
-	if l.envConfig.SudoGID != "" {
-		gid, err = strconv.Atoi(l.envConfig.SudoGID)
-		if err != nil {
-			l.logger.Warn("Invalid SUDO_GID, subprocess will run as root", "sudo_gid", l.envConfig.SudoGID, "error", err)
-		}
+	if l.envConfig.SudoGID != 0 {
+		gid = l.envConfig.SudoGID
 	}
 	l.procAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{
