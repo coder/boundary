@@ -46,27 +46,15 @@ func (m *MockPTY) Clear() {
 	m.stderr = strings.Builder{}
 }
 
-func (m *MockPTY) ExpectMatch(content string) {
+func (m *MockPTY) ExpectInStdout(content string) {
 	if !strings.Contains(m.stdout.String(), content) {
 		m.t.Fatalf("expected \"%s\", got: %s", content, m.stdout.String())
 	}
 }
 
-func (m *MockPTY) ExpectError(content string) {
+func (m *MockPTY) ExpectInStderr(content string) {
 	if !strings.Contains(m.stderr.String(), content) {
-		m.t.Fatalf("expected error with \"%s\", got: %s", content, m.stderr.String())
-	}
-}
-
-func (m *MockPTY) RequireError() {
-	if m.stderr.String() == "" {
-		m.t.Fatal("expected error")
-	}
-}
-
-func (m *MockPTY) RequireNoError() {
-	if m.stderr.String() != "" {
-		m.t.Fatalf("expected nothing in stderr, but got: %s", m.stderr.String())
+		m.t.Fatalf("expected \"%s\", got: %s", content, m.stderr.String())
 	}
 }
 
@@ -81,22 +69,28 @@ func TestPtySetupWorks(t *testing.T) {
 		t.Fatalf("could not run with simple --help arg: %v", err)
 	}
 
-	pty.RequireNoError()
-	pty.ExpectMatch("Monitor and restrict HTTP/HTTPS requests from processes")
+	pty.ExpectInStdout("Monitor and restrict HTTP/HTTPS requests from processes")
 }
 
-func TestCurlGithub(t *testing.T) {
+// For these tests, I have a fixture in the form of a pastebin: https://pastebin.com/raw/2q6kyAyQ
+func TestCurlPastebin(t *testing.T) {
 	ensureRoot(t)
-
 	cmd := NewCommand()
-	inv := cmd.Invoke("--allow", "\"github.com\"", "--", "curl", "https://github.com")
+	inv := cmd.Invoke("--allow", "\"pastebin.com\"", "--", "curl", "https://pastebin.com/raw/2q6kyAyQ")
 
 	pty := NewMockPTY(t)
 	pty.Attach(inv)
 
 	if err := inv.Run(); err != nil {
-		t.Fatalf("error curling github: %v", err)
+		t.Fatalf("error curling pastebin test fixture: %v", err)
 	}
+	pty.ExpectInStdout("foo")
 
-	pty.RequireNoError()
+	// Allowing all with a glob should allow the request
+	inv = cmd.Invoke("--allow", "*", "--", "curl", "https://pastebin.com/raw/2q6kyAyQ")
+	if err := inv.Run(); err != nil {
+		t.Fatalf("error curling pastebin test fixture: %v", err)
+	}
+	pty.ExpectInStdout("foo")
+	pty.Clear()
 }

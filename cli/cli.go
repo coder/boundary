@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -61,7 +62,7 @@ Examples:
 			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
-			return Run(config, inv.Args)
+			return Run(config, inv.Stdin, inv.Stdout, inv.Stderr, inv.Args)
 		},
 	}
 }
@@ -91,7 +92,7 @@ func setupLogging(logLevel string) *slog.Logger {
 }
 
 // Run executes the jail command with the given configuration and arguments
-func Run(config Config, args []string) error {
+func Run(config Config, stdin io.Reader, stdout, stderr io.Writer, args []string) error {
 	logger := setupLogging(config.LogLevel)
 
 	// Get command arguments
@@ -211,7 +212,14 @@ func Run(config Config, args []string) error {
 	// Execute command in jail
 	go func() {
 		defer cancel()
-		err := jailInstance.Command(args).Run()
+		cmd := jailInstance.Command(args)
+
+		// Inject the stdout and stderr from the serpent cli.
+		cmd.Stdout = stdout
+		cmd.Stderr = stderr
+		cmd.Stdin = stdin
+
+		err := cmd.Run()
 		if err != nil {
 			logger.Error("Command execution failed", "error", err)
 		}

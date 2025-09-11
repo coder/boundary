@@ -142,9 +142,6 @@ func (l *Linux) Command(command []string) *exec.Cmd {
 		env = append(env, fmt.Sprintf("%s=%s", key, value))
 	}
 	cmd.Env = env
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 
 	// Use prepared process attributes from Open method
 	cmd.SysProcAttr = l.procAttr

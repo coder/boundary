@@ -143,9 +143,6 @@ func (m *MacOSNetJail) Command(command []string) *exec.Cmd {
 		env = append(env, fmt.Sprintf("%s=%s", key, value))
 	}
 	cmd.Env = env
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
 
 	// Use prepared process attributes from Open method
 	cmd.SysProcAttr = m.procAttr
