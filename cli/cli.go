@@ -6,11 +6,15 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"os/user"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 
 	"github.com/coder/jail"
 	"github.com/coder/jail/audit"
+	"github.com/coder/jail/namespace"
 	"github.com/coder/jail/rules"
 	"github.com/coder/jail/tls"
 	"github.com/coder/serpent"
@@ -64,35 +68,12 @@ Examples:
 	}
 }
 
-// setupLogging creates a slog logger with the specified level
-func setupLogging(logLevel string) *slog.Logger {
-	var level slog.Level
-	switch strings.ToLower(logLevel) {
-	case "error":
-		level = slog.LevelError
-	case "warn":
-		level = slog.LevelWarn
-	case "info":
-		level = slog.LevelInfo
-	case "debug":
-		level = slog.LevelDebug
-	default:
-		level = slog.LevelWarn // Default to warn if invalid level
-	}
-
-	// Create a standard slog logger with the appropriate level
-	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: level,
-	})
-
-	return slog.New(handler)
-}
-
 // Run executes the jail command with the given configuration and arguments
 func Run(ctx context.Context, config Config, args []string) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	logger := setupLogging(config.LogLevel)
+	userInfo := getUserInfo()
 
 	// Get command arguments
 	if len(args) == 0 {
@@ -118,7 +99,10 @@ func Run(ctx context.Context, config Config, args []string) error {
 	auditor := audit.NewLoggingAuditor(logger)
 
 	// Create certificate manager
-	certManager, err := tls.NewCertificateManager(logger)
+	certManager, err := tls.NewCertificateManager(tls.Config{
+		Logger:    logger,
+		ConfigDir: userInfo.ConfigDir,
+	})
 	if err != nil {
 		logger.Error("Failed to create certificate manager", "error", err)
 		return fmt.Errorf("failed to create certificate manager: %v", err)
@@ -172,4 +156,102 @@ func Run(ctx context.Context, config Config, args []string) error {
 	}
 
 	return nil
+}
+
+func getUserInfo() namespace.UserInfo {
+	// get the user info of the original user even if we are running under sudo
+	sudoUser := os.Getenv("SUDO_USER")
+
+	// If running under sudo, get original user information
+	if sudoUser != "" {
+		user, err := user.Lookup(sudoUser)
+		if err != nil {
+			// Fallback to current user if lookup fails
+			return getCurrentUserInfo()
+		}
+
+		// Parse SUDO_UID and SUDO_GID
+		uid := 0
+		gid := 0
+
+		if sudoUID := os.Getenv("SUDO_UID"); sudoUID != "" {
+			if parsedUID, err := strconv.Atoi(sudoUID); err == nil {
+				uid = parsedUID
+			}
+		}
+
+		if sudoGID := os.Getenv("SUDO_GID"); sudoGID != "" {
+			if parsedGID, err := strconv.Atoi(sudoGID); err == nil {
+				gid = parsedGID
+			}
+		}
+
+		configDir := getConfigDir(user.HomeDir)
+
+		return namespace.UserInfo{
+			Username:  sudoUser,
+			Uid:       uid,
+			Gid:       gid,
+			HomeDir:   user.HomeDir,
+			ConfigDir: configDir,
+		}
+	}
+
+	// Not running under sudo, use current user
+	return getCurrentUserInfo()
+}
+
+// setupLogging creates a slog logger with the specified level
+func setupLogging(logLevel string) *slog.Logger {
+	var level slog.Level
+	switch strings.ToLower(logLevel) {
+	case "error":
+		level = slog.LevelError
+	case "warn":
+		level = slog.LevelWarn
+	case "info":
+		level = slog.LevelInfo
+	case "debug":
+		level = slog.LevelDebug
+	default:
+		level = slog.LevelWarn // Default to warn if invalid level
+	}
+
+	// Create a standard slog logger with the appropriate level
+	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: level,
+	})
+
+	return slog.New(handler)
+}
+
+// getCurrentUserInfo gets information for the current user
+func getCurrentUserInfo() namespace.UserInfo {
+	currentUser, err := user.Current()
+	if err != nil {
+		// Fallback with empty values if we can't get user info
+		return namespace.UserInfo{}
+	}
+
+	uid, _ := strconv.Atoi(currentUser.Uid)
+	gid, _ := strconv.Atoi(currentUser.Gid)
+
+	configDir := getConfigDir(currentUser.HomeDir)
+
+	return namespace.UserInfo{
+		Username:  currentUser.Username,
+		Uid:       uid,
+		Gid:       gid,
+		HomeDir:   currentUser.HomeDir,
+		ConfigDir: configDir,
+	}
+}
+
+// getConfigDir determines the config directory based on XDG_CONFIG_HOME or fallback
+func getConfigDir(homeDir string) string {
+	// Use XDG_CONFIG_HOME if set, otherwise fallback to ~/.config/coder_jail
+	if xdgConfigHome := os.Getenv("XDG_CONFIG_HOME"); xdgConfigHome != "" {
+		return filepath.Join(xdgConfigHome, "coder_jail")
+	}
+	return filepath.Join(homeDir, ".config", "coder_jail")
 }

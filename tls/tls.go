@@ -12,15 +12,21 @@ import (
 	"math/big"
 	"net"
 	"os"
-	"os/user"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"time"
+
+	"github.com/coder/jail/namespace"
 )
 
 type Manager interface {
 	SetupTLSAndWriteCACert() (*tls.Config, string, string, error)
+}
+
+type Config struct {
+	Logger    *slog.Logger
+	ConfigDir string
+	UserInfo  namespace.UserInfo
 }
 
 // CertificateManager manages TLS certificates for the proxy
@@ -31,23 +37,20 @@ type CertificateManager struct {
 	mutex     sync.RWMutex
 	logger    *slog.Logger
 	configDir string
+	userInfo  namespace.UserInfo
 }
 
 // NewCertificateManager creates a new certificate manager
-func NewCertificateManager(logger *slog.Logger) (*CertificateManager, error) {
-	configDir, err := getConfigDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to determine config directory: %v", err)
-	}
-
+func NewCertificateManager(config Config) (*CertificateManager, error) {
 	cm := &CertificateManager{
 		certCache: make(map[string]*tls.Certificate),
-		logger:    logger,
-		configDir: configDir,
+		logger:    config.Logger,
+		configDir: config.ConfigDir,
+		userInfo:  config.UserInfo,
 	}
 
 	// Load or generate CA certificate
-	err = cm.loadOrGenerateCA()
+	err := cm.loadOrGenerateCA()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load or generate CA: %v", err)
 	}
@@ -58,12 +61,6 @@ func NewCertificateManager(logger *slog.Logger) (*CertificateManager, error) {
 // SetupTLSAndWriteCACert sets up TLS config and writes CA certificate to file
 // Returns the TLS config, CA cert path, and config directory
 func (cm *CertificateManager) SetupTLSAndWriteCACert() (*tls.Config, string, string, error) {
-	// Get config directory
-	configDir, err := getConfigDir()
-	if err != nil {
-		return nil, "", "", fmt.Errorf("failed to get config directory: %v", err)
-	}
-
 	// Get TLS config
 	tlsConfig := cm.getTLSConfig()
 
@@ -74,13 +71,13 @@ func (cm *CertificateManager) SetupTLSAndWriteCACert() (*tls.Config, string, str
 	}
 
 	// Write CA certificate to file
-	caCertPath := filepath.Join(configDir, "ca-cert.pem")
+	caCertPath := filepath.Join(cm.configDir, "ca-cert.pem")
 	err = os.WriteFile(caCertPath, caCertPEM, 0644)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("failed to write CA certificate file: %v", err)
 	}
 
-	return tlsConfig, caCertPath, configDir, nil
+	return tlsConfig, caCertPath, cm.configDir, nil
 }
 
 // loadOrGenerateCA loads existing CA or generates a new one
@@ -182,21 +179,10 @@ func (cm *CertificateManager) generateCA(keyPath, certPath string) error {
 		return fmt.Errorf("failed to create config directory at %s: %v", cm.configDir, err)
 	}
 
-	// When running under sudo, ensure the directory is owned by the original user
-	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
-		if sudoUID := os.Getenv("SUDO_UID"); sudoUID != "" {
-			if sudoGID := os.Getenv("SUDO_GID"); sudoGID != "" {
-				uid, err1 := strconv.Atoi(sudoUID)
-				gid, err2 := strconv.Atoi(sudoGID)
-				if err1 == nil && err2 == nil {
-					// Change ownership of the config directory to the original user
-					err := os.Chown(cm.configDir, uid, gid)
-					if err != nil {
-						cm.logger.Warn("Failed to change config directory ownership", "error", err)
-					}
-				}
-			}
-		}
+	// ensure the directory is owned by the original user
+	err = os.Chown(cm.configDir, cm.userInfo.Uid, cm.userInfo.Gid)
+	if err != nil {
+		cm.logger.Warn("Failed to change config directory ownership", "error", err)
 	}
 
 	// Generate private key
@@ -349,42 +335,4 @@ func (cm *CertificateManager) generateServerCertificate(hostname string) (*tls.C
 	cm.logger.Debug("Generated certificate", "hostname", hostname)
 
 	return tlsCert, nil
-}
-
-// getConfigDir returns the configuration directory path
-func getConfigDir() (string, error) {
-	// When running under sudo, use the original user's home directory
-	// so the subprocess can access the CA certificate files
-	var homeDir string
-	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
-		// Get original user's home directory
-		if user, err := user.Lookup(sudoUser); err == nil {
-			homeDir = user.HomeDir
-		} else {
-			// Fallback to current user if lookup fails
-			var err2 error
-			homeDir, err2 = os.UserHomeDir()
-			if err2 != nil {
-				return "", fmt.Errorf("failed to get user home directory: %v", err2)
-			}
-		}
-	} else {
-		// Normal case - use current user's home
-		var err error
-		homeDir, err = os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("failed to get user home directory: %v", err)
-		}
-	}
-
-	// Use platform-specific config directory
-	var configDir string
-	switch {
-	case os.Getenv("XDG_CONFIG_HOME") != "":
-		configDir = filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "coder_jail")
-	default:
-		configDir = filepath.Join(homeDir, ".config", "coder_jail")
-	}
-
-	return configDir, nil
 }
