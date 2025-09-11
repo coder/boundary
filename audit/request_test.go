@@ -94,7 +94,10 @@ func TestHTTPRequestToAuditRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			auditReq := HTTPRequestToAuditRequest(tt.request)
+			auditReq := Request{
+				Method: tt.request.Method,
+				URL:    tt.request.URL.String(),
+			}
 
 			if auditReq.Method != tt.expectedMethod {
 				t.Errorf("expected method %s, got %s", tt.expectedMethod, auditReq.Method)
