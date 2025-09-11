@@ -85,9 +85,11 @@ func TestCurlPastebin(t *testing.T) {
 		t.Fatalf("error curling pastebin test fixture: %v", err)
 	}
 	pty.ExpectInStdout("foo")
+	pty.Clear()
 
 	// Allowing all with a glob should allow the request
 	inv = cmd.Invoke("--allow", "*", "--", "curl", "https://pastebin.com/raw/2q6kyAyQ")
+	pty.Attach(inv)
 	if err := inv.Run(); err != nil {
 		t.Fatalf("error curling pastebin test fixture: %v", err)
 	}
