@@ -25,21 +25,20 @@ type Linux struct {
 	httpsProxyPort int
 }
 
-// newLinux creates a new Linux network jail instance
-func newLinux(config Config) (*Linux, error) {
+// NewLinux creates a new Linux network jail instance
+func NewLinux(config Config) (*Linux, error) {
 	return &Linux{
-		namespace:   newNamespaceName(),
-		logger:      config.Logger,
-		preparedEnv: make(map[string]string),
+		namespace:      newNamespaceName(),
+		logger:         config.Logger,
+		preparedEnv:    make(map[string]string),
+		httpProxyPort:  config.HttpProxyPort,
+		httpsProxyPort: config.HttpsProxyPort,
 	}, nil
 }
 
 // Setup creates network namespace and configures iptables rules
-func (l *Linux) Start(httpProxyPort int, httpsProxyPort int) error {
+func (l *Linux) Start() error {
 	l.logger.Debug("Setup called")
-
-	l.httpProxyPort = httpProxyPort
-	l.httpsProxyPort = httpsProxyPort
 
 	// Setup DNS configuration BEFORE creating namespace
 	// This ensures the namespace-specific resolv.conf is available when namespace is created

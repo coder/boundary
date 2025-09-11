@@ -30,26 +30,25 @@ type MacOSNetJail struct {
 	httpsProxyPort int
 }
 
-// newMacOSJail creates a new macOS network jail instance
-func newMacOSJail(config Config) (*MacOSNetJail, error) {
+// NewMacOS creates a new macOS network jail instance
+func NewMacOS(config Config) (*MacOSNetJail, error) {
 	ns := newNamespaceName()
 	pfRulesPath := fmt.Sprintf("/tmp/%s.pf", ns)
 	mainRulesPath := fmt.Sprintf("/tmp/%s_main.pf", ns)
 
 	return &MacOSNetJail{
-		pfRulesPath:   pfRulesPath,
-		mainRulesPath: mainRulesPath,
-		logger:        config.Logger,
-		preparedEnv:   make(map[string]string),
+		pfRulesPath:    pfRulesPath,
+		mainRulesPath:  mainRulesPath,
+		logger:         config.Logger,
+		preparedEnv:    make(map[string]string),
+		httpProxyPort:  config.HttpProxyPort,
+		httpsProxyPort: config.HttpsProxyPort,
 	}, nil
 }
 
 // Setup creates the network jail group and configures PF rules
-func (m *MacOSNetJail) Start(httpProxyPort int, httpsProxyPort int) error {
+func (m *MacOSNetJail) Start() error {
 	m.logger.Debug("Setup called")
-
-	m.httpProxyPort = httpProxyPort
-	m.httpsProxyPort = httpsProxyPort
 
 	// Create or get network jail group
 	m.logger.Debug("Creating or ensuring network jail group")

@@ -15,7 +15,7 @@ func NewLoggingAuditor(logger *slog.Logger) *LoggingAuditor {
 }
 
 // AuditRequest logs the request using structured logging
-func (a *LoggingAuditor) AuditRequest(req *Request) {
+func (a *LoggingAuditor) AuditRequest(req Request) {
 	if req.Allowed {
 		a.logger.Info("ALLOW",
 			"method", req.Method,

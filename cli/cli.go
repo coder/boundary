@@ -10,7 +10,7 @@ import (
 	"syscall"
 
 	"github.com/coder/jail"
-	"github.com/coder/jail/namespace"
+	"github.com/coder/jail/audit"
 	"github.com/coder/jail/rules"
 	"github.com/coder/jail/tls"
 	"github.com/coder/serpent"
@@ -115,15 +115,6 @@ func Run(config Config, args []string) error {
 	// Create auditor
 	// auditor := audit.NewLoggingAuditor(logger)
 
-	// Create commander
-	commander, err := namespace.New(namespace.Config{
-		Logger: logger,
-	})
-	if err != nil {
-		logger.Error("Failed to create network namespace", "error", err)
-		return fmt.Errorf("failed to create network namespace: %v", err)
-	}
-
 	// Create certificate manager
 	certManager, err := tls.NewCertificateManager(logger)
 	if err != nil {
@@ -131,30 +122,17 @@ func Run(config Config, args []string) error {
 		return fmt.Errorf("failed to create certificate manager: %v", err)
 	}
 
-	// Setup TLS config and write CA certificate to file
-	var caCertPath, configDir string
-	tlsConfig, caCertPath, configDir, err := certManager.SetupTLSAndWriteCACert()
-	if err != nil {
-		logger.Error("Failed to setup TLS and CA certificate", "error", err)
-		return fmt.Errorf("failed to setup TLS and CA certificate: %v", err)
-	}
-
-	// Set standard CA certificate environment variables for common tools
-	// This makes tools like curl, git, etc. trust our dynamically generated CA
-	commander.SetEnv("SSL_CERT_FILE", caCertPath)       // OpenSSL/LibreSSL-based tools
-	commander.SetEnv("SSL_CERT_DIR", configDir)         // OpenSSL certificate directory
-	commander.SetEnv("CURL_CA_BUNDLE", caCertPath)      // curl
-	commander.SetEnv("GIT_SSL_CAINFO", caCertPath)      // Git
-	commander.SetEnv("REQUESTS_CA_BUNDLE", caCertPath)  // Python requests
-	commander.SetEnv("NODE_EXTRA_CA_CERTS", caCertPath) // Node.js
-
 	// Create jail instance
-	jailInstance := jail.New(jail.Config{
-		Commander:  commander,
-		RuleEngine: ruleEngine,
-		Logger:     logger,
-		TLSConfig:  tlsConfig,
+	jailInstance, err := jail.New(context.Background(), jail.Config{
+		RuleEngine:  ruleEngine,
+		Auditor:     audit.NewLoggingAuditor(logger),
+		Logger:      logger,
+		CertManager: certManager,
 	})
+	if err != nil {
+		logger.Error("Failed to create jail instance", "error", err)
+		return fmt.Errorf("failed to create jail instance: %v", err)
+	}
 
 	// Setup signal handling BEFORE any setup
 	sigChan := make(chan os.Signal, 1)

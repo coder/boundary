@@ -10,14 +10,24 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/coder/jail/audit"
 	"github.com/coder/jail/rules"
 )
+
+type RuleEvaluator interface {
+	Evaluate(method, url string) rules.EvaluationResult
+}
+
+type Auditor interface {
+	AuditRequest(req audit.Request)
+}
 
 // ProxyServer handles HTTP and HTTPS requests with rule-based filtering
 type ProxyServer struct {
 	httpServer  *http.Server
 	httpsServer *http.Server
-	ruleEngine  *rules.RuleEngine
+	ruleEngine  RuleEvaluator
+	auditor     Auditor
 	logger      *slog.Logger
 	tlsConfig   *tls.Config
 	httpPort    int
@@ -28,7 +38,8 @@ type ProxyServer struct {
 type Config struct {
 	HTTPPort   int
 	HTTPSPort  int
-	RuleEngine *rules.RuleEngine
+	RuleEngine RuleEvaluator
+	Auditor    Auditor
 	Logger     *slog.Logger
 	TLSConfig  *tls.Config
 }
@@ -37,6 +48,7 @@ type Config struct {
 func NewProxyServer(config Config) *ProxyServer {
 	return &ProxyServer{
 		ruleEngine: config.RuleEngine,
+		auditor:    config.Auditor,
 		logger:     config.Logger,
 		tlsConfig:  config.TLSConfig,
 		httpPort:   config.HTTPPort,
@@ -106,11 +118,13 @@ func (p *ProxyServer) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	// Check if request should be allowed
 	result := p.ruleEngine.Evaluate(r.Method, r.URL.String())
 
-	// // Audit the request
-	// auditReq := audit.HTTPRequestToAuditRequest(r)
-	// auditReq.Allowed = result.Allowed
-	// auditReq.Rule = result.Rule
-	// p.auditRequest(auditReq)
+	// Audit the request
+	p.auditor.AuditRequest(audit.Request{
+		Method:  r.Method,
+		URL:     r.URL.String(),
+		Allowed: result.Allowed,
+		Rule:    result.Rule,
+	})
 
 	if !result.Allowed {
 		p.writeBlockedResponse(w, r)
@@ -127,13 +141,12 @@ func (p *ProxyServer) handleHTTPS(w http.ResponseWriter, r *http.Request) {
 	result := p.ruleEngine.Evaluate(r.Method, r.URL.String())
 
 	// Audit the request
-	// auditReq := &audit.Request{
-	// 	Method:  r.Method,
-	// 	URL:     fullURL,
-	// 	Allowed: result.Allowed,
-	// 	Rule:    result.Rule,
-	// }
-	// p.auditRequest(auditReq)
+	p.auditor.AuditRequest(audit.Request{
+		Method:  r.Method,
+		URL:     r.URL.String(),
+		Allowed: result.Allowed,
+		Rule:    result.Rule,
+	})
 
 	if !result.Allowed {
 		p.writeBlockedResponse(w, r)
