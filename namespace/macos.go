@@ -112,6 +112,15 @@ func (m *MacOSNetJail) Start() error {
 func (m *MacOSNetJail) Command(command []string) *exec.Cmd {
 	m.logger.Debug("Command called", "command", command)
 
+	// Check for empty command
+	if len(command) == 0 {
+		m.logger.Error("Cannot create command: empty command array")
+		// Return a dummy command that will fail gracefully
+		cmd := exec.Command("false") // false command that always exits with status 1
+		cmd.Env = os.Environ()
+		return cmd
+	}
+
 	// Create command directly (no sg wrapper needed)
 	m.logger.Debug("Creating command with group membership", "groupID", m.restrictedGid)
 	cmd := exec.Command(command[0], command[1:]...)
