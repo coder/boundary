@@ -23,10 +23,11 @@ type Linux struct {
 	procAttr       *syscall.SysProcAttr
 	httpProxyPort  int
 	httpsProxyPort int
+	envConfig      EnvConfig
 }
 
 // NewLinux creates a new Linux network jail instance
-func NewLinux(config Config) (*Linux, error) {
+func NewLinux(config Config, envConfig EnvConfig) (*Linux, error) {
 	// Initialize preparedEnv with config environment variables
 	preparedEnv := make(map[string]string)
 	for key, value := range config.Env {
@@ -39,6 +40,7 @@ func NewLinux(config Config) (*Linux, error) {
 		preparedEnv:    preparedEnv,
 		httpProxyPort:  config.HttpProxyPort,
 		httpsProxyPort: config.HttpsProxyPort,
+		envConfig:      envConfig,
 	}, nil
 }
 
@@ -85,35 +87,32 @@ func (l *Linux) Start() error {
 	}
 
 	// When running under sudo, restore essential user environment variables
-	sudoUser := os.Getenv("SUDO_USER")
-	if sudoUser != "" {
-		user, err := user.Lookup(sudoUser)
+	if l.envConfig.SudoUser != "" {
+		user, err := user.Lookup(l.envConfig.SudoUser)
 		if err == nil {
 			// Set HOME to original user's home directory
 			l.preparedEnv["HOME"] = user.HomeDir
 			// Set USER to original username
-			l.preparedEnv["USER"] = sudoUser
+			l.preparedEnv["USER"] = l.envConfig.SudoUser
 			// Set LOGNAME to original username (some tools check this instead of USER)
-			l.preparedEnv["LOGNAME"] = sudoUser
-			l.logger.Debug("Restored user environment", "home", user.HomeDir, "user", sudoUser)
+			l.preparedEnv["LOGNAME"] = l.envConfig.SudoUser
+			l.logger.Debug("Restored user environment", "home", user.HomeDir, "user", l.envConfig.SudoUser)
 		}
 	}
 
 	// Prepare process credentials once during setup
 	l.logger.Debug("Preparing process credentials")
 	var gid, uid int
-	sudoUID := os.Getenv("SUDO_UID")
-	if sudoUID != "" {
-		uid, err = strconv.Atoi(sudoUID)
+	if l.envConfig.SudoUID != "" {
+		uid, err = strconv.Atoi(l.envConfig.SudoUID)
 		if err != nil {
-			l.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", sudoUID, "error", err)
+			l.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", l.envConfig.SudoUID, "error", err)
 		}
 	}
-	sudoGID := os.Getenv("SUDO_GID")
-	if sudoGID != "" {
-		gid, err = strconv.Atoi(sudoGID)
+	if l.envConfig.SudoGID != "" {
+		gid, err = strconv.Atoi(l.envConfig.SudoGID)
 		if err != nil {
-			l.logger.Warn("Invalid SUDO_GID, subprocess will run as root", "sudo_gid", sudoGID, "error", err)
+			l.logger.Warn("Invalid SUDO_GID, subprocess will run as root", "sudo_gid", l.envConfig.SudoGID, "error", err)
 		}
 	}
 	l.procAttr = &syscall.SysProcAttr{

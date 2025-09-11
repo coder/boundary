@@ -23,6 +23,14 @@ type Manager interface {
 	SetupTLSAndWriteCACert() (*tls.Config, string, string, error)
 }
 
+// EnvConfig holds environment variable values
+type EnvConfig struct {
+	SudoUser      string
+	XDGConfigHome string
+	SudoUID       string
+	SudoGID       string
+}
+
 // CertificateManager manages TLS certificates for the proxy
 type CertificateManager struct {
 	caKey     *rsa.PrivateKey
@@ -31,11 +39,12 @@ type CertificateManager struct {
 	mutex     sync.RWMutex
 	logger    *slog.Logger
 	configDir string
+	envConfig EnvConfig
 }
 
-// NewCertificateManager creates a new certificate manager
-func NewCertificateManager(logger *slog.Logger) (*CertificateManager, error) {
-	configDir, err := getConfigDir()
+// NewCertificateManager creates a new certificate manager with environment configuration
+func NewCertificateManager(logger *slog.Logger, envConfig EnvConfig) (*CertificateManager, error) {
+	configDir, err := getConfigDir(envConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to determine config directory: %v", err)
 	}
@@ -44,6 +53,7 @@ func NewCertificateManager(logger *slog.Logger) (*CertificateManager, error) {
 		certCache: make(map[string]*tls.Certificate),
 		logger:    logger,
 		configDir: configDir,
+		envConfig: envConfig,
 	}
 
 	// Load or generate CA certificate
@@ -59,7 +69,7 @@ func NewCertificateManager(logger *slog.Logger) (*CertificateManager, error) {
 // Returns the TLS config, CA cert path, and config directory
 func (cm *CertificateManager) SetupTLSAndWriteCACert() (*tls.Config, string, string, error) {
 	// Get config directory
-	configDir, err := getConfigDir()
+	configDir, err := getConfigDir(cm.envConfig)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("failed to get config directory: %v", err)
 	}
@@ -183,18 +193,14 @@ func (cm *CertificateManager) generateCA(keyPath, certPath string) error {
 	}
 
 	// When running under sudo, ensure the directory is owned by the original user
-	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
-		if sudoUID := os.Getenv("SUDO_UID"); sudoUID != "" {
-			if sudoGID := os.Getenv("SUDO_GID"); sudoGID != "" {
-				uid, err1 := strconv.Atoi(sudoUID)
-				gid, err2 := strconv.Atoi(sudoGID)
-				if err1 == nil && err2 == nil {
-					// Change ownership of the config directory to the original user
-					err := os.Chown(cm.configDir, uid, gid)
-					if err != nil {
-						cm.logger.Warn("Failed to change config directory ownership", "error", err)
-					}
-				}
+	if cm.envConfig.SudoUser != "" && cm.envConfig.SudoUID != "" && cm.envConfig.SudoGID != "" {
+		uid, err1 := strconv.Atoi(cm.envConfig.SudoUID)
+		gid, err2 := strconv.Atoi(cm.envConfig.SudoGID)
+		if err1 == nil && err2 == nil {
+			// Change ownership of the config directory to the original user
+			err := os.Chown(cm.configDir, uid, gid)
+			if err != nil {
+				cm.logger.Warn("Failed to change config directory ownership", "error", err)
 			}
 		}
 	}
@@ -352,13 +358,13 @@ func (cm *CertificateManager) generateServerCertificate(hostname string) (*tls.C
 }
 
 // getConfigDir returns the configuration directory path
-func getConfigDir() (string, error) {
+func getConfigDir(envConfig EnvConfig) (string, error) {
 	// When running under sudo, use the original user's home directory
 	// so the subprocess can access the CA certificate files
 	var homeDir string
-	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
+	if envConfig.SudoUser != "" {
 		// Get original user's home directory
-		if user, err := user.Lookup(sudoUser); err == nil {
+		if user, err := user.Lookup(envConfig.SudoUser); err == nil {
 			homeDir = user.HomeDir
 		} else {
 			// Fallback to current user if lookup fails
@@ -380,8 +386,8 @@ func getConfigDir() (string, error) {
 	// Use platform-specific config directory
 	var configDir string
 	switch {
-	case os.Getenv("XDG_CONFIG_HOME") != "":
-		configDir = filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "coder_jail")
+	case envConfig.XDGConfigHome != "":
+		configDir = filepath.Join(envConfig.XDGConfigHome, "coder_jail")
 	default:
 		configDir = filepath.Join(homeDir, ".config", "coder_jail")
 	}

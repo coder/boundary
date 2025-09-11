@@ -22,6 +22,13 @@ type Config struct {
 	Logger      *slog.Logger
 }
 
+// EnvConfig holds environment variable values for jail components
+type EnvConfig struct {
+	SudoUser string
+	SudoUID  string
+	SudoGID  string
+}
+
 type Jail struct {
 	commander   namespace.Commander
 	proxyServer *proxy.Server
@@ -30,7 +37,7 @@ type Jail struct {
 	cancel      context.CancelFunc
 }
 
-func New(ctx context.Context, config Config) (*Jail, error) {
+func New(ctx context.Context, config Config, envConfig EnvConfig) (*Jail, error) {
 	// Setup TLS config and write CA certificate to file
 	tlsConfig, caCertPath, configDir, err := config.CertManager.SetupTLSAndWriteCACert()
 	if err != nil {
@@ -62,6 +69,10 @@ func New(ctx context.Context, config Config) (*Jail, error) {
 			"REQUESTS_CA_BUNDLE":  caCertPath, // Python requests
 			"NODE_EXTRA_CA_CERTS": caCertPath, // Node.js
 		},
+	}, namespace.EnvConfig{
+		SudoUser: envConfig.SudoUser,
+		SudoUID:  envConfig.SudoUID,
+		SudoGID:  envConfig.SudoGID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create commander: %v", err)
@@ -118,12 +129,12 @@ func (j *Jail) Close() error {
 }
 
 // newNamespaceCommander creates a new namespace instance for the current platform
-func newNamespaceCommander(config namespace.Config) (namespace.Commander, error) {
+func newNamespaceCommander(config namespace.Config, envConfig namespace.EnvConfig) (namespace.Commander, error) {
 	switch runtime.GOOS {
 	case "darwin":
-		return namespace.NewMacOS(config)
+		return namespace.NewMacOS(config, envConfig)
 	case "linux":
-		return namespace.NewLinux(config)
+		return namespace.NewLinux(config, envConfig)
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}

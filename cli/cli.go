@@ -117,19 +117,28 @@ func Run(ctx context.Context, config Config, args []string) error {
 	// Create auditor
 	auditor := audit.NewLoggingAuditor(logger)
 
-	// Create certificate manager
-	certManager, err := tls.NewCertificateManager(logger)
+	// Create certificate manager with environment variables
+	certManager, err := tls.NewCertificateManager(logger, tls.EnvConfig{
+		SudoUser:      os.Getenv("SUDO_USER"),
+		SudoUID:       os.Getenv("SUDO_UID"),
+		SudoGID:       os.Getenv("SUDO_GID"),
+		XDGConfigHome: os.Getenv("XDG_CONFIG_HOME"),
+	})
 	if err != nil {
 		logger.Error("Failed to create certificate manager", "error", err)
 		return fmt.Errorf("failed to create certificate manager: %v", err)
 	}
 
-	// Create jail instance
+	// Create jail instance with environment variables
 	jailInstance, err := jail.New(ctx, jail.Config{
 		RuleEngine:  ruleEngine,
 		Auditor:     auditor,
 		CertManager: certManager,
 		Logger:      logger,
+	}, jail.EnvConfig{
+		SudoUser: os.Getenv("SUDO_USER"),
+		SudoUID:  os.Getenv("SUDO_UID"),
+		SudoGID:  os.Getenv("SUDO_GID"),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create jail instance: %v", err)

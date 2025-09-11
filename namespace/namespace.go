@@ -25,6 +25,13 @@ type Config struct {
 	Env            map[string]string
 }
 
+// EnvConfig holds environment variable values for namespace implementations
+type EnvConfig struct {
+	SudoUser string
+	SudoUID  string
+	SudoGID  string
+}
+
 func newNamespaceName() string {
 	return fmt.Sprintf("%s_%d", namespacePrefix, time.Now().UnixNano()%10000000)
 }

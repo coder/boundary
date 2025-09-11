@@ -28,10 +28,11 @@ type MacOSNetJail struct {
 	procAttr       *syscall.SysProcAttr
 	httpProxyPort  int
 	httpsProxyPort int
+	envConfig      EnvConfig
 }
 
 // NewMacOS creates a new macOS network jail instance
-func NewMacOS(config Config) (*MacOSNetJail, error) {
+func NewMacOS(config Config, envConfig EnvConfig) (*MacOSNetJail, error) {
 	ns := newNamespaceName()
 	pfRulesPath := fmt.Sprintf("/tmp/%s.pf", ns)
 	mainRulesPath := fmt.Sprintf("/tmp/%s_main.pf", ns)
@@ -49,6 +50,7 @@ func NewMacOS(config Config) (*MacOSNetJail, error) {
 		preparedEnv:    preparedEnv,
 		httpProxyPort:  config.HttpProxyPort,
 		httpsProxyPort: config.HttpsProxyPort,
+		envConfig:      envConfig,
 	}, nil
 }
 
@@ -84,34 +86,32 @@ func (m *MacOSNetJail) Start() error {
 	}
 
 	// When running under sudo, restore essential user environment variables
-	sudoUser := os.Getenv("SUDO_USER")
-	if sudoUser != "" {
-		user, err := user.Lookup(sudoUser)
+	if m.envConfig.SudoUser != "" {
+		user, err := user.Lookup(m.envConfig.SudoUser)
 		if err == nil {
 			// Set HOME to original user's home directory
 			m.preparedEnv["HOME"] = user.HomeDir
 			// Set USER to original username
-			m.preparedEnv["USER"] = sudoUser
+			m.preparedEnv["USER"] = m.envConfig.SudoUser
 			// Set LOGNAME to original username (some tools check this instead of USER)
-			m.preparedEnv["LOGNAME"] = sudoUser
-			m.logger.Debug("Restored user environment", "home", user.HomeDir, "user", sudoUser)
+			m.preparedEnv["LOGNAME"] = m.envConfig.SudoUser
+			m.logger.Debug("Restored user environment", "home", user.HomeDir, "user", m.envConfig.SudoUser)
 		}
 	}
 
-	// Prepare process credentials once during setup
-	m.logger.Debug("Preparing process credentials")
+	// Set default process attributes (jail group)
 	procAttr := &syscall.SysProcAttr{
 		Credential: &syscall.Credential{
+			Uid: uint32(os.Getuid()),
 			Gid: uint32(m.groupID),
 		},
 	}
 
 	// Drop privileges to original user if running under sudo
-	sudoUID := os.Getenv("SUDO_UID")
-	if sudoUID != "" {
-		uid, err := strconv.Atoi(sudoUID)
+	if m.envConfig.SudoUID != "" {
+		uid, err := strconv.Atoi(m.envConfig.SudoUID)
 		if err != nil {
-			m.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", sudoUID, "error", err)
+			m.logger.Warn("Invalid SUDO_UID, subprocess will run as root", "sudo_uid", m.envConfig.SudoUID, "error", err)
 		} else {
 			// Use original user ID but KEEP the jail group for network isolation
 			procAttr = &syscall.SysProcAttr{
@@ -120,11 +120,8 @@ func (m *MacOSNetJail) Start() error {
 					Gid: uint32(m.groupID), // Keep jail group, not original user's group
 				},
 			}
-			m.logger.Debug("Dropping privileges to original user with jail group", "uid", uid, "jail_gid", m.groupID)
 		}
 	}
-
-	// Store prepared process attributes for use in Command method
 	m.procAttr = procAttr
 
 	m.logger.Debug("Setup completed successfully")
