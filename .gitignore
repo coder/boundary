@@ -45,3 +45,6 @@ Thumbs.db
 *.crt
 *.key
 build/
+
+# Jail binary
+./jail
