@@ -80,11 +80,13 @@ func TestCurlPastebin(t *testing.T) {
 		t.Fatalf("error curling pastebin test fixture: %v", err)
 	}
 	pty.ExpectInStdout("foo")
+}
 
+func TestCurlPastebinWithAllowAll(t *testing.T) {
 	// Allowing all with a glob should allow the request
-	cmd = NewCommand()
-	inv = cmd.Invoke("--allow", "*", "--", "curl", "https://pastebin.com/raw/2q6kyAyQ")
-	pty = NewMockPTY(t)
+	cmd := NewCommand()
+	inv := cmd.Invoke("--allow", "\"*\"", "--", "curl", "https://pastebin.com/raw/2q6kyAyQ")
+	pty := NewMockPTY(t)
 	pty.Attach(inv)
 	if err := inv.Run(); err != nil {
 		t.Fatalf("error curling pastebin test fixture: %v", err)
