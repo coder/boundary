@@ -2,6 +2,7 @@ package jail
 
 import (
 	"context"
+	cryptotls "crypto/tls"
 	"fmt"
 	"log/slog"
 	"os/exec"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/coder/jail/namespace"
 	"github.com/coder/jail/proxy"
-	"github.com/coder/jail/tls"
 )
 
 type Commander interface {
@@ -19,19 +19,23 @@ type Commander interface {
 	Close() error
 }
 
+type CertificateManager interface {
+	SetupTLSAndWriteCACert() (*cryptotls.Config, string, string, error)
+}
+
 type Config struct {
 	RuleEngine  proxy.RuleEvaluator
 	Auditor     proxy.Auditor
-	CertManager *tls.CertificateManager
+	CertManager CertificateManager
 	Logger      *slog.Logger
 }
 
 type Jail struct {
-	commandExecutor Commander
-	proxyServer     *proxy.ProxyServer
-	logger          *slog.Logger
-	ctx             context.Context
-	cancel          context.CancelFunc
+	commander   Commander
+	proxyServer *proxy.ProxyServer
+	logger      *slog.Logger
+	ctx         context.Context
+	cancel      context.CancelFunc
 }
 
 func New(ctx context.Context, config Config) (*Jail, error) {
@@ -75,17 +79,17 @@ func New(ctx context.Context, config Config) (*Jail, error) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	return &Jail{
-		commandExecutor: commander,
-		proxyServer:     proxyServer,
-		logger:          config.Logger,
-		ctx:             ctx,
-		cancel:          cancel,
+		commander:   commander,
+		proxyServer: proxyServer,
+		logger:      config.Logger,
+		ctx:         ctx,
+		cancel:      cancel,
 	}, nil
 }
 
 func (j *Jail) Start() error {
 	// Open the command executor (network namespace)
-	err := j.commandExecutor.Start()
+	err := j.commander.Start()
 	if err != nil {
 		return fmt.Errorf("failed to open command executor: %v", err)
 	}
@@ -105,7 +109,7 @@ func (j *Jail) Start() error {
 }
 
 func (j *Jail) Command(command []string) *exec.Cmd {
-	return j.commandExecutor.Command(command)
+	return j.commander.Command(command)
 }
 
 func (j *Jail) Close() error {
@@ -118,7 +122,7 @@ func (j *Jail) Close() error {
 	}
 
 	// Close command executor
-	return j.commandExecutor.Close()
+	return j.commander.Close()
 }
 
 // newCommander creates a new NetJail instance for the current platform
