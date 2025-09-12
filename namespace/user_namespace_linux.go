@@ -117,14 +117,14 @@ echo "[jail] Creating user namespace with slirp4netns networking..."
   echo "[jail] Setting up proxy forwarders to host..."
   
   # Start HTTP proxy forwarder (127.0.0.1:8080 -> 10.0.2.2:8080)
-  if command -v nc >/dev/null 2>&1; then
-    echo "[jail] Starting HTTP proxy forwarder..."
-    nc -l -p 8080 -c "nc 10.0.2.2 %d" &
+  if command -v socat >/dev/null 2>&1; then
+    echo "[jail] Starting HTTP proxy forwarder with socat..."
+    socat TCP-LISTEN:8080,fork TCP:10.0.2.2:%d &
     HTTP_FORWARDER_PID=$!
     echo "[jail] HTTP forwarder started with PID: $HTTP_FORWARDER_PID"
     
-    echo "[jail] Starting HTTPS proxy forwarder..."
-    nc -l -p 8443 -c "nc 10.0.2.2 %d" &
+    echo "[jail] Starting HTTPS proxy forwarder with socat..."
+    socat TCP-LISTEN:8443,fork TCP:10.0.2.2:%d &
     HTTPS_FORWARDER_PID=$!
     echo "[jail] HTTPS forwarder started with PID: $HTTPS_FORWARDER_PID"
     
@@ -134,9 +134,36 @@ echo "[jail] Creating user namespace with slirp4netns networking..."
     export http_proxy="http://127.0.0.1:8080"
     export https_proxy="http://127.0.0.1:8443"
     
-    echo "[jail] Proxy forwarders configured"
+    echo "[jail] Proxy forwarders configured (socat)"
+  elif command -v nc >/dev/null 2>&1; then
+    echo "[jail] Starting simple relay with netcat..."
+    # Create simple relay scripts that should work with most netcat versions
+    (
+      while true; do
+        nc -l -p 8080 -e /bin/sh -c "exec nc 10.0.2.2 %d" 2>/dev/null || \
+        nc -l 8080 -c "nc 10.0.2.2 %d" 2>/dev/null || \
+        break
+      done
+    ) &
+    HTTP_FORWARDER_PID=$!
+    
+    (
+      while true; do
+        nc -l -p 8443 -e /bin/sh -c "exec nc 10.0.2.2 %d" 2>/dev/null || \
+        nc -l 8443 -c "nc 10.0.2.2 %d" 2>/dev/null || \
+        break
+      done
+    ) &
+    HTTPS_FORWARDER_PID=$!
+    
+    export HTTP_PROXY="http://127.0.0.1:8080"
+    export HTTPS_PROXY="http://127.0.0.1:8443"
+    export http_proxy="http://127.0.0.1:8080"
+    export https_proxy="http://127.0.0.1:8443"
+    
+    echo "[jail] Proxy forwarders configured (netcat)"
   else
-    echo "[jail] netcat not available, using direct connection to gateway"
+    echo "[jail] Neither socat nor netcat available, using direct connection to gateway"
     export HTTP_PROXY="http://10.0.2.2:%d"
     export HTTPS_PROXY="http://10.0.2.2:%d"
     export http_proxy="http://10.0.2.2:%d"
