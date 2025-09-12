@@ -84,10 +84,34 @@ set -e
 
 echo "[jail] Creating network jail with slirp4netns (no root required)..."
 
-# TODO: Implement slirp4netns network jail that forwards all TCP traffic to proxy ports
-echo "[jail] Running command: %s"
-exec %s
-`, commandStr, commandStr)
+# Create user namespace with network isolation
+unshare --user --map-root-user --net --pid --fork bash -c '
+  # Set up basic loopback interface
+  ip link set lo up
+  
+  # Use slirp4netns to provide user space networking
+  slirp4netns --configure --disable-host-loopback $$ tap0 &
+  SLIRP_PID=$!
+  
+  # Wait for slirp4netns to set up the network interface
+  sleep 1
+  
+  # Forward all TCP traffic to proxy ports using iptables (we are root in namespace)
+  iptables -t nat -A OUTPUT -p tcp --dport 80 -j REDIRECT --to-ports %d
+  iptables -t nat -A OUTPUT -p tcp --dport 443 -j REDIRECT --to-ports %d
+  iptables -t nat -A OUTPUT -p tcp ! --dport 80 ! --dport 443 -j REDIRECT --to-ports %d
+  
+  echo "[jail] Network jail ready - all TCP traffic redirected to proxy"
+  
+  # Run the command
+  %s
+  RESULT=$?
+  
+  # Clean up
+  kill $SLIRP_PID 2>/dev/null || true
+  exit $RESULT
+'
+`, u.httpProxyPort, u.httpsProxyPort, u.httpsProxyPort, commandStr)
 }
 
 func (u *UserNamespaceLinux) Close() error {
