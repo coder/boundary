@@ -294,6 +294,12 @@ func validateUnprivilegedMode(logger *slog.Logger) error {
 		return fmt.Errorf("unprivileged mode only supports Linux, got: %s", runtime.GOOS)
 	}
 
+	// Check if slirp4netns is available (required for user space networking)
+	if _, err := exec.LookPath("slirp4netns"); err != nil {
+		return fmt.Errorf("slirp4netns not found: %v\n\nInstall slirp4netns for unprivileged mode:\n  Ubuntu/Debian: sudo apt-get install slirp4netns\n  RHEL/CentOS: sudo yum install slirp4netns\n  Arch: sudo pacman -S slirp4netns\n  From source: https://github.com/rootless-containers/slirp4netns", err)
+	}
+	logger.Debug("slirp4netns found", "path", getSlirp4netnsPath())
+
 	// Check if user namespaces are enabled
 	userNSFile := "/proc/sys/kernel/unprivileged_userns_clone"
 	if data, err := os.ReadFile(userNSFile); err == nil {
@@ -304,14 +310,14 @@ func validateUnprivilegedMode(logger *slog.Logger) error {
 		logger.Warn("Could not check user namespace support", "error", err)
 	}
 
-	// Check for required tools (removed unshare since we use SysProcAttr now)
-	requiredTools := []string{"nsenter", "iptables", "ip", "sysctl"}
-	for _, tool := range requiredTools {
-		if _, err := exec.LookPath(tool); err != nil {
-			return fmt.Errorf("required tool %s not found. Install with: sudo apt-get install util-linux iptables iproute2 procps", tool)
-		}
-	}
-
 	logger.Debug("Unprivileged mode validation passed")
 	return nil
+}
+
+// getSlirp4netnsPath returns the path to slirp4netns for logging
+func getSlirp4netnsPath() string {
+	if path, err := exec.LookPath("slirp4netns"); err == nil {
+		return path
+	}
+	return "not found"
 }

@@ -82,20 +82,6 @@ set -e
 
 echo "[jail] Starting rootlesskit-style user space networking with slirp4netns..."
 
-# Check if slirp4netns is available
-if ! command -v slirp4netns >/dev/null 2>&1; then
-  echo "[jail] Warning: slirp4netns not found, falling back to proxy environment"
-  echo "[jail] Install with: sudo apt-get install slirp4netns (or equivalent)"
-  
-  # Fallback to proxy environment approach
-  export HTTP_PROXY="http://127.0.0.1:%d"
-  export HTTPS_PROXY="http://127.0.0.1:%d"
-  export http_proxy="http://127.0.0.1:%d"
-  export https_proxy="http://127.0.0.1:%d"
-  echo "[jail] Using proxy environment: HTTP_PROXY=$HTTP_PROXY HTTPS_PROXY=$HTTPS_PROXY"
-  exec %s
-fi
-
 # Create network namespace with slirp4netns (rootlesskit approach)
 echo "[jail] Creating user namespace with slirp4netns networking..."
 
@@ -124,25 +110,21 @@ echo "[jail] Setting up DNS resolution..."
 echo "nameserver 10.0.2.3" > /etc/resolv.conf 2>/dev/null || echo "[jail] Warning: Could not set DNS"
 echo "nameserver 8.8.8.8" >> /etc/resolv.conf 2>/dev/null || true
 
-# Set up iptables for traffic interception (if available)
+# Set up iptables for traffic interception
 echo "[jail] Setting up iptables traffic redirection..."
 
 # Redirect HTTP traffic to jail proxy
 if iptables -t nat -A OUTPUT -p tcp --dport 80 -j REDIRECT --to-ports %d 2>/dev/null; then
   echo "[jail] HTTP traffic redirected to port %d"
 else
-  echo "[jail] Note: iptables redirect not available, using proxy environment fallback"
-  export HTTP_PROXY="http://127.0.0.1:%d"
-  export http_proxy="http://127.0.0.1:%d"
+  echo "[jail] Warning: iptables redirect not available, applications must support HTTP_PROXY"
 fi
 
 # Redirect HTTPS traffic to jail proxy
 if iptables -t nat -A OUTPUT -p tcp --dport 443 -j REDIRECT --to-ports %d 2>/dev/null; then
   echo "[jail] HTTPS traffic redirected to port %d"
 else
-  echo "[jail] Note: iptables redirect not available, using proxy environment fallback"
-  export HTTPS_PROXY="http://127.0.0.1:%d"
-  export https_proxy="http://127.0.0.1:%d"
+  echo "[jail] Warning: iptables redirect not available, applications must support HTTPS_PROXY"
 fi
 
 # Show network configuration
@@ -157,7 +139,7 @@ echo "[jail] slirp4netns user space network ready, running: %s"
 exec %s
 
 '
-`, u.httpProxyPort, u.httpsProxyPort, u.httpProxyPort, u.httpsProxyPort, commandStr, u.httpProxyPort, u.httpProxyPort, u.httpProxyPort, u.httpProxyPort, u.httpsProxyPort, u.httpsProxyPort, u.httpsProxyPort, u.httpsProxyPort, commandStr, commandStr)
+`, u.httpProxyPort, u.httpProxyPort, u.httpsProxyPort, u.httpsProxyPort, commandStr, commandStr)
 }
 
 func (u *UserNamespaceLinux) Close() error {
