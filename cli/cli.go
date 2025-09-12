@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -24,6 +26,7 @@ import (
 type Config struct {
 	AllowStrings []string
 	LogLevel     string
+	Unprivileged bool // Enable unprivileged mode (user namespace + iptables)
 }
 
 // NewCommand creates and returns the root serpent command
@@ -37,14 +40,22 @@ func NewCommand() *serpent.Command {
 intercepting all HTTP/HTTPS traffic through a transparent proxy that enforces
 user-defined rules.
 
+Modes:
+  Default (privileged): Uses network namespaces + iptables (requires sudo)
+  Unprivileged: Uses user namespaces + iptables (no sudo required)
+
 Examples:
-  # Allow only requests to github.com
-  jail --allow "github.com" -- curl https://github.com
+  # Privileged mode (original behavior)
+  sudo jail --allow "github.com" -- curl https://github.com
 
-  # Monitor all requests to specific domains (allow only those)
-  jail --allow "github.com/api/issues/*" --allow "GET,HEAD github.com" -- npm install
+  # Unprivileged mode (NEW!)
+  jail --unprivileged --allow "github.com" -- curl https://github.com
 
-  # Block everything by default (implicit)`,
+  # Monitor all requests to specific domains
+  jail --unprivileged --allow "github.com/api/issues/*" --allow "GET,HEAD github.com" -- npm install
+
+  # Block everything by default (implicit)
+  jail --unprivileged --allow "api.example.com" -- ./my-app`,
 		Options: serpent.OptionSet{
 			{
 				Name:        "allow",
@@ -61,6 +72,13 @@ Examples:
 				Default:     "warn",
 				Value:       serpent.StringOf(&config.LogLevel),
 			},
+			{
+				Name:        "unprivileged",
+				Flag:        "unprivileged",
+				Env:         "JAIL_UNPRIVILEGED",
+				Description: "Use unprivileged mode (user namespace + iptables, no sudo required, Linux only).",
+				Value:       serpent.BoolOf(&config.Unprivileged),
+			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
 			return Run(inv.Context(), config, inv.Args)
@@ -74,6 +92,16 @@ func Run(ctx context.Context, config Config, args []string) error {
 	defer cancel()
 	logger := setupLogging(config.LogLevel)
 	userInfo := getUserInfo()
+
+	// Validate unprivileged mode if requested
+	if config.Unprivileged {
+		if err := validateUnprivilegedMode(logger); err != nil {
+			return fmt.Errorf("unprivileged mode validation failed: %v", err)
+		}
+		logger.Info("Using unprivileged mode (user namespace + iptables, no sudo required)")
+	} else {
+		logger.Info("Using privileged mode (network namespace + iptables, requires sudo)")
+	}
 
 	// Get command arguments
 	if len(args) == 0 {
@@ -109,12 +137,26 @@ func Run(ctx context.Context, config Config, args []string) error {
 	}
 
 	// Create jail instance
-	jailInstance, err := jail.New(ctx, jail.Config{
-		RuleEngine:  ruleEngine,
-		Auditor:     auditor,
-		CertManager: certManager,
-		Logger:      logger,
-	})
+	var jailInstance JailInterface
+	if config.Unprivileged {
+		// Use enhanced jail with unprivileged mode
+		enhancedConfig := jail.EnhancedConfig{
+			RuleEngine:   ruleEngine,
+			Auditor:      auditor,
+			CertManager:  certManager,
+			Logger:       logger,
+			Unprivileged: true,
+		}
+		jailInstance, err = jail.NewEnhanced(ctx, enhancedConfig)
+	} else {
+		// Use regular jail (privileged mode)
+		jailInstance, err = jail.New(ctx, jail.Config{
+			RuleEngine:  ruleEngine,
+			Auditor:     auditor,
+			CertManager: certManager,
+			Logger:      logger,
+		})
+	}
 	if err != nil {
 		return fmt.Errorf("failed to create jail instance: %v", err)
 	}
@@ -254,4 +296,40 @@ func getConfigDir(homeDir string) string {
 		return filepath.Join(xdgConfigHome, "coder_jail")
 	}
 	return filepath.Join(homeDir, ".config", "coder_jail")
+}
+
+// JailInterface defines the common interface for both jail types
+type JailInterface interface {
+	Start() error
+	Command(command []string) *exec.Cmd
+	Close() error
+}
+
+// validateUnprivilegedMode checks if the system supports unprivileged mode
+func validateUnprivilegedMode(logger *slog.Logger) error {
+	// Check if we're on Linux
+	if runtime.GOOS != "linux" {
+		return fmt.Errorf("unprivileged mode only supports Linux, got: %s", runtime.GOOS)
+	}
+
+	// Check if user namespaces are enabled
+	userNSFile := "/proc/sys/kernel/unprivileged_userns_clone"
+	if data, err := os.ReadFile(userNSFile); err == nil {
+		if len(data) > 0 && strings.TrimSpace(string(data)) != "1" {
+			return fmt.Errorf("user namespaces are disabled. Enable with: sudo sysctl -w kernel.unprivileged_userns_clone=1")
+		}
+	} else {
+		logger.Warn("Could not check user namespace support", "error", err)
+	}
+
+	// Check for required tools
+	requiredTools := []string{"unshare", "nsenter", "iptables", "ip"}
+	for _, tool := range requiredTools {
+		if _, err := exec.LookPath(tool); err != nil {
+			return fmt.Errorf("required tool %s not found. Install with: sudo apt-get install util-linux iptables iproute2", tool)
+		}
+	}
+
+	logger.Debug("Unprivileged mode validation passed")
+	return nil
 }

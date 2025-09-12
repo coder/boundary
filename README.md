@@ -50,6 +50,35 @@ jail \
 jail -- curl https://example.com
 ```
 
+### Unprivileged Mode (NEW!)
+
+jail now supports running without elevated privileges using the `--unprivileged` flag:
+
+```bash
+# No sudo required!
+jail --unprivileged --allow "github.com" -- curl https://github.com
+
+# Works with complex applications
+jail --unprivileged --allow "*.npmjs.org" -- npm install
+
+# Same rule engine and proxy functionality as privileged mode
+jail --unprivileged --allow "api.example.com" -- ./my-app
+```
+
+**Requirements for Unprivileged Mode:**
+- Linux with user namespace support (kernel 3.8+)
+- User namespaces enabled: `sudo sysctl -w kernel.unprivileged_userns_clone=1`
+- Standard tools: `unshare`, `nsenter`, `iptables`, `ip`
+  ```bash
+  sudo apt-get install util-linux iptables iproute2
+  ```
+
+**Benefits:**
+- ✅ **No sudo required** - Runs as regular user
+- ✅ **Same traffic coverage** - Intercepts ALL TCP traffic (ports 1-65535)
+- ✅ **Container-friendly** - Works in restricted environments
+- ✅ **Identical functionality** - Same rule engine, proxy, and TLS features
+
 ## Allow Rules
 
 jail uses simple wildcard patterns for URL matching.
@@ -121,10 +150,11 @@ For more help: https://github.com/coder/jail
 ## Platform Support
 
 | Platform | Implementation | Sudo Required |
-|----------|----------------|---------------|
-| Linux    | Network namespaces + iptables | Yes |
-| macOS    | Process groups + PF rules | Yes |
-| Windows  | Not supported | - |
+|----------|----------------|--------------|
+| Linux | Network namespaces + iptables | Yes |
+| **Linux (Unprivileged)** | **User namespaces + iptables** | **No** |
+| macOS | Process groups + PF rules | Yes |
+| Windows | Not supported | - |
 
 ## Installation
 
@@ -174,6 +204,7 @@ OPTIONS:
     --allow <SPEC>             Allow rule (repeatable)
                                Format: "pattern" or "METHOD[,METHOD] pattern"
     --log-level <LEVEL>        Set log level (error, warn, info, debug)
+    --unprivileged             Use unprivileged mode (no sudo required, Linux only)
     --no-tls-intercept         Disable HTTPS interception
     -h, --help                 Print help
 ```

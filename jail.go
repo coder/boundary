@@ -22,6 +22,15 @@ type Config struct {
 	Logger      *slog.Logger
 }
 
+// EnhancedConfig extends Config with unprivileged mode support
+type EnhancedConfig struct {
+	RuleEngine   rules.Evaluator
+	Auditor      audit.Auditor
+	CertManager  tls.Manager
+	Logger       *slog.Logger
+	Unprivileged bool // If true, use user namespace instead of privileged namespaces
+}
+
 type Jail struct {
 	commander   namespace.Commander
 	proxyServer *proxy.Server
@@ -63,6 +72,61 @@ func New(ctx context.Context, config Config) (*Jail, error) {
 			"NODE_EXTRA_CA_CERTS": caCertPath, // Node.js
 		},
 	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create commander: %v", err)
+	}
+
+	// Create cancellable context for jail
+	ctx, cancel := context.WithCancel(ctx)
+
+	return &Jail{
+		commander:   commander,
+		proxyServer: proxyServer,
+		logger:      config.Logger,
+		ctx:         ctx,
+		cancel:      cancel,
+	}, nil
+}
+
+// NewEnhanced creates a jail that can run in either privileged or unprivileged mode
+func NewEnhanced(ctx context.Context, config EnhancedConfig) (*Jail, error) {
+	config.Logger.Debug("Creating enhanced jail", "unprivileged", config.Unprivileged)
+
+	// Validate platform support for unprivileged mode
+	if config.Unprivileged && runtime.GOOS != "linux" {
+		return nil, fmt.Errorf("unprivileged mode only supports Linux, got: %s", runtime.GOOS)
+	}
+
+	// Setup TLS config and write CA certificate to file
+	tlsConfig, caCertPath, configDir, err := config.CertManager.SetupTLSAndWriteCACert()
+	if err != nil {
+		return nil, fmt.Errorf("failed to setup TLS and CA certificate: %v", err)
+	}
+
+	// Create proxy server
+	proxyServer := proxy.NewProxyServer(proxy.Config{
+		HTTPPort:   8080,
+		HTTPSPort:  8443,
+		Auditor:    config.Auditor,
+		RuleEngine: config.RuleEngine,
+		Logger:     config.Logger,
+		TLSConfig:  tlsConfig,
+	})
+
+	// Create appropriate commander based on configuration
+	commander, err := newEnhancedNamespaceCommander(namespace.Config{
+		Logger:         config.Logger,
+		HttpProxyPort:  8080,
+		HttpsProxyPort: 8443,
+		Env: map[string]string{
+			"SSL_CERT_FILE":       caCertPath,
+			"SSL_CERT_DIR":        configDir,
+			"CURL_CA_BUNDLE":      caCertPath,
+			"GIT_SSL_CAINFO":      caCertPath,
+			"REQUESTS_CA_BUNDLE":  caCertPath,
+			"NODE_EXTRA_CA_CERTS": caCertPath,
+		},
+	}, config.Unprivileged)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create commander: %v", err)
 	}
@@ -124,6 +188,25 @@ func newNamespaceCommander(config namespace.Config) (namespace.Commander, error)
 		return namespace.NewMacOS(config)
 	case "linux":
 		return namespace.NewLinux(config)
+	default:
+		return nil, fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+	}
+}
+
+// newEnhancedNamespaceCommander creates the appropriate commander based on mode and platform
+func newEnhancedNamespaceCommander(config namespace.Config, unprivileged bool) (namespace.Commander, error) {
+	switch runtime.GOOS {
+	case "darwin":
+		if unprivileged {
+			return nil, fmt.Errorf("unprivileged mode not available on macOS")
+		}
+		return namespace.NewMacOS(config)
+	case "linux":
+		if unprivileged {
+			return namespace.NewUserNamespaceLinux(config)
+		} else {
+			return namespace.NewLinux(config)
+		}
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
