@@ -79,35 +79,27 @@ echo "[jail] Setting up user namespace environment..."
 # Set up loopback interface
 ip link set lo up 2>/dev/null || echo "[jail] Warning: Could not configure loopback"
 
-# Set up DNS resolution
-echo "[jail] Setting up DNS..."
-echo 'nameserver 8.8.8.8' > /etc/resolv.conf 2>/dev/null || echo "[jail] Warning: Could not configure DNS"
-echo 'nameserver 1.1.1.1' >> /etc/resolv.conf 2>/dev/null || true
+# Since we can't modify /etc/resolv.conf or use iptables reliably in user namespace,
+# we'll use environment variables to direct traffic through the proxy
+echo "[jail] Setting up proxy environment for traffic interception..."
 
-# Set up iptables rules to redirect traffic to proxy (try different approaches)
-echo "[jail] Setting up traffic interception..."
+# Set proxy environment variables
+export HTTP_PROXY="http://127.0.0.1:%d"
+export HTTPS_PROXY="http://127.0.0.1:%d"
+export http_proxy="http://127.0.0.1:%d"
+export https_proxy="http://127.0.0.1:%d"
 
-# Flush existing rules first
-iptables -t nat -F OUTPUT 2>/dev/null || echo "[jail] Warning: Could not flush iptables OUTPUT"
+# For DNS resolution, try to use a custom approach
+export HOSTALIASES=/tmp/jail_hosts
+echo "google.com 142.250.191.14" > /tmp/jail_hosts 2>/dev/null || echo "[jail] Warning: Could not create host aliases"
 
-# Try REDIRECT first (simpler)
-iptables -t nat -A OUTPUT -p tcp --dport 80 -j REDIRECT --to-ports %d 2>/dev/null && echo "[jail] HTTP REDIRECT rule added" || echo "[jail] Warning: Could not set up HTTP REDIRECT"
-iptables -t nat -A OUTPUT -p tcp --dport 443 -j REDIRECT --to-ports %d 2>/dev/null && echo "[jail] HTTPS REDIRECT rule added" || echo "[jail] Warning: Could not set up HTTPS REDIRECT"
-
-# If REDIRECT doesn't work, try DNAT to localhost
-iptables -t nat -A OUTPUT -p tcp --dport 80 -j DNAT --to-destination 127.0.0.1:%d 2>/dev/null && echo "[jail] HTTP DNAT rule added" || echo "[jail] Warning: Could not set up HTTP DNAT"
-iptables -t nat -A OUTPUT -p tcp --dport 443 -j DNAT --to-destination 127.0.0.1:%d 2>/dev/null && echo "[jail] HTTPS DNAT rule added" || echo "[jail] Warning: Could not set up HTTPS DNAT"
-
-# Enable IP forwarding
-sysctl -w net.ipv4.ip_forward=1 2>/dev/null || echo "[jail] Warning: Could not enable IP forwarding"
-
-# Show current iptables rules for debugging
-echo "[jail] Current iptables NAT rules:"
-iptables -t nat -L OUTPUT -n --line-numbers 2>/dev/null || echo "[jail] Could not list iptables rules"
+echo "[jail] Proxy environment configured:"
+echo "  HTTP_PROXY=$HTTP_PROXY"
+echo "  HTTPS_PROXY=$HTTPS_PROXY"
 
 echo "[jail] Namespace setup complete, running command: %s"
 
-# Execute the actual command
+# Execute the actual command with proxy environment
 exec %s
 `, u.httpProxyPort, u.httpsProxyPort, u.httpProxyPort, u.httpsProxyPort, commandStr, commandStr)
 	
