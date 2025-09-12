@@ -28,23 +28,36 @@ type Config struct {
 
 // NewCommand creates and returns the root serpent command
 func NewCommand() *serpent.Command {
-	var config Config
-
-	return &serpent.Command{
-		Use:   "jail [flags] -- command [args...]",
-		Short: "Monitor and restrict HTTP/HTTPS requests from processes",
-		Long: `jail creates an isolated network environment for the target process,
-intercepting all HTTP/HTTPS traffic through a transparent proxy that enforces
-user-defined rules.
-
-Examples:
+	// To make the top level jail command, we just make some minor changes to the base command
+	cmd := BaseCommand()
+	cmd.Use = "jail [flags] -- command [args...]" // Add the flags and args pieces to usage.
+	
+	// Add example usage to the long description. This is different from usage as a subcommand because it
+	// may be called something different when used as a subcommand / there will be a leading binary (i.e. `coder jail` vs. `jail`).
+	cmd.Long += `Examples:
   # Allow only requests to github.com
   jail --allow "github.com" -- curl https://github.com
 
   # Monitor all requests to specific domains (allow only those)
   jail --allow "github.com/api/issues/*" --allow "GET,HEAD github.com" -- npm install
 
-  # Block everything by default (implicit)`,
+  # Block everything by default (implicit)`
+
+  return cmd
+}
+
+// Base command returns the jail serpent command without the information involved in making it the
+// *top level* serpent command. We are creating this split to make it easier to integrate into the coder
+// cli without introducing sources of drift.
+func BaseCommand() *serpent.Command {
+	var config Config
+
+	return &serpent.Command{
+		Use:   "jail -- command",
+		Short: "Monitor and restrict HTTP/HTTPS requests from processes",
+		Long: `creates an isolated network environment for the target process,
+intercepting all HTTP/HTTPS traffic through a transparent proxy that enforces
+user-defined rules.`,
 		Options: serpent.OptionSet{
 			{
 				Name:        "allow",
