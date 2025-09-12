@@ -129,15 +129,15 @@ echo "[jail] Creating user namespace with slirp4netns networking..."
     echo "[jail] HTTP traffic redirected to port %d"
   else
     echo "[jail] iptables not available - using proxy environment variables"
-    export HTTP_PROXY="http://127.0.0.1:%d"
-    export http_proxy="http://127.0.0.1:%d"
+    export HTTP_PROXY="http://10.0.2.2:%d"
+    export http_proxy="http://10.0.2.2:%d"
   fi
   
   if iptables -t nat -A OUTPUT -p tcp --dport 443 -j REDIRECT --to-ports %d 2>/dev/null; then
     echo "[jail] HTTPS traffic redirected to port %d"
   else
-    export HTTPS_PROXY="http://127.0.0.1:%d"
-    export https_proxy="http://127.0.0.1:%d"
+    export HTTPS_PROXY="http://10.0.2.2:%d"
+    export https_proxy="http://10.0.2.2:%d"
   fi
   
   # Show current network status
