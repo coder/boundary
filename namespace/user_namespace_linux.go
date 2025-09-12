@@ -102,7 +102,7 @@ echo "[jail] Creating user namespace with slirp4netns networking..."
   
   # Wait for slirp4netns to be set up by parent (outside the namespace)
   echo "[jail] Waiting for slirp4netns setup..."
-  sleep 2
+  sleep 3
   
   # Check if tap0 interface was created by slirp4netns
   if ip link show tap0 >/dev/null 2>&1; then
@@ -113,45 +113,56 @@ echo "[jail] Creating user namespace with slirp4netns networking..."
     echo "[jail] Warning: No tap0 interface found - slirp4netns may have failed"
   fi
   
-  # Try to set up custom DNS (may fail due to mount namespace)
-  if echo "nameserver 8.8.8.8" > /etc/resolv.conf 2>/dev/null; then
-    echo "nameserver 8.8.4.4" >> /etc/resolv.conf 2>/dev/null || true
-    echo "[jail] DNS configured with 8.8.8.8, 8.8.4.4"
-  else
-    echo "[jail] Could not modify /etc/resolv.conf, using system DNS"
-  fi
+  # Set up simple proxy forwarders inside the namespace
+  echo "[jail] Setting up proxy forwarders to host..."
   
-  # Set up iptables for traffic interception if available
-  echo "[jail] Setting up traffic interception..."
-  
-  # Try iptables redirection
-  if iptables -t nat -A OUTPUT -p tcp --dport 80 -j REDIRECT --to-ports %d 2>/dev/null; then
-    echo "[jail] HTTP traffic redirected to port %d"
+  # Start HTTP proxy forwarder (127.0.0.1:8080 -> 10.0.2.2:8080)
+  if command -v nc >/dev/null 2>&1; then
+    echo "[jail] Starting HTTP proxy forwarder..."
+    nc -l -p 8080 -c "nc 10.0.2.2 %d" &
+    HTTP_FORWARDER_PID=$!
+    echo "[jail] HTTP forwarder started with PID: $HTTP_FORWARDER_PID"
+    
+    echo "[jail] Starting HTTPS proxy forwarder..."
+    nc -l -p 8443 -c "nc 10.0.2.2 %d" &
+    HTTPS_FORWARDER_PID=$!
+    echo "[jail] HTTPS forwarder started with PID: $HTTPS_FORWARDER_PID"
+    
+    # Set proxy environment variables to use localhost
+    export HTTP_PROXY="http://127.0.0.1:8080"
+    export HTTPS_PROXY="http://127.0.0.1:8443"
+    export http_proxy="http://127.0.0.1:8080"
+    export https_proxy="http://127.0.0.1:8443"
+    
+    echo "[jail] Proxy forwarders configured"
   else
-    echo "[jail] iptables not available - using proxy environment variables"
+    echo "[jail] netcat not available, using direct connection to gateway"
     export HTTP_PROXY="http://10.0.2.2:%d"
-    export http_proxy="http://10.0.2.2:%d"
-  fi
-  
-  if iptables -t nat -A OUTPUT -p tcp --dport 443 -j REDIRECT --to-ports %d 2>/dev/null; then
-    echo "[jail] HTTPS traffic redirected to port %d"
-  else
     export HTTPS_PROXY="http://10.0.2.2:%d"
+    export http_proxy="http://10.0.2.2:%d"
     export https_proxy="http://10.0.2.2:%d"
   fi
   
   # Show current network status
   echo "[jail] Network configuration:"
-  ip addr show 2>/dev/null || echo "[jail] Could not show interfaces"
-  echo "[jail] Routing table:"
-  ip route show 2>/dev/null || echo "[jail] Could not show routes"
-  echo "[jail] DNS configuration:"
-  cat /etc/resolv.conf 2>/dev/null | head -10 || echo "[jail] Could not show DNS"
+  ip addr show 2>/dev/null | grep -E "(inet|tap0|lo)" || echo "[jail] Could not show interfaces"
+  echo "[jail] Proxy environment: HTTP_PROXY=$HTTP_PROXY HTTPS_PROXY=$HTTPS_PROXY"
   
   echo "[jail] User space network ready, running: %s"
   
   # Execute the command with proxy environment set
-  exec %s
+  %s
+  COMMAND_EXIT=$?
+  
+  # Clean up forwarders
+  if [ ! -z "$HTTP_FORWARDER_PID" ]; then
+    kill $HTTP_FORWARDER_PID 2>/dev/null || true
+  fi
+  if [ ! -z "$HTTPS_FORWARDER_PID" ]; then
+    kill $HTTPS_FORWARDER_PID 2>/dev/null || true
+  fi
+  
+  exit $COMMAND_EXIT
   
   ' &
   
@@ -179,7 +190,7 @@ echo "[jail] Creating user namespace with slirp4netns networking..."
   
   exit $NAMESPACE_EXIT
 )
-`, u.httpProxyPort, u.httpProxyPort, u.httpProxyPort, u.httpProxyPort, u.httpsProxyPort, u.httpsProxyPort, u.httpsProxyPort, u.httpsProxyPort, commandStr, commandStr)
+`, u.httpProxyPort, u.httpsProxyPort, u.httpProxyPort, u.httpsProxyPort, u.httpProxyPort, u.httpsProxyPort, commandStr, commandStr)
 }
 
 func (u *UserNamespaceLinux) Close() error {
