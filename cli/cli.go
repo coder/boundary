@@ -137,26 +137,13 @@ func Run(ctx context.Context, config Config, args []string) error {
 	}
 
 	// Create jail instance
-	var jailInstance JailInterface
-	if config.Unprivileged {
-		// Use enhanced jail with unprivileged mode
-		enhancedConfig := jail.EnhancedConfig{
-			RuleEngine:   ruleEngine,
-			Auditor:      auditor,
-			CertManager:  certManager,
-			Logger:       logger,
-			Unprivileged: true,
-		}
-		jailInstance, err = jail.NewEnhanced(ctx, enhancedConfig)
-	} else {
-		// Use regular jail (privileged mode)
-		jailInstance, err = jail.New(ctx, jail.Config{
-			RuleEngine:  ruleEngine,
-			Auditor:     auditor,
-			CertManager: certManager,
-			Logger:      logger,
-		})
-	}
+	jailInstance, err := jail.New(ctx, jail.Config{
+		RuleEngine:   ruleEngine,
+		Auditor:      auditor,
+		CertManager:  certManager,
+		Logger:       logger,
+		Unprivileged: config.Unprivileged,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to create jail instance: %v", err)
 	}
@@ -296,13 +283,6 @@ func getConfigDir(homeDir string) string {
 		return filepath.Join(xdgConfigHome, "coder_jail")
 	}
 	return filepath.Join(homeDir, ".config", "coder_jail")
-}
-
-// JailInterface defines the common interface for both jail types
-type JailInterface interface {
-	Start() error
-	Command(command []string) *exec.Cmd
-	Close() error
 }
 
 // validateUnprivilegedMode checks if the system supports unprivileged mode
