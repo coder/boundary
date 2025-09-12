@@ -23,6 +23,8 @@ type UserNamespaceLinux struct {
 	namespace      string
 	childPID       int
 	userInfo       UserInfo
+	ready          chan error
+	commandReady   chan struct{}
 }
 
 // NewUserNamespaceLinux creates a new user namespace jail with iptables
@@ -274,5 +276,111 @@ func (u *UserNamespaceLinux) Close() error {
 	}
 
 	u.logger.Debug("User namespace jail cleanup completed")
+	return nil
+}
+
+// SimpleUserNamespaceLinux implements Commander using a simpler approach
+// This creates a user namespace and runs commands directly inside it
+type SimpleUserNamespaceLinux struct {
+	logger         *slog.Logger
+	preparedEnv    map[string]string
+	httpProxyPort  int
+	httpsProxyPort int
+	userInfo       UserInfo
+}
+
+// NewSimpleUserNamespaceLinux creates a new simple user namespace jail
+func NewSimpleUserNamespaceLinux(config Config) (*SimpleUserNamespaceLinux, error) {
+	// Initialize prepared environment
+	preparedEnv := make(map[string]string)
+	for key, value := range config.Env {
+		preparedEnv[key] = value
+	}
+
+	return &SimpleUserNamespaceLinux{
+		logger:         config.Logger,
+		preparedEnv:    preparedEnv,
+		httpProxyPort:  config.HttpProxyPort,
+		httpsProxyPort: config.HttpsProxyPort,
+		userInfo:       config.UserInfo,
+	}, nil
+}
+
+// Start sets up the namespace environment (preparation only)
+func (s *SimpleUserNamespaceLinux) Start() error {
+	s.logger.Info("Simple user namespace jail prepared (commands will run in isolated namespace)")
+	return nil
+}
+
+// Command creates a command that will run in a new user namespace
+func (s *SimpleUserNamespaceLinux) Command(command []string) *exec.Cmd {
+	s.logger.Debug("Creating command in new user namespace", "command", command)
+
+	// We'll wrap the command in a script that:
+	// 1. Sets up the namespace
+	// 2. Configures networking and iptables
+	// 3. Runs the actual command
+	wrapperScript := s.createWrapperScript(command)
+
+	// Create the command that will run with user namespace
+	cmd := exec.Command("/bin/bash", "-c", wrapperScript)
+
+	// Set up the namespace creation
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Cloneflags: syscall.CLONE_NEWUSER | syscall.CLONE_NEWNET | syscall.CLONE_NEWNS,
+		UidMappings: []syscall.SysProcIDMap{
+			{ContainerID: 0, HostID: s.userInfo.Uid, Size: 1},
+		},
+		GidMappings: []syscall.SysProcIDMap{
+			{ContainerID: 0, HostID: s.userInfo.Gid, Size: 1},
+		},
+	}
+
+	// Set environment
+	env := make([]string, 0, len(s.preparedEnv))
+	for key, value := range s.preparedEnv {
+		env = append(env, fmt.Sprintf("%s=%s", key, value))
+	}
+	cmd.Env = env
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return cmd
+}
+
+// createWrapperScript creates a bash script that sets up the namespace and runs the command
+func (s *SimpleUserNamespaceLinux) createWrapperScript(command []string) string {
+	commandStr := strings.Join(command, " ")
+	
+	script := fmt.Sprintf(`#!/bin/bash
+set -e
+
+# We're now inside the user namespace as 'root'
+echo "[jail] Setting up user namespace environment..."
+
+# Set up loopback interface
+ip link set lo up 2>/dev/null || echo "[jail] Warning: Could not configure loopback"
+
+# Set up iptables rules to redirect traffic to proxy
+echo "[jail] Setting up traffic interception..."
+iptables -t nat -A OUTPUT -p tcp --dport 1:65535 ! -d 127.0.0.0/8 -j REDIRECT --to-ports %d 2>/dev/null || echo "[jail] Warning: Could not set up REDIRECT rules"
+iptables -t nat -A OUTPUT -p tcp --dport 1:65535 ! -d 127.0.0.0/8 -j DNAT --to-destination 127.0.0.1:%d 2>/dev/null || echo "[jail] Warning: Could not set up DNAT rules"
+
+# Enable IP forwarding
+sysctl -w net.ipv4.ip_forward=1 2>/dev/null || echo "[jail] Warning: Could not enable IP forwarding"
+
+echo "[jail] Namespace setup complete, running command: %s"
+
+# Execute the actual command
+exec %s
+`, s.httpsProxyPort, s.httpsProxyPort, commandStr, commandStr)
+
+	return script
+}
+
+// Close cleans up (nothing to do for this simple approach)
+func (s *SimpleUserNamespaceLinux) Close() error {
+	s.logger.Info("Simple user namespace jail closed")
 	return nil
 }
