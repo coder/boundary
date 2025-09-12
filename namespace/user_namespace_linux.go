@@ -54,15 +54,10 @@ func (u *UserNamespaceLinux) Command(command []string) *exec.Cmd {
 	// Create the command that will run with user namespace
 	cmd := exec.Command("/bin/bash", "-c", wrapperScript)
 
-	// Set up the namespace creation
+	// Set up the namespace creation - let the script handle UID/GID mapping
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags: syscall.CLONE_NEWUSER | syscall.CLONE_NEWNET | syscall.CLONE_NEWNS,
-		UidMappings: []syscall.SysProcIDMap{
-			{ContainerID: 0, HostID: u.userInfo.Uid, Size: 1},
-		},
-		GidMappings: []syscall.SysProcIDMap{
-			{ContainerID: 0, HostID: u.userInfo.Gid, Size: 1},
-		},
+		// Remove automatic UID/GID mappings - we'll handle this in the script
 	}
 
 	// Set environment
@@ -85,7 +80,14 @@ func (u *UserNamespaceLinux) createWrapperScript(command []string) string {
 	script := fmt.Sprintf(`#!/bin/bash
 set -e
 
-# We're now inside the user namespace as 'root'
+# We're now inside the user namespace, but need to set up UID/GID mappings first
+echo "[jail] Setting up user namespace mappings..."
+
+# Set up UID/GID mappings (equivalent to unshare --map-root-user)
+echo 'deny' > /proc/self/setgroups 2>/dev/null || echo "[jail] Warning: Could not write to setgroups"
+echo '0 %d 1' > /proc/self/uid_map 2>/dev/null || echo "[jail] Warning: Could not write to uid_map"
+echo '0 %d 1' > /proc/self/gid_map 2>/dev/null || echo "[jail] Warning: Could not write to gid_map"
+
 echo "[jail] Setting up user namespace environment..."
 
 # Set up loopback interface
@@ -103,7 +105,7 @@ echo "[jail] Namespace setup complete, running command: %s"
 
 # Execute the actual command
 exec %s
-`, u.httpsProxyPort, u.httpsProxyPort, commandStr, commandStr)
+`, u.userInfo.Uid, u.userInfo.Gid, u.httpsProxyPort, u.httpsProxyPort, commandStr, commandStr)
 
 	return script
 }
