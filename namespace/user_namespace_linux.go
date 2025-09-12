@@ -84,34 +84,67 @@ set -e
 
 echo "[jail] Creating network jail with slirp4netns (no root required)..."
 
-# Create user namespace with network isolation
-unshare --user --map-root-user --net --pid --fork bash -c '
-  # Set up basic loopback interface
-  ip link set lo up
+# Start the namespace and get its PID for slirp4netns
+(
+  # Create user namespace with network isolation
+  unshare --user --map-root-user --net --pid --fork bash -c '
+    CHILD_PID=$$
+    echo "[jail] Inside namespace with PID: $CHILD_PID"
+    
+    # Set up basic loopback interface
+    ip link set lo up
+    
+    # Wait for slirp4netns to be started by parent
+    echo "[jail] Waiting for slirp4netns setup..."
+    sleep 2
+    
+    # Try to set up iptables (may not work due to lock file permissions)
+    echo "[jail] Setting up traffic redirection..."
+    if iptables -t nat -A OUTPUT -p tcp --dport 80 -j REDIRECT --to-ports %d 2>/dev/null; then
+      echo "[jail] HTTP traffic redirected"
+    else
+      echo "[jail] iptables HTTP redirect failed - using proxy environment"
+      export HTTP_PROXY="http://127.0.0.1:%d"
+      export http_proxy="http://127.0.0.1:%d"
+    fi
+    
+    if iptables -t nat -A OUTPUT -p tcp --dport 443 -j REDIRECT --to-ports %d 2>/dev/null; then
+      echo "[jail] HTTPS traffic redirected"
+    else
+      echo "[jail] iptables HTTPS redirect failed - using proxy environment"
+      export HTTPS_PROXY="http://127.0.0.1:%d"
+      export https_proxy="http://127.0.0.1:%d"
+    fi
+    
+    echo "[jail] Network jail ready"
+    echo "[jail] Running: %s"
+    
+    # Run the command
+    %s
+    exit $?
+    
+  ' &
   
-  # Use slirp4netns to provide user space networking
-  slirp4netns --configure --disable-host-loopback $$ tap0 &
+  NAMESPACE_PID=$!
+  echo "[jail] Namespace started with PID: $NAMESPACE_PID"
+  
+  # Give namespace time to start
+  sleep 0.5
+  
+  # Start slirp4netns with the correct namespace PID
+  echo "[jail] Starting slirp4netns for namespace PID: $NAMESPACE_PID"
+  slirp4netns --configure --disable-host-loopback $NAMESPACE_PID tap0 &
   SLIRP_PID=$!
   
-  # Wait for slirp4netns to set up the network interface
-  sleep 1
-  
-  # Forward all TCP traffic to proxy ports using iptables (we are root in namespace)
-  iptables -t nat -A OUTPUT -p tcp --dport 80 -j REDIRECT --to-ports %d
-  iptables -t nat -A OUTPUT -p tcp --dport 443 -j REDIRECT --to-ports %d
-  iptables -t nat -A OUTPUT -p tcp ! --dport 80 ! --dport 443 -j REDIRECT --to-ports %d
-  
-  echo "[jail] Network jail ready - all TCP traffic redirected to proxy"
-  
-  # Run the command
-  %s
+  # Wait for the namespace to complete
+  wait $NAMESPACE_PID
   RESULT=$?
   
-  # Clean up
+  # Clean up slirp4netns
   kill $SLIRP_PID 2>/dev/null || true
   exit $RESULT
-'
-`, u.httpProxyPort, u.httpsProxyPort, u.httpsProxyPort, commandStr)
+)
+`, u.httpProxyPort, u.httpProxyPort, u.httpProxyPort, u.httpsProxyPort, u.httpsProxyPort, u.httpsProxyPort, commandStr, commandStr)
 }
 
 func (u *UserNamespaceLinux) Close() error {
