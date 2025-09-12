@@ -302,11 +302,11 @@ func validateUnprivilegedMode(logger *slog.Logger) error {
 		logger.Warn("Could not check user namespace support", "error", err)
 	}
 
-	// Check for required tools
-	requiredTools := []string{"unshare", "nsenter", "iptables", "ip"}
+	// Check for required tools (removed unshare since we use SysProcAttr now)
+	requiredTools := []string{"nsenter", "iptables", "ip", "sysctl"}
 	for _, tool := range requiredTools {
 		if _, err := exec.LookPath(tool); err != nil {
-			return fmt.Errorf("required tool %s not found. Install with: sudo apt-get install util-linux iptables iproute2", tool)
+			return fmt.Errorf("required tool %s not found. Install with: sudo apt-get install util-linux iptables iproute2 procps", tool)
 		}
 	}
 

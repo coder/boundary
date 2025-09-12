@@ -68,9 +68,9 @@ jail --unprivileged --allow "api.example.com" -- ./my-app
 **Requirements for Unprivileged Mode:**
 - Linux with user namespace support (kernel 3.8+)
 - User namespaces enabled: `sudo sysctl -w kernel.unprivileged_userns_clone=1`
-- Standard tools: `unshare`, `nsenter`, `iptables`, `ip`
+- Standard tools: `nsenter`, `iptables`, `ip`, `sysctl`
   ```bash
-  sudo apt-get install util-linux iptables iproute2
+  sudo apt-get install util-linux iptables iproute2 procps
   ```
 
 **Benefits:**
