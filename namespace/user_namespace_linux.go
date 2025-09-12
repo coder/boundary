@@ -7,25 +7,30 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
-// UserNamespaceLinux implements Commander using rootlesskit-inspired approach
-// This uses the same principles as rootlesskit but with simplified implementation
+// UserNamespaceLinux implements Commander using rootlesskit approach with user space networking
 type UserNamespaceLinux struct {
 	logger         *slog.Logger
 	preparedEnv    map[string]string
 	httpProxyPort  int
 	httpsProxyPort int
 	userInfo       UserInfo
+	stateDir       string
 }
 
-// NewUserNamespaceLinux creates a new rootlesskit-inspired jail
+// NewUserNamespaceLinux creates a rootlesskit-style jail
 func NewUserNamespaceLinux(config Config) (*UserNamespaceLinux, error) {
-	// Initialize prepared environment
 	preparedEnv := make(map[string]string)
 	for key, value := range config.Env {
 		preparedEnv[key] = value
+	}
+
+	stateDir := filepath.Join(config.UserInfo.ConfigDir, "rootlesskit")
+	if err := os.MkdirAll(stateDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create state directory: %v", err)
 	}
 
 	return &UserNamespaceLinux{
@@ -34,70 +39,79 @@ func NewUserNamespaceLinux(config Config) (*UserNamespaceLinux, error) {
 		httpProxyPort:  config.HttpProxyPort,
 		httpsProxyPort: config.HttpsProxyPort,
 		userInfo:       config.UserInfo,
+		stateDir:       stateDir,
 	}, nil
 }
 
-// Start sets up the rootlesskit-style environment
 func (u *UserNamespaceLinux) Start() error {
-	u.logger.Info("Rootlesskit-style jail prepared (proxy-based traffic interception)")
+	u.logger.Info("Rootlesskit-style jail with user space networking prepared")
 	return nil
 }
 
-// Command creates a command with rootlesskit-style proxy environment
 func (u *UserNamespaceLinux) Command(command []string) *exec.Cmd {
-	u.logger.Debug("Creating command with rootlesskit-style proxy environment", "command", command)
+	u.logger.Debug("Creating rootlesskit command with user space networking", "command", command)
 
-	// Create the command directly - rootlesskit also uses proxy environment in many cases
-	cmd := exec.Command(command[0], command[1:]...)
+	script := u.createNetworkingScript(command)
+	cmd := exec.Command("/bin/bash", "-c", script)
 
-	// Set environment including proxy settings (rootlesskit approach)
 	env := make([]string, 0, len(u.preparedEnv)+10)
-	
-	// Add proxy environment variables for traffic interception
-	// Note: For jail's transparent proxy, we use HTTP_PROXY for both HTTP and HTTPS
-	// because jail handles TLS termination directly, not CONNECT tunneling
-	proxyURL := fmt.Sprintf("http://127.0.0.1:%d", u.httpProxyPort)
-	httpsProxyURL := fmt.Sprintf("http://127.0.0.1:%d", u.httpsProxyPort)
-	
-	// Set HTTP_PROXY for HTTP requests
-	env = append(env, fmt.Sprintf("HTTP_PROXY=%s", proxyURL))
-	// For HTTPS, we want curl to send requests to our HTTPS proxy port directly
-	// So we use ALL_PROXY to catch HTTPS requests
-	env = append(env, fmt.Sprintf("ALL_PROXY=%s", httpsProxyURL))
-	// Also set the lowercase versions
-	env = append(env, fmt.Sprintf("http_proxy=%s", proxyURL))
-	env = append(env, fmt.Sprintf("all_proxy=%s", httpsProxyURL))
-
-	// Add prepared environment
 	for key, value := range u.preparedEnv {
 		env = append(env, fmt.Sprintf("%s=%s", key, value))
 	}
-	
-	// Add current environment (but proxy vars will override)
 	for _, envVar := range os.Environ() {
 		if parts := strings.SplitN(envVar, "=", 2); len(parts) == 2 {
 			key := parts[0]
-			// Skip if we already have this key
 			if _, exists := u.preparedEnv[key]; !exists {
-				if key != "HTTP_PROXY" && key != "HTTPS_PROXY" && key != "http_proxy" && key != "https_proxy" && key != "ALL_PROXY" && key != "all_proxy" {
-					env = append(env, envVar)
-				}
+				env = append(env, envVar)
 			}
 		}
 	}
-
-	u.logger.Debug("Set proxy environment", "HTTP_PROXY", proxyURL, "ALL_PROXY", httpsProxyURL)
 
 	cmd.Env = env
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-
 	return cmd
 }
 
-// Close cleans up resources
+func (u *UserNamespaceLinux) createNetworkingScript(command []string) string {
+	commandStr := strings.Join(command, " ")
+	return fmt.Sprintf(`#!/bin/bash
+set -e
+
+echo "[jail] Starting rootlesskit-style user space networking..."
+
+# Use unshare to create user+network namespaces (rootlesskit approach)
+unshare --user --map-root-user --net --mount --pid --fork /bin/bash -c '
+
+echo "[jail] Inside user namespace, setting up networking..."
+
+# Set up loopback (essential for local networking)
+ip link set lo up
+
+# Set up iptables for traffic interception (now we are root in namespace)
+echo "[jail] Setting up iptables traffic redirection..."
+
+# Redirect HTTP traffic
+iptables -t nat -A OUTPUT -p tcp --dport 80 -j REDIRECT --to-ports %d 2>/dev/null && \
+  echo "[jail] HTTP redirected to port %d" || \
+  echo "[jail] Warning: HTTP redirect failed"
+
+# Redirect HTTPS traffic
+iptables -t nat -A OUTPUT -p tcp --dport 443 -j REDIRECT --to-ports %d 2>/dev/null && \
+  echo "[jail] HTTPS redirected to port %d" || \
+  echo "[jail] Warning: HTTPS redirect failed"
+
+# Enable forwarding
+sysctl -w net.ipv4.ip_forward=1 2>/dev/null || true
+
+echo "[jail] Network isolation active, running: %s"
+exec %s
+'
+`, u.httpProxyPort, u.httpProxyPort, u.httpsProxyPort, u.httpsProxyPort, commandStr, commandStr)
+}
+
 func (u *UserNamespaceLinux) Close() error {
-	u.logger.Info("Rootlesskit-style jail closed")
+	u.logger.Info("Closing rootlesskit jail")
 	return nil
 }
