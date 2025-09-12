@@ -55,9 +55,10 @@ func canCreateNamespace() bool {
 
 func TestConfig_Validation(t *testing.T) {
 	tests := []struct {
-		name    string
-		config  Config
-		wantErr bool
+		name        string
+		config      Config
+		wantErr     bool
+		expectPanic bool
 	}{
 		{
 			name: "valid config",
@@ -67,7 +68,8 @@ func TestConfig_Validation(t *testing.T) {
 				CertManager: &mockTLSManager{returnError: false},
 				Logger:      slog.New(slog.NewTextHandler(os.Stdout, nil)),
 			},
-			wantErr: false,
+			wantErr:     false,
+			expectPanic: false,
 		},
 		{
 			name: "nil cert manager causes panic",
@@ -77,7 +79,8 @@ func TestConfig_Validation(t *testing.T) {
 				CertManager: nil, // This should cause issues
 				Logger:      slog.New(slog.NewTextHandler(os.Stdout, nil)),
 			},
-			wantErr: true,
+			wantErr:     false,
+			expectPanic: true, // This should cause a panic
 		},
 	}
 
@@ -86,9 +89,19 @@ func TestConfig_Validation(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 
+			if tt.expectPanic {
+				defer func() {
+					if r := recover(); r == nil {
+						t.Error("expected panic but none occurred")
+					}
+				}()
+			}
+
 			_, err := New(ctx, tt.config)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("New() error = %v, wantErr %v", err, tt.wantErr)
+			if !tt.expectPanic {
+				if (err != nil) != tt.wantErr {
+					t.Errorf("New() error = %v, wantErr %v", err, tt.wantErr)
+				}
 			}
 		})
 	}
