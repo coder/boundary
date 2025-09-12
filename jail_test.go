@@ -2,6 +2,8 @@ package jail
 
 import (
 	"context"
+	"crypto/tls"
+	"fmt"
 	"log/slog"
 	"os"
 	"runtime"
@@ -10,8 +12,8 @@ import (
 	"time"
 
 	"github.com/coder/jail/audit"
+	"github.com/coder/jail/namespace"
 	"github.com/coder/jail/rules"
-	"github.com/coder/jail/tls"
 )
 
 // Mock implementations for testing
@@ -19,15 +21,11 @@ type mockRuleEngine struct {
 	allowAll bool
 }
 
-func (m *mockRuleEngine) IsAllowed(method, url string) bool {
-	return m.allowAll
-}
-
-func (m *mockRuleEngine) GetMatchingRule(method, url string) string {
+func (m *mockRuleEngine) Evaluate(method, url string) rules.Result {
 	if m.allowAll {
-		return "allow *"
+		return rules.Result{Allowed: true, Rule: "allow *"}
 	}
-	return ""
+	return rules.Result{Allowed: false, Rule: ""}
 }
 
 type mockAuditor struct {
@@ -42,25 +40,11 @@ type mockTLSManager struct {
 	returnError bool
 }
 
-func (m *mockTLSManager) SetupTLS() error {
+func (m *mockTLSManager) SetupTLSAndWriteCACert() (*tls.Config, string, string, error) {
 	if m.returnError {
-		return os.ErrPermission
+		return nil, "", "", os.ErrPermission
 	}
-	return nil
-}
-
-func (m *mockTLSManager) GetTLSConfig() (*tls.Config, error) {
-	if m.returnError {
-		return nil, os.ErrPermission
-	}
-	return &tls.Config{}, nil
-}
-
-func (m *mockTLSManager) GetCACertPEM() ([]byte, error) {
-	if m.returnError {
-		return nil, os.ErrPermission
-	}
-	return []byte("fake-ca-cert"), nil
+	return &tls.Config{}, "/tmp/cert.pem", "/tmp/key.pem", nil
 }
 
 // Helper function to check if we can create namespaces
@@ -305,12 +289,32 @@ func TestNewNamespaceCommander(t *testing.T) {
 			}
 
 			// Test the current platform's implementation
-			commander, err := NewNamespaceCommander(UserInfo{
-				Username: "testuser",
-				UID:      1000,
-				GID:      1000,
-			}, slog.New(slog.NewTextHandler(os.Stdout, nil)))
+			config := namespace.Config{
+				Logger:         slog.New(slog.NewTextHandler(os.Stdout, nil)),
+				HttpProxyPort:  8080,
+				HttpsProxyPort: 8443,
+				UserInfo: namespace.UserInfo{
+					Username: "testuser",
+					Uid:      1000,
+					Gid:      1000,
+					HomeDir:  "/home/testuser",
+					ConfigDir: "/home/testuser/.config",
+				},
+				Env: map[string]string{},
+			}
 
+			var commander namespace.Commander
+			var err error
+			
+			switch runtime.GOOS {
+			case "linux":
+				commander, err = namespace.NewLinux(config)
+			case "darwin":
+				commander, err = namespace.NewMacOS(config)
+			default:
+				err = fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+			}
+			
 			if tt.goos == runtime.GOOS {
 				// Should work on current platform
 				if err != nil {
