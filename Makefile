@@ -40,14 +40,14 @@ build-all:
 .PHONY: test
 test:
 	@echo "Running tests..."
-	sudo go test -v -race ./...
+	go test -v -race ./...
 	@echo "✓ All tests passed!"
 
 # Run tests with coverage (needs sudo for E2E tests)
 .PHONY: test-coverage
 test-coverage:
 	@echo "Running tests with coverage..."
-	sudo go test -v -race -coverprofile=coverage.out ./...
+	go test -v -race -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "✓ Coverage report generated: coverage.html"
 
