@@ -85,61 +85,101 @@ echo "[jail] Starting rootlesskit-style user space networking with slirp4netns..
 # Create network namespace with slirp4netns (rootlesskit approach)
 echo "[jail] Creating user namespace with slirp4netns networking..."
 
-# Start unshare with network namespace
-unshare --user --map-root-user --net --mount --pid --fork /bin/bash -c '
-
-echo "[jail] Inside user namespace, setting up slirp4netns..."
-
-# Start slirp4netns to provide user space networking
-# This creates a TAP interface and provides NAT networking without privileges
-slirp4netns --configure --mtu=1500 --disable-host-loopback $$ tap0 &
-SLIRP_PID=$!
-echo "[jail] slirp4netns started with PID: $SLIRP_PID"
-
-# Give slirp4netns time to set up the interface
-sleep 1
-
-# Configure the TAP interface
-echo "[jail] Configuring network interface..."
-ip link set tap0 up 2>/dev/null || echo "[jail] Warning: Could not bring up tap0"
-ip addr add 10.0.2.100/24 dev tap0 2>/dev/null || echo "[jail] Warning: Could not configure tap0 IP"
-ip route add default via 10.0.2.2 dev tap0 2>/dev/null || echo "[jail] Warning: Could not set default route"
-
-# Set up DNS resolution
-echo "[jail] Setting up DNS resolution..."
-echo "nameserver 10.0.2.3" > /etc/resolv.conf 2>/dev/null || echo "[jail] Warning: Could not set DNS"
-echo "nameserver 8.8.8.8" >> /etc/resolv.conf 2>/dev/null || true
-
-# Set up iptables for traffic interception
-echo "[jail] Setting up iptables traffic redirection..."
-
-# Redirect HTTP traffic to jail proxy
-if iptables -t nat -A OUTPUT -p tcp --dport 80 -j REDIRECT --to-ports %d 2>/dev/null; then
-  echo "[jail] HTTP traffic redirected to port %d"
-else
-  echo "[jail] Warning: iptables redirect not available, applications must support HTTP_PROXY"
-fi
-
-# Redirect HTTPS traffic to jail proxy
-if iptables -t nat -A OUTPUT -p tcp --dport 443 -j REDIRECT --to-ports %d 2>/dev/null; then
-  echo "[jail] HTTPS traffic redirected to port %d"
-else
-  echo "[jail] Warning: iptables redirect not available, applications must support HTTPS_PROXY"
-fi
-
-# Show network configuration
-echo "[jail] Network status:"
-ip addr show 2>/dev/null | grep -E "(inet|tap0|lo)" || echo "[jail] Could not show network status"
-echo "[jail] DNS configuration:"
-cat /etc/resolv.conf 2>/dev/null || echo "[jail] Could not show DNS config"
-
-echo "[jail] slirp4netns user space network ready, running: %s"
-
-# Execute the command
-exec %s
-
-'
-`, u.httpProxyPort, u.httpProxyPort, u.httpsProxyPort, u.httpsProxyPort, commandStr, commandStr)
+# Start the parent process that will coordinate slirp4netns
+(
+  # Create the user namespace with network isolation
+  unshare --user --map-root-user --net --mount --pid --fork /bin/bash -c '
+  
+  # We are now inside the user namespace
+  CHILD_PID=$$
+  echo "[jail] Inside user namespace with PID: $CHILD_PID"
+  
+  # Set up basic loopback
+  ip link set lo up
+  
+  # Tell parent our PID so it can start slirp4netns
+  echo "[jail] Notifying parent of child PID: $CHILD_PID"
+  
+  # Wait for slirp4netns to be set up by parent (outside the namespace)
+  echo "[jail] Waiting for slirp4netns setup..."
+  sleep 2
+  
+  # Check if tap0 interface was created by slirp4netns
+  if ip link show tap0 >/dev/null 2>&1; then
+    echo "[jail] Found tap0 interface, configuring..."
+    ip link set tap0 up || echo "[jail] Warning: Could not bring up tap0"
+    # slirp4netns should have already configured the IP
+  else
+    echo "[jail] Warning: No tap0 interface found - slirp4netns may have failed"
+  fi
+  
+  # Try to set up custom DNS (may fail due to mount namespace)
+  if echo "nameserver 8.8.8.8" > /etc/resolv.conf 2>/dev/null; then
+    echo "nameserver 8.8.4.4" >> /etc/resolv.conf 2>/dev/null || true
+    echo "[jail] DNS configured with 8.8.8.8, 8.8.4.4"
+  else
+    echo "[jail] Could not modify /etc/resolv.conf, using system DNS"
+  fi
+  
+  # Set up iptables for traffic interception if available
+  echo "[jail] Setting up traffic interception..."
+  
+  # Try iptables redirection
+  if iptables -t nat -A OUTPUT -p tcp --dport 80 -j REDIRECT --to-ports %d 2>/dev/null; then
+    echo "[jail] HTTP traffic redirected to port %d"
+  else
+    echo "[jail] iptables not available - using proxy environment variables"
+    export HTTP_PROXY="http://127.0.0.1:%d"
+    export http_proxy="http://127.0.0.1:%d"
+  fi
+  
+  if iptables -t nat -A OUTPUT -p tcp --dport 443 -j REDIRECT --to-ports %d 2>/dev/null; then
+    echo "[jail] HTTPS traffic redirected to port %d"
+  else
+    export HTTPS_PROXY="http://127.0.0.1:%d"
+    export https_proxy="http://127.0.0.1:%d"
+  fi
+  
+  # Show current network status
+  echo "[jail] Network configuration:"
+  ip addr show 2>/dev/null || echo "[jail] Could not show interfaces"
+  echo "[jail] Routing table:"
+  ip route show 2>/dev/null || echo "[jail] Could not show routes"
+  echo "[jail] DNS configuration:"
+  cat /etc/resolv.conf 2>/dev/null | head -10 || echo "[jail] Could not show DNS"
+  
+  echo "[jail] User space network ready, running: %s"
+  
+  # Execute the command with proxy environment set
+  exec %s
+  
+  ' &
+  
+  # Get the PID of the namespace process
+  NAMESPACE_PID=$!
+  echo "[jail] Namespace process started with PID: $NAMESPACE_PID"
+  
+  # Give the namespace a moment to start
+  sleep 0.5
+  
+  # Start slirp4netns to provide networking to the namespace
+  echo "[jail] Starting slirp4netns for PID $NAMESPACE_PID..."
+  slirp4netns --configure --mtu=1500 --disable-host-loopback $NAMESPACE_PID tap0 &
+  SLIRP_PID=$!
+  echo "[jail] slirp4netns started with PID: $SLIRP_PID"
+  
+  # Wait for the namespace process to complete
+  wait $NAMESPACE_PID
+  NAMESPACE_EXIT=$?
+  
+  # Clean up slirp4netns
+  if kill $SLIRP_PID 2>/dev/null; then
+    echo "[jail] Cleaned up slirp4netns process"
+  fi
+  
+  exit $NAMESPACE_EXIT
+)
+`, u.httpProxyPort, u.httpProxyPort, u.httpProxyPort, u.httpProxyPort, u.httpsProxyPort, u.httpsProxyPort, u.httpsProxyPort, u.httpsProxyPort, commandStr, commandStr)
 }
 
 func (u *UserNamespaceLinux) Close() error {
