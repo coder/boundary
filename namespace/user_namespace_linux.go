@@ -104,16 +104,16 @@ echo "[jail] Creating network jail with slirp4netns (no root required)..."
       echo "[jail] HTTP traffic redirected"
     else
       echo "[jail] iptables HTTP redirect failed - using proxy environment"
-      export HTTP_PROXY="http://127.0.0.1:%d"
-      export http_proxy="http://127.0.0.1:%d"
+      export HTTP_PROXY="http://10.0.2.2:%d"
+      export http_proxy="http://10.0.2.2:%d"
     fi
     
     if iptables -t nat -A OUTPUT -p tcp --dport 443 -j REDIRECT --to-ports %d 2>/dev/null; then
       echo "[jail] HTTPS traffic redirected"
     else
       echo "[jail] iptables HTTPS redirect failed - using proxy environment"
-      export HTTPS_PROXY="http://127.0.0.1:%d"
-      export https_proxy="http://127.0.0.1:%d"
+      export HTTPS_PROXY="http://10.0.2.2:%d"
+      export https_proxy="http://10.0.2.2:%d"
     fi
     
     echo "[jail] Network jail ready"
