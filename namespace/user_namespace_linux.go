@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 )
 
 // UserNamespaceLinux implements Commander using user namespace + iptables
@@ -48,17 +47,11 @@ func (u *UserNamespaceLinux) Start() error {
 func (u *UserNamespaceLinux) Command(command []string) *exec.Cmd {
 	u.logger.Debug("Creating command in user namespace", "command", command)
 
-	// Create wrapper script that sets up namespace and runs command
-	wrapperScript := u.createWrapperScript(command)
+	// Create a wrapper script that will be run from the host to set up mappings
+	hostScript := u.createHostWrapperScript(command)
 
-	// Create the command that will run with user namespace
-	cmd := exec.Command("/bin/bash", "-c", wrapperScript)
-
-	// Set up the namespace creation - let the script handle UID/GID mapping
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Cloneflags: syscall.CLONE_NEWUSER | syscall.CLONE_NEWNET | syscall.CLONE_NEWNS,
-		// Remove automatic UID/GID mappings - we'll handle this in the script
-	}
+	// Create the command that will handle namespace creation and mapping setup
+	cmd := exec.Command("/bin/bash", "-c", hostScript)
 
 	// Set environment
 	env := make([]string, 0, len(u.preparedEnv))
@@ -73,20 +66,13 @@ func (u *UserNamespaceLinux) Command(command []string) *exec.Cmd {
 	return cmd
 }
 
-// createWrapperScript creates a bash script that sets up the namespace and runs the command
-func (u *UserNamespaceLinux) createWrapperScript(command []string) string {
+// createHostWrapperScript creates a bash script that sets up the namespace and runs the command
+func (u *UserNamespaceLinux) createHostWrapperScript(command []string) string {
 	commandStr := strings.Join(command, " ")
 	
-	script := fmt.Sprintf(`#!/bin/bash
+	// Create a script that runs inside the namespace to set up networking and run the command
+	namespaceScript := fmt.Sprintf(`#!/bin/bash
 set -e
-
-# We're now inside the user namespace, but need to set up UID/GID mappings first
-echo "[jail] Setting up user namespace mappings..."
-
-# Set up UID/GID mappings (equivalent to unshare --map-root-user)
-echo 'deny' > /proc/self/setgroups 2>/dev/null || echo "[jail] Warning: Could not write to setgroups"
-echo '0 %d 1' > /proc/self/uid_map 2>/dev/null || echo "[jail] Warning: Could not write to uid_map"
-echo '0 %d 1' > /proc/self/gid_map 2>/dev/null || echo "[jail] Warning: Could not write to gid_map"
 
 echo "[jail] Setting up user namespace environment..."
 
@@ -105,7 +91,15 @@ echo "[jail] Namespace setup complete, running command: %s"
 
 # Execute the actual command
 exec %s
-`, u.userInfo.Uid, u.userInfo.Gid, u.httpsProxyPort, u.httpsProxyPort, commandStr, commandStr)
+`, u.httpsProxyPort, u.httpsProxyPort, commandStr, commandStr)
+	
+	script := fmt.Sprintf(`#!/bin/bash
+set -e
+
+# Create the user namespace and run the command inside it
+echo "[jail] Creating user namespace..."
+unshare --user --map-root-user --net --pid --fork --mount-proc --mount /bin/bash -c '%s'
+`, strings.ReplaceAll(namespaceScript, "'", "'\"'\"'"))
 
 	return script
 }
