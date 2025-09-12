@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/coder/jail/audit"
@@ -16,6 +17,7 @@ import (
 
 // Server handles HTTP and HTTPS requests with rule-based filtering
 type Server struct {
+	mu         sync.Mutex
 	ruleEngine rules.Evaluator
 	auditor    audit.Auditor
 	logger     *slog.Logger
@@ -51,6 +53,7 @@ func NewProxyServer(config Config) *Server {
 
 // Start starts both HTTP and HTTPS proxy servers
 func (p *Server) Start(ctx context.Context) error {
+	p.mu.Lock()
 	// Create HTTP server
 	p.httpServer = &http.Server{
 		Addr:    fmt.Sprintf(":%d", p.httpPort),
@@ -63,22 +66,33 @@ func (p *Server) Start(ctx context.Context) error {
 		Handler:   http.HandlerFunc(p.handleHTTPS),
 		TLSConfig: p.tlsConfig,
 	}
+	p.mu.Unlock()
 
 	// Start HTTP server
 	go func() {
 		p.logger.Info("Starting HTTP proxy", "port", p.httpPort)
-		err := p.httpServer.ListenAndServe()
-		if err != nil && err != http.ErrServerClosed {
-			p.logger.Error("HTTP proxy server error", "error", err)
+		p.mu.Lock()
+		httpServer := p.httpServer
+		p.mu.Unlock()
+		if httpServer != nil {
+			err := httpServer.ListenAndServe()
+			if err != nil && err != http.ErrServerClosed {
+				p.logger.Error("HTTP proxy server error", "error", err)
+			}
 		}
 	}()
 
 	// Start HTTPS server
 	go func() {
 		p.logger.Info("Starting HTTPS proxy", "port", p.httpsPort)
-		err := p.httpsServer.ListenAndServeTLS("", "")
-		if err != nil && err != http.ErrServerClosed {
-			p.logger.Error("HTTPS proxy server error", "error", err)
+		p.mu.Lock()
+		httpsServer := p.httpsServer
+		p.mu.Unlock()
+		if httpsServer != nil {
+			err := httpsServer.ListenAndServeTLS("", "")
+			if err != nil && err != http.ErrServerClosed {
+				p.logger.Error("HTTPS proxy server error", "error", err)
+			}
 		}
 	}()
 
