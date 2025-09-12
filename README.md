@@ -65,6 +65,18 @@ jail --unprivileged --allow "*.npmjs.org" -- npm install
 jail --unprivileged --allow "api.example.com" -- ./my-app
 ```
 
+**⚠️ Important: Run as regular user, NOT with sudo**
+```bash
+# ✅ CORRECT - Run as regular user
+jail --unprivileged --allow "github.com" -- curl https://github.com
+
+# ❌ WRONG - Don't use sudo with --unprivileged
+sudo jail --unprivileged --allow "github.com" -- curl https://github.com
+
+# ✅ For privileged mode, use sudo WITHOUT --unprivileged
+sudo jail --allow "github.com" -- curl https://github.com
+```
+
 **Requirements for Unprivileged Mode:**
 - Linux with user namespace support (kernel 3.8+)
 - User namespaces enabled: `sudo sysctl -w kernel.unprivileged_userns_clone=1`
@@ -155,6 +167,45 @@ For more help: https://github.com/coder/jail
 | **Linux (Unprivileged)** | **User namespaces + iptables** | **No** |
 | macOS | Process groups + PF rules | Yes |
 | Windows | Not supported | - |
+
+## Troubleshooting Unprivileged Mode
+
+### "permission denied" for `/root/.config`
+```bash
+Error: failed to create certificate manager: failed to create config directory at /root/.config/coder_jail: mkdir /root/.config: permission denied
+```
+**Solution**: Don't use `sudo` with `--unprivileged`. Run as regular user:
+```bash
+# ❌ Wrong
+sudo jail --unprivileged --allow "github.com" -- curl https://github.com
+
+# ✅ Correct  
+jail --unprivileged --allow "github.com" -- curl https://github.com
+```
+
+### "user namespaces are disabled"
+```bash
+Error: user namespaces are disabled. Enable with: sudo sysctl -w kernel.unprivileged_userns_clone=1
+```
+**Solution**: Enable user namespaces:
+```bash
+sudo sysctl -w kernel.unprivileged_userns_clone=1
+# Make permanent:
+echo 'kernel.unprivileged_userns_clone = 1' | sudo tee -a /etc/sysctl.conf
+```
+
+### "required tool not found"
+```bash
+Error: required tool nsenter not found. Install with: sudo apt-get install util-linux iptables iproute2 procps
+```
+**Solution**: Install required tools:
+```bash
+# Ubuntu/Debian
+sudo apt-get install util-linux iptables iproute2 procps
+
+# RHEL/CentOS/Fedora
+sudo yum install util-linux iptables iproute procps-ng
+```
 
 ## Installation
 
