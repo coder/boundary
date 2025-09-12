@@ -113,61 +113,76 @@ echo "[jail] Creating user namespace with slirp4netns networking..."
     echo "[jail] Warning: No tap0 interface found - slirp4netns may have failed"
   fi
   
-  # Set up simple proxy forwarders inside the namespace
+  # Set up proxy forwarders inside the namespace
   echo "[jail] Setting up proxy forwarders to host..."
   
-  # Start HTTP proxy forwarder (127.0.0.1:8080 -> 10.0.2.2:8080)
+  # Try to set up proxy forwarders, but be prepared to fall back
+  FORWARDERS_WORKING=false
+  
   if command -v socat >/dev/null 2>&1; then
-    echo "[jail] Starting HTTP proxy forwarder with socat..."
+    echo "[jail] Starting proxy forwarders with socat..."
     socat TCP-LISTEN:8080,fork TCP:10.0.2.2:%d &
     HTTP_FORWARDER_PID=$!
-    echo "[jail] HTTP forwarder started with PID: $HTTP_FORWARDER_PID"
-    
-    echo "[jail] Starting HTTPS proxy forwarder with socat..."
     socat TCP-LISTEN:8443,fork TCP:10.0.2.2:%d &
     HTTPS_FORWARDER_PID=$!
-    echo "[jail] HTTPS forwarder started with PID: $HTTPS_FORWARDER_PID"
     
-    # Set proxy environment variables to use localhost
+    # Give socat a moment to start
+    sleep 0.5
+    
+    # Test if socat is actually listening
+    if netstat -tln 2>/dev/null | grep -q ':8080.*LISTEN' && netstat -tln 2>/dev/null | grep -q ':8443.*LISTEN'; then
+      echo "[jail] socat proxy forwarders confirmed listening"
+      FORWARDERS_WORKING=true
+    else
+      echo "[jail] socat proxy forwarders failed to start"
+      # Clean up failed socat processes
+      [ ! -z "$HTTP_FORWARDER_PID" ] && kill $HTTP_FORWARDER_PID 2>/dev/null || true
+      [ ! -z "$HTTPS_FORWARDER_PID" ] && kill $HTTPS_FORWARDER_PID 2>/dev/null || true
+    fi
+  fi
+  
+  # If socat didn't work, try a different approach
+  if [ "$FORWARDERS_WORKING" = "false" ] && command -v nc >/dev/null 2>&1; then
+    echo "[jail] Trying simple netcat relay..."
+    
+    # Test connectivity to the host proxy first
+    if timeout 2 nc -z 10.0.2.2 %d 2>/dev/null; then
+      echo "[jail] Host proxy reachable on 10.0.2.2:%d"
+      
+      # Try a simpler netcat approach
+      mkfifo /tmp/http_pipe /tmp/https_pipe 2>/dev/null || true
+      nc -l 8080 < /tmp/http_pipe | nc 10.0.2.2 %d > /tmp/http_pipe &
+      HTTP_FORWARDER_PID=$!
+      nc -l 8443 < /tmp/https_pipe | nc 10.0.2.2 %d > /tmp/https_pipe &
+      HTTPS_FORWARDER_PID=$!
+      
+      sleep 0.5
+      if netstat -tln 2>/dev/null | grep -q ':8080.*LISTEN'; then
+        echo "[jail] netcat proxy forwarders started"
+        FORWARDERS_WORKING=true
+      else
+        echo "[jail] netcat proxy forwarders failed"
+        [ ! -z "$HTTP_FORWARDER_PID" ] && kill $HTTP_FORWARDER_PID 2>/dev/null || true
+        [ ! -z "$HTTPS_FORWARDER_PID" ] && kill $HTTPS_FORWARDER_PID 2>/dev/null || true
+      fi
+    else
+      echo "[jail] Cannot reach host proxy at 10.0.2.2:%d"
+    fi
+  fi
+  
+  # Set proxy environment variables based on what's working
+  if [ "$FORWARDERS_WORKING" = "true" ]; then
     export HTTP_PROXY="http://127.0.0.1:8080"
     export HTTPS_PROXY="http://127.0.0.1:8443"
     export http_proxy="http://127.0.0.1:8080"
     export https_proxy="http://127.0.0.1:8443"
-    
-    echo "[jail] Proxy forwarders configured (socat)"
-  elif command -v nc >/dev/null 2>&1; then
-    echo "[jail] Starting simple relay with netcat..."
-    # Create simple relay scripts that should work with most netcat versions
-    (
-      while true; do
-        nc -l -p 8080 -e /bin/sh -c "exec nc 10.0.2.2 %d" 2>/dev/null || \
-        nc -l 8080 -c "nc 10.0.2.2 %d" 2>/dev/null || \
-        break
-      done
-    ) &
-    HTTP_FORWARDER_PID=$!
-    
-    (
-      while true; do
-        nc -l -p 8443 -e /bin/sh -c "exec nc 10.0.2.2 %d" 2>/dev/null || \
-        nc -l 8443 -c "nc 10.0.2.2 %d" 2>/dev/null || \
-        break
-      done
-    ) &
-    HTTPS_FORWARDER_PID=$!
-    
-    export HTTP_PROXY="http://127.0.0.1:8080"
-    export HTTPS_PROXY="http://127.0.0.1:8443"
-    export http_proxy="http://127.0.0.1:8080"
-    export https_proxy="http://127.0.0.1:8443"
-    
-    echo "[jail] Proxy forwarders configured (netcat)"
+    echo "[jail] Using localhost proxy forwarders"
   else
-    echo "[jail] Neither socat nor netcat available, using direct connection to gateway"
     export HTTP_PROXY="http://10.0.2.2:%d"
     export HTTPS_PROXY="http://10.0.2.2:%d"
     export http_proxy="http://10.0.2.2:%d"
     export https_proxy="http://10.0.2.2:%d"
+    echo "[jail] Using direct gateway connection (forwarders failed)"
   fi
   
   # Show current network status
@@ -217,7 +232,7 @@ echo "[jail] Creating user namespace with slirp4netns networking..."
   
   exit $NAMESPACE_EXIT
 )
-`, u.httpProxyPort, u.httpsProxyPort, u.httpProxyPort, u.httpProxyPort, u.httpsProxyPort, u.httpsProxyPort, u.httpProxyPort, u.httpsProxyPort, u.httpProxyPort, u.httpsProxyPort, commandStr, commandStr)
+`, u.httpProxyPort, u.httpsProxyPort, u.httpProxyPort, u.httpProxyPort, u.httpProxyPort, u.httpsProxyPort, u.httpProxyPort, u.httpProxyPort, u.httpsProxyPort, u.httpProxyPort, u.httpsProxyPort, commandStr, commandStr)
 }
 
 func (u *UserNamespaceLinux) Close() error {
