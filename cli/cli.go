@@ -95,9 +95,9 @@ func Run(ctx context.Context, config Config, args []string) error {
 
 	// Validate unprivileged mode if requested
 	if config.Unprivileged {
-		// Check if running as root
+		// Warn if running as root but don't block it (some container environments need this)
 		if os.Geteuid() == 0 {
-			return fmt.Errorf("unprivileged mode should not be run as root.\nFor unprivileged mode: run as regular user without sudo\nFor privileged mode: use sudo without --unprivileged flag")
+			logger.Warn("Running unprivileged mode as root - this may cause permission issues with config files")
 		}
 		if err := validateUnprivilegedMode(logger); err != nil {
 			return fmt.Errorf("unprivileged mode validation failed: %v", err)
@@ -269,9 +269,17 @@ func getCurrentUserInfo() namespace.UserInfo {
 
 	// Add debug logging to diagnose config directory issues
 	if currentUser.Uid == "0" {
-		fmt.Fprintf(os.Stderr, "WARNING: Running as root (UID 0). For unprivileged mode, run as regular user without sudo.\n")
-		fmt.Fprintf(os.Stderr, "User: %s, UID: %s, Home: %s, ConfigDir: %s\n", 
-			currentUser.Username, currentUser.Uid, currentUser.HomeDir, configDir)
+		fmt.Fprintf(os.Stderr, "WARNING: Running as root (UID 0).\n")
+		fmt.Fprintf(os.Stderr, "For unprivileged mode, this should run as regular user.\n")
+		fmt.Fprintf(os.Stderr, "User: %s, UID: %s, Home: %s\n", currentUser.Username, currentUser.Uid, currentUser.HomeDir)
+		fmt.Fprintf(os.Stderr, "ConfigDir: %s\n", configDir)
+		fmt.Fprintf(os.Stderr, "Override with: JAIL_CONFIG_DIR=/tmp/jail-config\n")
+		
+		// Check if user provided override
+		if override := os.Getenv("JAIL_CONFIG_DIR"); override != "" {
+			configDir = override
+			fmt.Fprintf(os.Stderr, "Using config directory override: %s\n", configDir)
+		}
 	}
 
 	return namespace.UserInfo{
@@ -289,7 +297,19 @@ func getConfigDir(homeDir string) string {
 	if xdgConfigHome := os.Getenv("XDG_CONFIG_HOME"); xdgConfigHome != "" {
 		return filepath.Join(xdgConfigHome, "coder_jail")
 	}
-	return filepath.Join(homeDir, ".config", "coder_jail")
+	
+	configDir := filepath.Join(homeDir, ".config", "coder_jail")
+	
+	// If home directory is not writable (e.g., running in container as non-standard user),
+	// fallback to temporary directory
+	if err := os.MkdirAll(filepath.Dir(configDir), 0755); err != nil {
+		// Cannot create ~/.config, use temp directory instead
+		tempDir := os.TempDir()
+		configDir = filepath.Join(tempDir, "coder_jail")
+		fmt.Fprintf(os.Stderr, "Warning: Cannot access home config directory, using temporary directory: %s\n", configDir)
+	}
+	
+	return configDir
 }
 
 // validateUnprivilegedMode checks if the system supports unprivileged mode
