@@ -108,6 +108,12 @@ func (l *Linux) Start() error {
 func (l *Linux) Command(command []string) *exec.Cmd {
 	l.logger.Debug("Command called", "command", command)
 
+	// Handle empty command
+	if len(command) == 0 {
+		l.logger.Debug("Empty command provided, returning nil")
+		return nil // Return nil for empty command
+	}
+
 	// Create command with ip netns exec
 	l.logger.Debug("Creating command with namespace", "namespace", l.namespace)
 	cmdArgs := []string{"ip", "netns", "exec", l.namespace}

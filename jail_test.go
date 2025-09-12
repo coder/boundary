@@ -220,7 +220,7 @@ func TestJail_Command(t *testing.T) {
 		{
 			name: "empty command",
 			args: []string{},
-			want: true, // Should still return a command object
+			want: false, // Empty command should return nil or be invalid
 		},
 		{
 			name: "multiple args",
