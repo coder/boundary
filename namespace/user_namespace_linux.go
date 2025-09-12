@@ -217,7 +217,7 @@ echo "[jail] Creating user namespace with slirp4netns networking..."
   
   exit $NAMESPACE_EXIT
 )
-`, u.httpProxyPort, u.httpsProxyPort, u.httpProxyPort, u.httpsProxyPort, u.httpProxyPort, u.httpsProxyPort, commandStr, commandStr)
+`, u.httpProxyPort, u.httpsProxyPort, u.httpProxyPort, u.httpProxyPort, u.httpsProxyPort, u.httpsProxyPort, u.httpProxyPort, u.httpsProxyPort, u.httpProxyPort, u.httpsProxyPort, commandStr, commandStr)
 }
 
 func (u *UserNamespaceLinux) Close() error {
