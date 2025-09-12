@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 // UserNamespaceLinux implements Commander using rootlesskit approach with user space networking
@@ -77,108 +76,88 @@ func (u *UserNamespaceLinux) Command(command []string) *exec.Cmd {
 
 func (u *UserNamespaceLinux) createNetworkingScript(command []string) string {
 	commandStr := strings.Join(command, " ")
-	uniqueID := fmt.Sprintf("%d", time.Now().UnixNano()%1000000)
-	vethHost := fmt.Sprintf("veth_h_%s", uniqueID)
-	vethChild := fmt.Sprintf("veth_c_%s", uniqueID)
 	
 	return fmt.Sprintf(`#!/bin/bash
 set -e
 
-echo "[jail] Starting rootlesskit-style user space networking..."
+echo "[jail] Starting rootlesskit-style user space networking with slirp4netns..."
 
-# Create veth pair on host before entering namespace
-echo "[jail] Creating veth pair: %s <-> %s"
-ip link add %s type veth peer name %s || {
-  echo "[jail] Error: Failed to create veth pair. User namespaces may not be properly configured."
-  echo "[jail] Try: sudo sysctl -w kernel.unprivileged_userns_clone=1"
-  exit 1
-}
-
-# Start unshare with the child veth moved into the namespace
-(
-  # Move child veth into the new namespace
-  unshare --user --map-root-user --net --mount --pid --fork /bin/bash -c '
+# Check if slirp4netns is available
+if ! command -v slirp4netns >/dev/null 2>&1; then
+  echo "[jail] Warning: slirp4netns not found, falling back to proxy environment"
+  echo "[jail] Install with: sudo apt-get install slirp4netns (or equivalent)"
   
-  CHILD_PID=$$
-  echo "[jail] Inside user namespace (PID: $CHILD_PID), setting up networking..."
-  
-  # Set up loopback
-  ip link set lo up
-  
-  # Wait for parent to configure host side and move veth to us
-  sleep 0.5
-  
-  # Configure our end of the veth pair
-  if ip link show %s >/dev/null 2>&1; then
-    echo "[jail] Configuring network interface %s"
-    ip addr add 192.168.100.2/24 dev %s
-    ip link set %s up
-    ip route add default via 192.168.100.1
-    echo "[jail] Network interface configured"
-  else
-    echo "[jail] Warning: Network interface %s not found, using loopback only"
-  fi
-  
-  # Set up DNS resolution
-  echo "[jail] Setting up DNS resolution..."
-  echo "nameserver 8.8.8.8" > /etc/resolv.conf 2>/dev/null || echo "[jail] Warning: Could not set DNS"
-  echo "nameserver 8.8.4.4" >> /etc/resolv.conf 2>/dev/null || true
-  
-  # Set up iptables for traffic interception
-  echo "[jail] Setting up iptables traffic redirection..."
-  
-  # Redirect HTTP traffic (port 80)
-  if iptables -t nat -A OUTPUT -p tcp --dport 80 -j REDIRECT --to-ports %d 2>/dev/null; then
-    echo "[jail] HTTP traffic redirected to port %d"
-  else
-    echo "[jail] Warning: HTTP redirect failed - iptables may not be available"
-  fi
-  
-  # Redirect HTTPS traffic (port 443)
-  if iptables -t nat -A OUTPUT -p tcp --dport 443 -j REDIRECT --to-ports %d 2>/dev/null; then
-    echo "[jail] HTTPS traffic redirected to port %d"
-  else
-    echo "[jail] Warning: HTTPS redirect failed - iptables may not be available"
-  fi
-  
-  # Enable IP forwarding
-  sysctl -w net.ipv4.ip_forward=1 2>/dev/null || true
-  
-  # Show network status
-  echo "[jail] Network configuration:"
-  ip addr show 2>/dev/null || echo "[jail] Could not show network interfaces"
-  echo "[jail] Routing table:"
-  ip route show 2>/dev/null || echo "[jail] Could not show routes"
-  
-  echo "[jail] Network isolation active, running: %s"
+  # Fallback to proxy environment approach
+  export HTTP_PROXY="http://127.0.0.1:%d"
+  export HTTPS_PROXY="http://127.0.0.1:%d"
+  export http_proxy="http://127.0.0.1:%d"
+  export https_proxy="http://127.0.0.1:%d"
+  echo "[jail] Using proxy environment: HTTP_PROXY=$HTTP_PROXY HTTPS_PROXY=$HTTPS_PROXY"
   exec %s
-  
-  ' &
-  
-  NAMESPACE_PID=$!
-  echo "[jail] Namespace started with PID: $NAMESPACE_PID"
-  
-  # Give namespace time to start
-  sleep 0.2
-  
-  # Configure host side of veth pair
-  echo "[jail] Configuring host side networking..."
-  ip addr add 192.168.100.1/24 dev %s 2>/dev/null || echo "[jail] Warning: Could not configure host veth IP"
-  ip link set %s up 2>/dev/null || echo "[jail] Warning: Could not bring up host veth"
-  
-  # Move child veth into the namespace
-  ip link set %s netns $NAMESPACE_PID 2>/dev/null || echo "[jail] Warning: Could not move veth to namespace"
-  
-  # Enable IP forwarding on host side
-  echo 1 > /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo "[jail] Warning: Could not enable IP forwarding on host"
-  
-  # Wait for the namespace process to complete
-  wait $NAMESPACE_PID
-  
-  # Cleanup veth pair
-  ip link del %s 2>/dev/null || echo "[jail] Note: veth cleanup may have failed (normal if namespace cleaned up first)"
-)
-`, vethHost, vethChild, vethHost, vethChild, vethChild, vethChild, vethChild, vethChild, vethChild, u.httpProxyPort, u.httpProxyPort, u.httpsProxyPort, u.httpsProxyPort, commandStr, commandStr, vethHost, vethHost, vethChild, vethHost)
+fi
+
+# Create network namespace with slirp4netns (rootlesskit approach)
+echo "[jail] Creating user namespace with slirp4netns networking..."
+
+# Start unshare with network namespace
+unshare --user --map-root-user --net --mount --pid --fork /bin/bash -c '
+
+echo "[jail] Inside user namespace, setting up slirp4netns..."
+
+# Start slirp4netns to provide user space networking
+# This creates a TAP interface and provides NAT networking without privileges
+slirp4netns --configure --mtu=1500 --disable-host-loopback $$ tap0 &
+SLIRP_PID=$!
+echo "[jail] slirp4netns started with PID: $SLIRP_PID"
+
+# Give slirp4netns time to set up the interface
+sleep 1
+
+# Configure the TAP interface
+echo "[jail] Configuring network interface..."
+ip link set tap0 up 2>/dev/null || echo "[jail] Warning: Could not bring up tap0"
+ip addr add 10.0.2.100/24 dev tap0 2>/dev/null || echo "[jail] Warning: Could not configure tap0 IP"
+ip route add default via 10.0.2.2 dev tap0 2>/dev/null || echo "[jail] Warning: Could not set default route"
+
+# Set up DNS resolution
+echo "[jail] Setting up DNS resolution..."
+echo "nameserver 10.0.2.3" > /etc/resolv.conf 2>/dev/null || echo "[jail] Warning: Could not set DNS"
+echo "nameserver 8.8.8.8" >> /etc/resolv.conf 2>/dev/null || true
+
+# Set up iptables for traffic interception (if available)
+echo "[jail] Setting up iptables traffic redirection..."
+
+# Redirect HTTP traffic to jail proxy
+if iptables -t nat -A OUTPUT -p tcp --dport 80 -j REDIRECT --to-ports %d 2>/dev/null; then
+  echo "[jail] HTTP traffic redirected to port %d"
+else
+  echo "[jail] Note: iptables redirect not available, using proxy environment fallback"
+  export HTTP_PROXY="http://127.0.0.1:%d"
+  export http_proxy="http://127.0.0.1:%d"
+fi
+
+# Redirect HTTPS traffic to jail proxy
+if iptables -t nat -A OUTPUT -p tcp --dport 443 -j REDIRECT --to-ports %d 2>/dev/null; then
+  echo "[jail] HTTPS traffic redirected to port %d"
+else
+  echo "[jail] Note: iptables redirect not available, using proxy environment fallback"
+  export HTTPS_PROXY="http://127.0.0.1:%d"
+  export https_proxy="http://127.0.0.1:%d"
+fi
+
+# Show network configuration
+echo "[jail] Network status:"
+ip addr show 2>/dev/null | grep -E "(inet|tap0|lo)" || echo "[jail] Could not show network status"
+echo "[jail] DNS configuration:"
+cat /etc/resolv.conf 2>/dev/null || echo "[jail] Could not show DNS config"
+
+echo "[jail] slirp4netns user space network ready, running: %s"
+
+# Execute the command
+exec %s
+
+'
+`, u.httpProxyPort, u.httpsProxyPort, u.httpProxyPort, u.httpsProxyPort, commandStr, u.httpProxyPort, u.httpProxyPort, u.httpProxyPort, u.httpProxyPort, u.httpsProxyPort, u.httpsProxyPort, u.httpsProxyPort, u.httpsProxyPort, commandStr, commandStr)
 }
 
 func (u *UserNamespaceLinux) Close() error {
