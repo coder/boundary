@@ -229,7 +229,7 @@ func TestGetConfigDir(t *testing.T) {
 				Gid:      1000,
 				HomeDir:  "/home/testuser",
 			},
-			expectedSuffix: ".config/jail",
+			expectedSuffix: ".config/coder_jail",
 		},
 		{
 			name: "root home directory",
@@ -248,7 +248,7 @@ func TestGetConfigDir(t *testing.T) {
 				Gid:      0,
 				HomeDir:  "/root",
 			},
-			expectedSuffix: ".config/jail",
+			expectedSuffix: ".config/coder_jail",
 		},
 		{
 			name: "empty home directory",
@@ -267,28 +267,23 @@ func TestGetConfigDir(t *testing.T) {
 				Gid:      1000,
 				HomeDir:  "", // Empty home directory
 			},
-			expectedSuffix: "/jail", // Should fall back to /etc/jail or similar
+			expectedSuffix: "/coder_jail", // Should fall back to /etc/coder_jail or similar
 		},
 		{
 			name: "XDG_CONFIG_HOME set",
 			setupEnv: func() func() {
-				original := os.Getenv("XDG_CONFIG_HOME")
-				os.Setenv("XDG_CONFIG_HOME", "/tmp/config")
+				os.Setenv("XDG_CONFIG_HOME", "/custom/config")
 				return func() {
-					if original != "" {
-						os.Setenv("XDG_CONFIG_HOME", original)
-					} else {
-						os.Unsetenv("XDG_CONFIG_HOME")
-					}
+					os.Unsetenv("XDG_CONFIG_HOME")
 				}
 			},
 			user: namespace.UserInfo{
-				Username: "testuser",
+				Username: "testuser", 
 				Uid:      1000,
 				Gid:      1000,
 				HomeDir:  "/home/testuser",
 			},
-			expectedSuffix: "jail", // XDG_CONFIG_HOME + jail
+			expectedSuffix: "coder_jail", // XDG_CONFIG_HOME + coder_jail
 		},
 	}
 
