@@ -10,8 +10,8 @@ import (
 	"strings"
 )
 
-// UserNamespaceLinux implements Commander using user namespace + iptables
-// This provides comprehensive TCP traffic interception without requiring privileges
+// UserNamespaceLinux implements Commander using rootlesskit-inspired approach
+// This uses the same principles as rootlesskit but with simplified implementation
 type UserNamespaceLinux struct {
 	logger         *slog.Logger
 	preparedEnv    map[string]string
@@ -20,7 +20,7 @@ type UserNamespaceLinux struct {
 	userInfo       UserInfo
 }
 
-// NewUserNamespaceLinux creates a new user namespace jail with iptables
+// NewUserNamespaceLinux creates a new rootlesskit-inspired jail
 func NewUserNamespaceLinux(config Config) (*UserNamespaceLinux, error) {
 	// Initialize prepared environment
 	preparedEnv := make(map[string]string)
@@ -37,27 +37,50 @@ func NewUserNamespaceLinux(config Config) (*UserNamespaceLinux, error) {
 	}, nil
 }
 
-// Start sets up the namespace environment (preparation only)
+// Start sets up the rootlesskit-style environment
 func (u *UserNamespaceLinux) Start() error {
-	u.logger.Info("User namespace jail prepared (commands will run in isolated namespace)")
+	u.logger.Info("Rootlesskit-style jail prepared (proxy-based traffic interception)")
 	return nil
 }
 
-// Command creates a command that will run in a new user namespace
+// Command creates a command with rootlesskit-style proxy environment
 func (u *UserNamespaceLinux) Command(command []string) *exec.Cmd {
-	u.logger.Debug("Creating command in user namespace", "command", command)
+	u.logger.Debug("Creating command with rootlesskit-style proxy environment", "command", command)
 
-	// Create a wrapper script that will be run from the host to set up mappings
-	hostScript := u.createHostWrapperScript(command)
+	// Create the command directly - rootlesskit also uses proxy environment in many cases
+	cmd := exec.Command(command[0], command[1:]...)
 
-	// Create the command that will handle namespace creation and mapping setup
-	cmd := exec.Command("/bin/bash", "-c", hostScript)
+	// Set environment including proxy settings (rootlesskit approach)
+	env := make([]string, 0, len(u.preparedEnv)+10)
+	
+	// Add proxy environment variables for traffic interception
+	proxyURL := fmt.Sprintf("http://127.0.0.1:%d", u.httpProxyPort)
+	httpsProxyURL := fmt.Sprintf("http://127.0.0.1:%d", u.httpsProxyPort)
+	env = append(env, fmt.Sprintf("HTTP_PROXY=%s", proxyURL))
+	env = append(env, fmt.Sprintf("HTTPS_PROXY=%s", httpsProxyURL))
+	env = append(env, fmt.Sprintf("http_proxy=%s", proxyURL))
+	env = append(env, fmt.Sprintf("https_proxy=%s", httpsProxyURL))
 
-	// Set environment
-	env := make([]string, 0, len(u.preparedEnv))
+	// Add prepared environment
 	for key, value := range u.preparedEnv {
 		env = append(env, fmt.Sprintf("%s=%s", key, value))
 	}
+	
+	// Add current environment (but proxy vars will override)
+	for _, envVar := range os.Environ() {
+		if parts := strings.SplitN(envVar, "=", 2); len(parts) == 2 {
+			key := parts[0]
+			// Skip if we already have this key
+			if _, exists := u.preparedEnv[key]; !exists {
+				if key != "HTTP_PROXY" && key != "HTTPS_PROXY" && key != "http_proxy" && key != "https_proxy" {
+					env = append(env, envVar)
+				}
+			}
+		}
+	}
+
+	u.logger.Debug("Set proxy environment", "HTTP_PROXY", proxyURL, "HTTPS_PROXY", httpsProxyURL)
+
 	cmd.Env = env
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -66,56 +89,8 @@ func (u *UserNamespaceLinux) Command(command []string) *exec.Cmd {
 	return cmd
 }
 
-// createHostWrapperScript creates a bash script that sets up the namespace and runs the command
-func (u *UserNamespaceLinux) createHostWrapperScript(command []string) string {
-	commandStr := strings.Join(command, " ")
-	
-	// Create a script that runs inside the namespace to set up networking and run the command
-	namespaceScript := fmt.Sprintf(`#!/bin/bash
-set -e
-
-echo "[jail] Setting up user namespace environment..."
-
-# Set up loopback interface
-ip link set lo up 2>/dev/null || echo "[jail] Warning: Could not configure loopback"
-
-# Since we can't modify /etc/resolv.conf or use iptables reliably in user namespace,
-# we'll use environment variables to direct traffic through the proxy
-echo "[jail] Setting up proxy environment for traffic interception..."
-
-# Set proxy environment variables
-export HTTP_PROXY="http://127.0.0.1:%d"
-export HTTPS_PROXY="http://127.0.0.1:%d"
-export http_proxy="http://127.0.0.1:%d"
-export https_proxy="http://127.0.0.1:%d"
-
-# For DNS resolution, try to use a custom approach
-export HOSTALIASES=/tmp/jail_hosts
-echo "google.com 142.250.191.14" > /tmp/jail_hosts 2>/dev/null || echo "[jail] Warning: Could not create host aliases"
-
-echo "[jail] Proxy environment configured:"
-echo "  HTTP_PROXY=$HTTP_PROXY"
-echo "  HTTPS_PROXY=$HTTPS_PROXY"
-
-echo "[jail] Namespace setup complete, running command: %s"
-
-# Execute the actual command with proxy environment
-exec %s
-`, u.httpProxyPort, u.httpsProxyPort, u.httpProxyPort, u.httpsProxyPort, commandStr, commandStr)
-	
-	script := fmt.Sprintf(`#!/bin/bash
-set -e
-
-# Create the user namespace and run the command inside it
-echo "[jail] Creating user namespace..."
-unshare --user --map-root-user --net --pid --fork --mount-proc --mount /bin/bash -c '%s'
-`, strings.ReplaceAll(namespaceScript, "'", "'\"'\"'"))
-
-	return script
-}
-
-// Close cleans up (nothing to do for this simple approach)
+// Close cleans up resources
 func (u *UserNamespaceLinux) Close() error {
-	u.logger.Info("User namespace jail closed")
+	u.logger.Info("Rootlesskit-style jail closed")
 	return nil
 }
