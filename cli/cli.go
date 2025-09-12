@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"os/signal"
 	"os/user"
 	"path/filepath"
@@ -42,7 +41,7 @@ user-defined rules.
 
 Modes:
   Default (privileged): Uses network namespaces + iptables (requires sudo)
-  Unprivileged: Uses user namespaces + iptables (no sudo required)
+  Unprivileged: Uses proxy environment variables (no sudo required)
 
 Examples:
   # Privileged mode (original behavior)
@@ -76,7 +75,7 @@ Examples:
 				Name:        "unprivileged",
 				Flag:        "unprivileged",
 				Env:         "JAIL_UNPRIVILEGED",
-				Description: "Use unprivileged mode (user namespace + iptables, no sudo required, Linux only).",
+				Description: "Use unprivileged mode (proxy environment variables, no sudo required, Linux only).",
 				Value:       serpent.BoolOf(&config.Unprivileged),
 			},
 		},
@@ -102,7 +101,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 		if err := validateUnprivilegedMode(logger); err != nil {
 			return fmt.Errorf("unprivileged mode validation failed: %v", err)
 		}
-		logger.Info("Using unprivileged mode (user namespace + iptables, no sudo required)")
+		logger.Info("Using unprivileged mode (proxy environment variables, no sudo required)")
 	} else {
 		logger.Info("Using privileged mode (network namespace + iptables, requires sudo)")
 	}
@@ -294,30 +293,6 @@ func validateUnprivilegedMode(logger *slog.Logger) error {
 		return fmt.Errorf("unprivileged mode only supports Linux, got: %s", runtime.GOOS)
 	}
 
-	// Check if slirp4netns is available (required for user space networking)
-	if _, err := exec.LookPath("slirp4netns"); err != nil {
-		return fmt.Errorf("slirp4netns not found: %v\n\nInstall slirp4netns for unprivileged mode:\n  Ubuntu/Debian: sudo apt-get install slirp4netns\n  RHEL/CentOS: sudo yum install slirp4netns\n  Arch: sudo pacman -S slirp4netns\n  From source: https://github.com/rootless-containers/slirp4netns", err)
-	}
-	logger.Debug("slirp4netns found", "path", getSlirp4netnsPath())
-
-	// Check if user namespaces are enabled
-	userNSFile := "/proc/sys/kernel/unprivileged_userns_clone"
-	if data, err := os.ReadFile(userNSFile); err == nil {
-		if len(data) > 0 && strings.TrimSpace(string(data)) != "1" {
-			return fmt.Errorf("user namespaces are disabled. Enable with: sudo sysctl -w kernel.unprivileged_userns_clone=1")
-		}
-	} else {
-		logger.Warn("Could not check user namespace support", "error", err)
-	}
-
 	logger.Debug("Unprivileged mode validation passed")
 	return nil
-}
-
-// getSlirp4netnsPath returns the path to slirp4netns for logging
-func getSlirp4netnsPath() string {
-	if path, err := exec.LookPath("slirp4netns"); err == nil {
-		return path
-	}
-	return "not found"
 }

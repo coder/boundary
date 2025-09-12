@@ -78,18 +78,14 @@ sudo jail --allow "github.com" -- curl https://github.com
 ```
 
 **Requirements for Unprivileged Mode:**
-- Linux with user namespace support (kernel 3.8+)
-- User namespaces enabled: `sudo sysctl -w kernel.unprivileged_userns_clone=1`
-- Standard tools: `nsenter`, `iptables`, `ip`, `sysctl`
-  ```bash
-  sudo apt-get install util-linux iptables iproute2 procps
-  ```
+- Linux (kernel 2.6+)
+- Applications that respect proxy environment variables (HTTP_PROXY, HTTPS_PROXY)
 
 **Benefits:**
 - ✅ **No sudo required** - Runs as regular user
-- ✅ **Same traffic coverage** - Intercepts ALL TCP traffic (ports 1-65535)
+- ✅ **No external dependencies** - Uses built-in proxy environment variables
 - ✅ **Container-friendly** - Works in restricted environments
-- ✅ **Identical functionality** - Same rule engine, proxy, and TLS features
+- ✅ **Same rule engine** - Identical allow/block logic as privileged mode
 
 ## Allow Rules
 
@@ -164,7 +160,7 @@ For more help: https://github.com/coder/jail
 | Platform | Implementation | Sudo Required |
 |----------|----------------|--------------|
 | Linux | Network namespaces + iptables | Yes |
-| **Linux (Unprivileged)** | **User namespaces + iptables** | **No** |
+| **Linux (Unprivileged)** | **Proxy environment variables** | **No** |
 | macOS | Process groups + PF rules | Yes |
 | Windows | Not supported | - |
 
@@ -183,28 +179,15 @@ sudo jail --unprivileged --allow "github.com" -- curl https://github.com
 jail --unprivileged --allow "github.com" -- curl https://github.com
 ```
 
-### "user namespaces are disabled"
+### Applications not respecting proxy settings
 ```bash
-Error: user namespaces are disabled. Enable with: sudo sysctl -w kernel.unprivileged_userns_clone=1
+# Some applications may ignore proxy environment variables
+# Check your application's documentation for proxy configuration
 ```
-**Solution**: Enable user namespaces:
+**Solution**: Use privileged mode for applications that don't respect proxy environment variables:
 ```bash
-sudo sysctl -w kernel.unprivileged_userns_clone=1
-# Make permanent:
-echo 'kernel.unprivileged_userns_clone = 1' | sudo tee -a /etc/sysctl.conf
-```
-
-### "required tool not found"
-```bash
-Error: required tool nsenter not found. Install with: sudo apt-get install util-linux iptables iproute2 procps
-```
-**Solution**: Install required tools:
-```bash
-# Ubuntu/Debian
-sudo apt-get install util-linux iptables iproute2 procps
-
-# RHEL/CentOS/Fedora
-sudo yum install util-linux iptables iproute procps-ng
+# For apps that ignore HTTP_PROXY/HTTPS_PROXY
+sudo jail --allow "github.com" -- your-app
 ```
 
 ## Installation
