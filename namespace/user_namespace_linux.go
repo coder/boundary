@@ -54,14 +54,17 @@ func NewUserNamespaceLinux(config Config) (*UserNamespaceLinux, error) {
 func (u *UserNamespaceLinux) Start() error {
 	u.logger.Info("Starting user namespace jail with iptables (no sudo required)")
 
-	// Create user + network + mount namespace
-	cmd := exec.Command("unshare",
-		"--user",        // User namespace (we become root inside)
-		"--net",         // Network namespace (isolated networking)
-		"--mount",       // Mount namespace (for /etc/resolv.conf)
-		"--map-root-user", // Map current user to root in namespace
-		"sleep", "infinity", // Keep namespace alive
-	)
+	// Create a long-running process in the new namespaces using SysProcAttr
+	cmd := exec.Command("sleep", "infinity")
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Cloneflags: syscall.CLONE_NEWUSER | syscall.CLONE_NEWNET | syscall.CLONE_NEWNS,
+		UidMappings: []syscall.SysProcIDMap{
+			{ContainerID: 0, HostID: os.Getuid(), Size: 1},
+		},
+		GidMappings: []syscall.SysProcIDMap{
+			{ContainerID: 0, HostID: os.Getgid(), Size: 1},
+		},
+	}
 
 	// Start the namespace process
 	err := cmd.Start()
