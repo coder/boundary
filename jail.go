@@ -133,7 +133,7 @@ func newNamespaceCommander(config namespace.Config, unprivileged bool) (namespac
 		return namespace.NewMacOS(config)
 	case "linux":
 		if unprivileged {
-			return namespace.NewSimpleUserNamespaceLinux(config)
+			return namespace.NewUserNamespaceLinux(config)
 		} else {
 			return namespace.NewLinux(config)
 		}
