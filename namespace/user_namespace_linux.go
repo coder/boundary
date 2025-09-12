@@ -79,19 +79,37 @@ echo "[jail] Setting up user namespace environment..."
 # Set up loopback interface
 ip link set lo up 2>/dev/null || echo "[jail] Warning: Could not configure loopback"
 
-# Set up iptables rules to redirect traffic to proxy
+# Set up DNS resolution
+echo "[jail] Setting up DNS..."
+echo 'nameserver 8.8.8.8' > /etc/resolv.conf 2>/dev/null || echo "[jail] Warning: Could not configure DNS"
+echo 'nameserver 1.1.1.1' >> /etc/resolv.conf 2>/dev/null || true
+
+# Set up iptables rules to redirect traffic to proxy (try different approaches)
 echo "[jail] Setting up traffic interception..."
-iptables -t nat -A OUTPUT -p tcp --dport 1:65535 ! -d 127.0.0.0/8 -j REDIRECT --to-ports %d 2>/dev/null || echo "[jail] Warning: Could not set up REDIRECT rules"
-iptables -t nat -A OUTPUT -p tcp --dport 1:65535 ! -d 127.0.0.0/8 -j DNAT --to-destination 127.0.0.1:%d 2>/dev/null || echo "[jail] Warning: Could not set up DNAT rules"
+
+# Flush existing rules first
+iptables -t nat -F OUTPUT 2>/dev/null || echo "[jail] Warning: Could not flush iptables OUTPUT"
+
+# Try REDIRECT first (simpler)
+iptables -t nat -A OUTPUT -p tcp --dport 80 -j REDIRECT --to-ports %d 2>/dev/null && echo "[jail] HTTP REDIRECT rule added" || echo "[jail] Warning: Could not set up HTTP REDIRECT"
+iptables -t nat -A OUTPUT -p tcp --dport 443 -j REDIRECT --to-ports %d 2>/dev/null && echo "[jail] HTTPS REDIRECT rule added" || echo "[jail] Warning: Could not set up HTTPS REDIRECT"
+
+# If REDIRECT doesn't work, try DNAT to localhost
+iptables -t nat -A OUTPUT -p tcp --dport 80 -j DNAT --to-destination 127.0.0.1:%d 2>/dev/null && echo "[jail] HTTP DNAT rule added" || echo "[jail] Warning: Could not set up HTTP DNAT"
+iptables -t nat -A OUTPUT -p tcp --dport 443 -j DNAT --to-destination 127.0.0.1:%d 2>/dev/null && echo "[jail] HTTPS DNAT rule added" || echo "[jail] Warning: Could not set up HTTPS DNAT"
 
 # Enable IP forwarding
 sysctl -w net.ipv4.ip_forward=1 2>/dev/null || echo "[jail] Warning: Could not enable IP forwarding"
+
+# Show current iptables rules for debugging
+echo "[jail] Current iptables NAT rules:"
+iptables -t nat -L OUTPUT -n --line-numbers 2>/dev/null || echo "[jail] Could not list iptables rules"
 
 echo "[jail] Namespace setup complete, running command: %s"
 
 # Execute the actual command
 exec %s
-`, u.httpsProxyPort, u.httpsProxyPort, commandStr, commandStr)
+`, u.httpProxyPort, u.httpsProxyPort, u.httpProxyPort, u.httpsProxyPort, commandStr, commandStr)
 	
 	script := fmt.Sprintf(`#!/bin/bash
 set -e
