@@ -54,12 +54,19 @@ func (u *UserNamespaceLinux) Command(command []string) *exec.Cmd {
 	env := make([]string, 0, len(u.preparedEnv)+10)
 	
 	// Add proxy environment variables for traffic interception
+	// Note: For jail's transparent proxy, we use HTTP_PROXY for both HTTP and HTTPS
+	// because jail handles TLS termination directly, not CONNECT tunneling
 	proxyURL := fmt.Sprintf("http://127.0.0.1:%d", u.httpProxyPort)
 	httpsProxyURL := fmt.Sprintf("http://127.0.0.1:%d", u.httpsProxyPort)
+	
+	// Set HTTP_PROXY for HTTP requests
 	env = append(env, fmt.Sprintf("HTTP_PROXY=%s", proxyURL))
-	env = append(env, fmt.Sprintf("HTTPS_PROXY=%s", httpsProxyURL))
+	// For HTTPS, we want curl to send requests to our HTTPS proxy port directly
+	// So we use ALL_PROXY to catch HTTPS requests
+	env = append(env, fmt.Sprintf("ALL_PROXY=%s", httpsProxyURL))
+	// Also set the lowercase versions
 	env = append(env, fmt.Sprintf("http_proxy=%s", proxyURL))
-	env = append(env, fmt.Sprintf("https_proxy=%s", httpsProxyURL))
+	env = append(env, fmt.Sprintf("all_proxy=%s", httpsProxyURL))
 
 	// Add prepared environment
 	for key, value := range u.preparedEnv {
@@ -72,14 +79,14 @@ func (u *UserNamespaceLinux) Command(command []string) *exec.Cmd {
 			key := parts[0]
 			// Skip if we already have this key
 			if _, exists := u.preparedEnv[key]; !exists {
-				if key != "HTTP_PROXY" && key != "HTTPS_PROXY" && key != "http_proxy" && key != "https_proxy" {
+				if key != "HTTP_PROXY" && key != "HTTPS_PROXY" && key != "http_proxy" && key != "https_proxy" && key != "ALL_PROXY" && key != "all_proxy" {
 					env = append(env, envVar)
 				}
 			}
 		}
 	}
 
-	u.logger.Debug("Set proxy environment", "HTTP_PROXY", proxyURL, "HTTPS_PROXY", httpsProxyURL)
+	u.logger.Debug("Set proxy environment", "HTTP_PROXY", proxyURL, "ALL_PROXY", httpsProxyURL)
 
 	cmd.Env = env
 	cmd.Stdin = os.Stdin
