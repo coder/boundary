@@ -95,6 +95,10 @@ func Run(ctx context.Context, config Config, args []string) error {
 
 	// Validate unprivileged mode if requested
 	if config.Unprivileged {
+		// Check if running as root
+		if os.Geteuid() == 0 {
+			return fmt.Errorf("unprivileged mode should not be run as root.\nFor unprivileged mode: run as regular user without sudo\nFor privileged mode: use sudo without --unprivileged flag")
+		}
 		if err := validateUnprivilegedMode(logger); err != nil {
 			return fmt.Errorf("unprivileged mode validation failed: %v", err)
 		}
@@ -187,30 +191,27 @@ func Run(ctx context.Context, config Config, args []string) error {
 	return nil
 }
 
+// getUserInfo returns information about the current user, handling sudo scenarios
 func getUserInfo() namespace.UserInfo {
-	// get the user info of the original user even if we are running under sudo
-	sudoUser := os.Getenv("SUDO_USER")
-
-	// If running under sudo, get original user information
-	if sudoUser != "" {
+	// Check if we're running under sudo
+	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
+		// We're running under sudo, get the original user's info
 		user, err := user.Lookup(sudoUser)
 		if err != nil {
-			// Fallback to current user if lookup fails
-			return getCurrentUserInfo()
+			return getCurrentUserInfo() // Fallback to current user
 		}
 
-		// Parse SUDO_UID and SUDO_GID
-		uid := 0
-		gid := 0
+		uid, _ := strconv.Atoi(os.Getenv("SUDO_UID"))
+		gid, _ := strconv.Atoi(os.Getenv("SUDO_GID"))
 
-		if sudoUID := os.Getenv("SUDO_UID"); sudoUID != "" {
-			if parsedUID, err := strconv.Atoi(sudoUID); err == nil {
+		// If we couldn't get UID/GID from env, parse from user info
+		if uid == 0 {
+			if parsedUID, err := strconv.Atoi(user.Uid); err == nil {
 				uid = parsedUID
 			}
 		}
-
-		if sudoGID := os.Getenv("SUDO_GID"); sudoGID != "" {
-			if parsedGID, err := strconv.Atoi(sudoGID); err == nil {
+		if gid == 0 {
+			if parsedGID, err := strconv.Atoi(user.Gid); err == nil {
 				gid = parsedGID
 			}
 		}
@@ -254,7 +255,6 @@ func setupLogging(logLevel string) *slog.Logger {
 	return slog.New(handler)
 }
 
-// getCurrentUserInfo gets information for the current user
 func getCurrentUserInfo() namespace.UserInfo {
 	currentUser, err := user.Current()
 	if err != nil {
@@ -266,6 +266,13 @@ func getCurrentUserInfo() namespace.UserInfo {
 	gid, _ := strconv.Atoi(currentUser.Gid)
 
 	configDir := getConfigDir(currentUser.HomeDir)
+
+	// Add debug logging to diagnose config directory issues
+	if currentUser.Uid == "0" {
+		fmt.Fprintf(os.Stderr, "WARNING: Running as root (UID 0). For unprivileged mode, run as regular user without sudo.\n")
+		fmt.Fprintf(os.Stderr, "User: %s, UID: %s, Home: %s, ConfigDir: %s\n", 
+			currentUser.Username, currentUser.Uid, currentUser.HomeDir, configDir)
+	}
 
 	return namespace.UserInfo{
 		Username:  currentUser.Username,
