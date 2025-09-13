@@ -7,44 +7,33 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	"strings"
-	"syscall"
 	"time"
 )
 
 // Linux implements jail.Commander using Linux network namespaces
 type Linux struct {
-	namespace      string
-	vethHost       string // Host-side veth interface name for iptables rules
-	logger         *slog.Logger
-	preparedEnv    map[string]string
-	procAttr       *syscall.SysProcAttr
-	httpProxyPort  int
-	httpsProxyPort int
-	user           string
-	homeDir        string
-	uid            int
-	gid            int
+	logger        *slog.Logger
+	namespace     string
+	vethHost      string // Host-side veth interface name for iptables rules
+	commandEnv    []string
+	httpProxyPort int
+	tlsConfigDir  string
+	caCertPath    string
+	userInfo      UserInfo
 }
 
-// NewLinux creates a new Linux network jail instance
 func NewLinux(config Config) (*Linux, error) {
-	// Initialize preparedEnv with config environment variables
-	preparedEnv := make(map[string]string)
-	for key, value := range config.Env {
-		preparedEnv[key] = value
-	}
-
 	return &Linux{
-		namespace:      newNamespaceName(),
-		logger:         config.Logger,
-		preparedEnv:    preparedEnv,
-		httpProxyPort:  config.HttpProxyPort,
-		httpsProxyPort: config.HttpsProxyPort,
+		logger:        config.Logger,
+		namespace:     newNamespaceName(),
+		httpProxyPort: config.HttpProxyPort,
+		tlsConfigDir:  config.TlsConfigDir,
+		caCertPath:    config.CACertPath,
+		userInfo:      config.UserInfo,
 	}, nil
 }
 
-// Setup creates network namespace and configures iptables rules
+// Start creates network namespace and configures iptables rules
 func (l *Linux) Start() error {
 	l.logger.Debug("Setup called")
 
@@ -75,30 +64,12 @@ func (l *Linux) Start() error {
 
 	// Prepare environment once during setup
 	l.logger.Debug("Preparing environment")
-
-	// Start with current environment
-	for _, envVar := range os.Environ() {
-		if parts := strings.SplitN(envVar, "=", 2); len(parts) == 2 {
-			// Only set if not already set by config
-			if _, exists := l.preparedEnv[parts[0]]; !exists {
-				l.preparedEnv[parts[0]] = parts[1]
-			}
-		}
-	}
-
-	// Set HOME to original user's home directory
-	l.preparedEnv["HOME"] = l.homeDir
-	// Set USER to original username
-	l.preparedEnv["USER"] = l.user
-	// Set LOGNAME to original username (some tools check this instead of USER)
-	l.preparedEnv["LOGNAME"] = l.user
-
-	l.procAttr = &syscall.SysProcAttr{
-		Credential: &syscall.Credential{
-			Uid: uint32(l.uid),
-			Gid: uint32(l.gid),
-		},
-	}
+	e := getEnvs(l.tlsConfigDir, l.caCertPath)
+	l.commandEnv = mergeEnvs(e, map[string]string{
+		"HOME":    l.userInfo.HomeDir,
+		"USER":    l.userInfo.Username,
+		"LOGNAME": l.userInfo.Username,
+	})
 
 	l.logger.Debug("Setup completed successfully")
 	return nil
@@ -116,23 +87,15 @@ func (l *Linux) Command(command []string) *exec.Cmd {
 
 	cmd := exec.Command("ip", cmdArgs[1:]...)
 
-	// Use prepared environment from Open method
-	env := make([]string, 0, len(l.preparedEnv))
-	for key, value := range l.preparedEnv {
-		env = append(env, fmt.Sprintf("%s=%s", key, value))
-	}
-	cmd.Env = env
+	cmd.Env = l.commandEnv
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	// Use prepared process attributes from Open method
-	cmd.SysProcAttr = l.procAttr
-
 	return cmd
 }
 
-// Cleanup removes the network namespace and iptables rules
+// Close removes the network namespace and iptables rules
 func (l *Linux) Close() error {
 	// Remove iptables rules
 	err := l.removeIptables()
@@ -246,23 +209,22 @@ func (l *Linux) setupIptables() error {
 		return fmt.Errorf("failed to add NAT rule: %v", err)
 	}
 
-	// COMPREHENSIVE APPROACH: Intercept ALL TCP traffic from namespace
-	// Use PREROUTING on host to catch traffic after it exits namespace but before routing
-	// This ensures NO TCP traffic can bypass the proxy
-	cmd = exec.Command("iptables", "-t", "nat", "-A", "PREROUTING", "-i", l.vethHost, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.httpsProxyPort))
+	// COMPREHENSIVE APPROACH: Route ALL TCP traffic to HTTP proxy
+	// The HTTP proxy will intelligently handle both HTTP and TLS traffic
+	cmd = exec.Command("iptables", "-t", "nat", "-A", "PREROUTING", "-i", l.vethHost, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.httpProxyPort))
 	err = cmd.Run()
 	if err != nil {
 		return fmt.Errorf("failed to add comprehensive TCP redirect rule: %v", err)
 	}
 
-	l.logger.Debug("Comprehensive TCP jailing enabled", "interface", l.vethHost, "proxy_port", l.httpsProxyPort)
+	l.logger.Debug("Comprehensive TCP jailing enabled", "interface", l.vethHost, "proxy_port", l.httpProxyPort)
 	return nil
 }
 
 // removeIptables removes iptables rules
 func (l *Linux) removeIptables() error {
 	// Remove comprehensive TCP redirect rule
-	cmd := exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-i", l.vethHost, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.httpsProxyPort))
+	cmd := exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-i", l.vethHost, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.httpProxyPort))
 	cmd.Run() // Ignore errors during cleanup
 
 	// Remove NAT rule

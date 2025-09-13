@@ -16,10 +16,12 @@ import (
 )
 
 type Config struct {
-	RuleEngine  rules.Evaluator
-	Auditor     audit.Auditor
-	CertManager tls.Manager
-	Logger      *slog.Logger
+	RuleEngine   rules.Evaluator
+	Auditor      audit.Auditor
+	CertManager  tls.Manager
+	Logger       *slog.Logger
+	UserInfo     namespace.UserInfo
+	Unprivileged bool
 }
 
 type Jail struct {
@@ -40,31 +42,22 @@ func New(ctx context.Context, config Config) (*Jail, error) {
 	// Create proxy server
 	proxyServer := proxy.NewProxyServer(proxy.Config{
 		HTTPPort:   8080,
-		HTTPSPort:  8443,
-		Auditor:    config.Auditor,
 		RuleEngine: config.RuleEngine,
+		Auditor:    config.Auditor,
 		Logger:     config.Logger,
 		TLSConfig:  tlsConfig,
 	})
 
-	// Create commander
+	// Create namespace
 	commander, err := newNamespaceCommander(namespace.Config{
-		Logger:         config.Logger,
-		HttpProxyPort:  8080,
-		HttpsProxyPort: 8443,
-		Env: map[string]string{
-			// Set standard CA certificate environment variables for common tools
-			// This makes tools like curl, git, etc. trust our dynamically generated CA
-			"SSL_CERT_FILE":       caCertPath, // OpenSSL/LibreSSL-based tools
-			"SSL_CERT_DIR":        configDir,  // OpenSSL certificate directory
-			"CURL_CA_BUNDLE":      caCertPath, // curl
-			"GIT_SSL_CAINFO":      caCertPath, // Git
-			"REQUESTS_CA_BUNDLE":  caCertPath, // Python requests
-			"NODE_EXTRA_CA_CERTS": caCertPath, // Node.js
-		},
-	})
+		Logger:        config.Logger,
+		HttpProxyPort: 8080,
+		TlsConfigDir:  configDir,
+		CACertPath:    caCertPath,
+		UserInfo:      config.UserInfo,
+	}, config.Unprivileged)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create commander: %v", err)
+		return nil, fmt.Errorf("failed to create namespace commander: %v", err)
 	}
 
 	// Create cancellable context for jail
@@ -118,7 +111,11 @@ func (j *Jail) Close() error {
 }
 
 // newNamespaceCommander creates a new namespace instance for the current platform
-func newNamespaceCommander(config namespace.Config) (namespace.Commander, error) {
+func newNamespaceCommander(config namespace.Config, unprivledged bool) (namespace.Commander, error) {
+	if unprivledged {
+		return namespace.NewUnprivileged(config)
+	}
+
 	switch runtime.GOOS {
 	case "darwin":
 		return namespace.NewMacOS(config)

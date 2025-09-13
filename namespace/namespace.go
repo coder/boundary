@@ -12,11 +12,11 @@ type Commander interface {
 }
 
 type Config struct {
-	Logger         *slog.Logger
-	HttpProxyPort  int
-	HttpsProxyPort int
-	Env            map[string]string
-	UserInfo       UserInfo
+	Logger        *slog.Logger
+	HttpProxyPort int
+	TlsConfigDir  string
+	CACertPath    string
+	UserInfo      UserInfo
 }
 
 type UserInfo struct {

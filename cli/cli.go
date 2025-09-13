@@ -24,6 +24,7 @@ import (
 type Config struct {
 	AllowStrings []string
 	LogLevel     string
+	Unprivileged bool
 }
 
 // NewCommand creates and returns the root serpent command
@@ -31,7 +32,7 @@ func NewCommand() *serpent.Command {
 	// To make the top level jail command, we just make some minor changes to the base command
 	cmd := BaseCommand()
 	cmd.Use = "jail [flags] -- command [args...]" // Add the flags and args pieces to usage.
-	
+
 	// Add example usage to the long description. This is different from usage as a subcommand because it
 	// may be called something different when used as a subcommand / there will be a leading binary (i.e. `coder jail` vs. `jail`).
 	cmd.Long += `Examples:
@@ -43,7 +44,7 @@ func NewCommand() *serpent.Command {
 
   # Block everything by default (implicit)`
 
-  return cmd
+	return cmd
 }
 
 // Base command returns the jail serpent command without the information involved in making it the
@@ -73,6 +74,13 @@ user-defined rules.`,
 				Description: "Set log level (error, warn, info, debug).",
 				Default:     "warn",
 				Value:       serpent.StringOf(&config.LogLevel),
+			},
+			{
+				Name:        "unprivileged",
+				Flag:        "unprivileged",
+				Env:         "JAIL_UNPRIVILEGED",
+				Description: "Use unprivileged mode (proxy environment variables).",
+				Value:       serpent.BoolOf(&config.Unprivileged),
 			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
@@ -123,10 +131,12 @@ func Run(ctx context.Context, config Config, args []string) error {
 
 	// Create jail instance
 	jailInstance, err := jail.New(ctx, jail.Config{
-		RuleEngine:  ruleEngine,
-		Auditor:     auditor,
-		CertManager: certManager,
-		Logger:      logger,
+		RuleEngine:   ruleEngine,
+		Auditor:      auditor,
+		CertManager:  certManager,
+		Logger:       logger,
+		UserInfo:     userInfo,
+		Unprivileged: config.Unprivileged,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create jail instance: %v", err)
@@ -171,30 +181,29 @@ func Run(ctx context.Context, config Config, args []string) error {
 	return nil
 }
 
+// getUserInfo returns information about the current user, handling sudo scenarios
 func getUserInfo() namespace.UserInfo {
-	// get the user info of the original user even if we are running under sudo
-	sudoUser := os.Getenv("SUDO_USER")
-
-	// If running under sudo, get original user information
-	if sudoUser != "" {
+	// Only consider SUDO_USER if we're actually running with elevated privileges
+	// In environments like Coder workspaces, SUDO_USER may be set to 'root'
+	// but we're not actually running under sudo
+	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" && os.Geteuid() == 0 && sudoUser != "root" {
+		// We're actually running under sudo with a non-root original user
 		user, err := user.Lookup(sudoUser)
 		if err != nil {
-			// Fallback to current user if lookup fails
-			return getCurrentUserInfo()
+			return getCurrentUserInfo() // Fallback to current user
 		}
 
-		// Parse SUDO_UID and SUDO_GID
-		uid := 0
-		gid := 0
+		uid, _ := strconv.Atoi(os.Getenv("SUDO_UID"))
+		gid, _ := strconv.Atoi(os.Getenv("SUDO_GID"))
 
-		if sudoUID := os.Getenv("SUDO_UID"); sudoUID != "" {
-			if parsedUID, err := strconv.Atoi(sudoUID); err == nil {
+		// If we couldn't get UID/GID from env, parse from user info
+		if uid == 0 {
+			if parsedUID, err := strconv.Atoi(user.Uid); err == nil {
 				uid = parsedUID
 			}
 		}
-
-		if sudoGID := os.Getenv("SUDO_GID"); sudoGID != "" {
-			if parsedGID, err := strconv.Atoi(sudoGID); err == nil {
+		if gid == 0 {
+			if parsedGID, err := strconv.Atoi(user.Gid); err == nil {
 				gid = parsedGID
 			}
 		}
@@ -210,7 +219,7 @@ func getUserInfo() namespace.UserInfo {
 		}
 	}
 
-	// Not running under sudo, use current user
+	// Not actually running under sudo, use current user
 	return getCurrentUserInfo()
 }
 

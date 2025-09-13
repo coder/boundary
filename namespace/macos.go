@@ -19,15 +19,16 @@ const (
 
 // MacOSNetJail implements network jail using macOS PF (Packet Filter) and group-based isolation
 type MacOSNetJail struct {
-	restrictedGid  int
-	pfRulesPath    string
-	mainRulesPath  string
-	logger         *slog.Logger
-	preparedEnv    map[string]string
-	procAttr       *syscall.SysProcAttr
-	httpProxyPort  int
-	httpsProxyPort int
-	userInfo       UserInfo
+	restrictedGid int
+	pfRulesPath   string
+	mainRulesPath string
+	logger        *slog.Logger
+	commandEnv    []string
+	procAttr      *syscall.SysProcAttr
+	httpProxyPort int
+	tlsConfigDir  string
+	caCertPath    string
+	userInfo      UserInfo
 }
 
 // NewMacOS creates a new macOS network jail instance
@@ -36,20 +37,14 @@ func NewMacOS(config Config) (*MacOSNetJail, error) {
 	pfRulesPath := fmt.Sprintf("/tmp/%s.pf", ns)
 	mainRulesPath := fmt.Sprintf("/tmp/%s_main.pf", ns)
 
-	// Initialize preparedEnv with config environment variables
-	preparedEnv := make(map[string]string)
-	for key, value := range config.Env {
-		preparedEnv[key] = value
-	}
-
 	return &MacOSNetJail{
-		pfRulesPath:    pfRulesPath,
-		mainRulesPath:  mainRulesPath,
-		logger:         config.Logger,
-		preparedEnv:    preparedEnv,
-		httpProxyPort:  config.HttpProxyPort,
-		httpsProxyPort: config.HttpsProxyPort,
-		userInfo:       config.UserInfo,
+		pfRulesPath:   pfRulesPath,
+		mainRulesPath: mainRulesPath,
+		logger:        config.Logger,
+		httpProxyPort: config.HttpProxyPort,
+		tlsConfigDir:  config.TlsConfigDir,
+		caCertPath:    config.CACertPath,
+		userInfo:      config.UserInfo,
 	}, nil
 }
 
@@ -74,22 +69,12 @@ func (m *MacOSNetJail) Start() error {
 	// Prepare environment once during setup
 	m.logger.Debug("Preparing environment")
 
-	// Start with current environment
-	for _, envVar := range os.Environ() {
-		if parts := strings.SplitN(envVar, "=", 2); len(parts) == 2 {
-			// Only set if not already set by config
-			if _, exists := m.preparedEnv[parts[0]]; !exists {
-				m.preparedEnv[parts[0]] = parts[1]
-			}
-		}
-	}
-
-	// Set HOME to original user's home directory
-	m.preparedEnv["HOME"] = m.userInfo.HomeDir
-	// Set USER to original username
-	m.preparedEnv["USER"] = m.userInfo.Username
-	// Set LOGNAME to original username (some tools check this instead of USER)
-	m.preparedEnv["LOGNAME"] = m.userInfo.Username
+	e := getEnvs(m.tlsConfigDir, m.caCertPath)
+	m.commandEnv = mergeEnvs(e, map[string]string{
+		"HOME":    m.userInfo.HomeDir,
+		"USER":    m.userInfo.Username,
+		"LOGNAME": m.userInfo.Username,
+	})
 
 	// Prepare process credentials once during setup
 	m.logger.Debug("Preparing process credentials")
@@ -117,12 +102,7 @@ func (m *MacOSNetJail) Command(command []string) *exec.Cmd {
 	cmd := exec.Command(command[0], command[1:]...)
 	m.logger.Debug("Full command args", "args", command)
 
-	// Use prepared environment from Open method
-	env := make([]string, 0, len(m.preparedEnv))
-	for key, value := range m.preparedEnv {
-		env = append(env, fmt.Sprintf("%s=%s", key, value))
-	}
-	cmd.Env = env
+	cmd.Env = m.commandEnv
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
@@ -240,8 +220,8 @@ func (m *MacOSNetJail) createPFRules() (string, error) {
 # COMPREHENSIVE APPROACH: Intercept ALL TCP traffic from the jailed group
 # This ensures NO TCP traffic can bypass the proxy by using alternative ports
 
-# First, redirect ALL TCP traffic arriving on lo0 to our HTTPS proxy port
-# The HTTPS proxy can handle both HTTP and HTTPS traffic
+# First, redirect ALL TCP traffic arriving on lo0 to our HTTP proxy with TLS termination
+# The HTTP proxy with TLS termination can handle both HTTP and HTTPS traffic
 rdr pass on lo0 inet proto tcp from any to any -> 127.0.0.1 port %d
 
 # Route ALL TCP traffic from boundary group to lo0 where it will be redirected
@@ -255,13 +235,13 @@ pass on lo0 all
 `,
 		m.restrictedGid,
 		iface,
-		m.httpsProxyPort, // Use HTTPS proxy port for all TCP traffic
+		m.httpProxyPort, // Use HTTP proxy with TLS termination for all TCP traffic
 		m.restrictedGid,
 		iface,
 		m.restrictedGid,
 	)
 
-	m.logger.Debug("Comprehensive TCP jailing enabled for macOS", "group_id", m.restrictedGid, "proxy_port", m.httpsProxyPort)
+	m.logger.Debug("Comprehensive TCP jailing enabled for macOS", "group_id", m.restrictedGid, "proxy_port", m.httpProxyPort)
 	return rules, nil
 }
 
@@ -283,6 +263,7 @@ func (m *MacOSNetJail) setupPFRules() error {
 	cmd := exec.Command("pfctl", "-a", pfAnchorName, "-f", m.pfRulesPath)
 	err = cmd.Run()
 	if err != nil {
+		m.logger.Error("Failed to load PF rules", "error", err, "rules_file", m.pfRulesPath)
 		return fmt.Errorf("failed to load PF rules: %v", err)
 	}
 
