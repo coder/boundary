@@ -1,6 +1,6 @@
 # Releases
 
-This document describes how jail binaries are built and released.
+This document describes how boundary binaries are built and released.
 
 ## Automated Releases
 
@@ -24,33 +24,12 @@ This triggers the **Release** workflow which:
 
 | Platform | Architecture | Binary Name | Archive |
 |----------|--------------|-------------|----------|
-| Linux | x64 | `jail-linux-amd64` | `.tar.gz` |
-| Linux | ARM64 | `jail-linux-arm64` | `.tar.gz` |
-| macOS | Intel | `jail-darwin-amd64` | `.tar.gz` |
-| macOS | Apple Silicon | `jail-darwin-arm64` | `.tar.gz` |
+| Linux | x64 | `boundary-linux-amd64` | `.tar.gz` |
+| Linux | ARM64 | `boundary-linux-arm64` | `.tar.gz` |
+| macOS | Intel | `boundary-darwin-amd64` | `.tar.gz` |
+| macOS | Apple Silicon | `boundary-darwin-arm64` | `.tar.gz` |
 
-## Release Process
-
-### For Maintainers
-
-1. **Prepare Release**:
-   - Ensure all changes are merged to `main`
-   - Update version in relevant files if needed
-   - Test the build locally
-
-2. **Create Release**:
-   ```bash
-   # Create and push version tag
-   git tag v1.2.3
-   git push origin v1.2.3
-   ```
-
-3. **Verify Release**:
-   - Check GitHub Actions completed successfully
-   - Verify release appears in GitHub Releases
-   - Test download and installation of binaries
-
-### Version Naming
+## Version Naming
 
 - **Stable releases**: `v1.0.0`, `v1.2.3`
 - **Pre-releases**: `v1.0.0-beta.1`, `v1.0.0-rc.1`
@@ -60,24 +39,70 @@ Pre-releases (containing `-`) are automatically marked as "pre-release" on GitHu
 
 ## Installation
 
-### From GitHub Releases
+### Quick Install (Recommended)
 
-1. Go to [Releases](https://github.com/coder/jail/releases)
+**Basic Installation**
+```bash
+# Install latest version
+curl -fsSL https://raw.githubusercontent.com/coder/boundary/main/install.sh | bash
+```
+
+**Custom Installation Options**
+```bash
+# Install specific version
+curl -fsSL https://raw.githubusercontent.com/coder/boundary/main/install.sh | bash -s -- --version 1.0.0
+
+# Install to custom directory
+curl -fsSL https://raw.githubusercontent.com/coder/boundary/main/install.sh | bash -s -- --install-dir ~/.local/bin
+
+# Download and run locally
+wget https://raw.githubusercontent.com/coder/boundary/main/install.sh
+chmod +x install.sh
+./install.sh --help
+```
+
+### Manual Installation
+
+#### From GitHub Releases
+
+1. Go to [Releases](https://github.com/coder/boundary/releases)
 2. Download the appropriate binary for your platform
 3. Extract the archive
-4. Make executable (Unix): `chmod +x jail`
-5. Move to PATH: `sudo mv jail /usr/local/bin/`
+4. Make executable (Unix): `chmod +x boundary`
+5. Move to PATH: `sudo mv boundary /usr/local/bin/`
+
+#### Platform-Specific Commands
+
+**Linux (x86_64)**
+```bash
+curl -fsSL https://github.com/coder/boundary/releases/latest/download/boundary-linux-amd64.tar.gz | tar -xz
+sudo mv boundary-linux-amd64 /usr/local/bin/boundary
+boundary --help
+```
+
+**Linux (ARM64)**
+```bash
+curl -fsSL https://github.com/coder/boundary/releases/latest/download/boundary-linux-arm64.tar.gz | tar -xz
+sudo mv boundary-linux-arm64 /usr/local/bin/boundary
+boundary --help
+```
+
+**macOS (Intel)**
+```bash
+curl -fsSL https://github.com/coder/boundary/releases/latest/download/boundary-darwin-amd64.tar.gz | tar -xz
+sudo mv boundary-darwin-amd64 /usr/local/bin/boundary
+boundary --help
+```
+
+**macOS (Apple Silicon)**
+```bash
+curl -fsSL https://github.com/coder/boundary/releases/latest/download/boundary-darwin-arm64.tar.gz | tar -xz
+sudo mv boundary-darwin-arm64 /usr/local/bin/boundary
+boundary --help
+```
 
 ### Verify Installation
 
 ```bash
-jail --help
+boundary --help
 ```
-
-## Troubleshooting
-
-### Release Issues
-
-- **Tag not triggering release**: Ensure tag follows `v*` pattern
-- **Build failures**: Check GitHub Actions logs
-- **Missing binaries**: Verify all matrix builds completed successfully

@@ -15,8 +15,6 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
-
-	"github.com/coder/jail/namespace"
 )
 
 type Manager interface {
@@ -26,7 +24,8 @@ type Manager interface {
 type Config struct {
 	Logger    *slog.Logger
 	ConfigDir string
-	UserInfo  namespace.UserInfo
+	Uid       int
+	Gid       int
 }
 
 // CertificateManager manages TLS certificates for the proxy
@@ -37,7 +36,8 @@ type CertificateManager struct {
 	mutex     sync.RWMutex
 	logger    *slog.Logger
 	configDir string
-	userInfo  namespace.UserInfo
+	uid       int
+	gid       int
 }
 
 // NewCertificateManager creates a new certificate manager
@@ -46,7 +46,8 @@ func NewCertificateManager(config Config) (*CertificateManager, error) {
 		certCache: make(map[string]*tls.Certificate),
 		logger:    config.Logger,
 		configDir: config.ConfigDir,
-		userInfo:  config.UserInfo,
+		uid:       config.Uid,
+		gid:       config.Gid,
 	}
 
 	// Load or generate CA certificate
@@ -180,7 +181,7 @@ func (cm *CertificateManager) generateCA(keyPath, certPath string) error {
 	}
 
 	// ensure the directory is owned by the original user
-	err = os.Chown(cm.configDir, cm.userInfo.Uid, cm.userInfo.Gid)
+	err = os.Chown(cm.configDir, cm.uid, cm.gid)
 	if err != nil {
 		cm.logger.Warn("Failed to change config directory ownership", "error", err)
 	}

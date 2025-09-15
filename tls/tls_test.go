@@ -1,4 +1,4 @@
-package rules
+package tls
 
 import "testing"
 

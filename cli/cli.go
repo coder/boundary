@@ -12,11 +12,11 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/coder/jail"
-	"github.com/coder/jail/audit"
-	"github.com/coder/jail/namespace"
-	"github.com/coder/jail/rules"
-	"github.com/coder/jail/tls"
+	"github.com/coder/boundary"
+	"github.com/coder/boundary/audit"
+	"github.com/coder/boundary/jail"
+	"github.com/coder/boundary/rules"
+	"github.com/coder/boundary/tls"
 	"github.com/coder/serpent"
 )
 
@@ -24,69 +24,73 @@ import (
 type Config struct {
 	AllowStrings []string
 	LogLevel     string
+	Unprivileged bool
 }
 
 // NewCommand creates and returns the root serpent command
 func NewCommand() *serpent.Command {
-	// To make the top level jail command, we just make some minor changes to the base command
+	// To make the top level boundary command, we just make some minor changes to the base command
 	cmd := BaseCommand()
-	cmd.Use = "jail [flags] -- command [args...]" // Add the flags and args pieces to usage.
-	
+	cmd.Use = "boundary [flags] -- command [args...]" // Add the flags and args pieces to usage.
+
 	// Add example usage to the long description. This is different from usage as a subcommand because it
-	// may be called something different when used as a subcommand / there will be a leading binary (i.e. `coder jail` vs. `jail`).
+	// may be called something different when used as a subcommand / there will be a leading binary (i.e. `coder boundary` vs. `boundary`).
 	cmd.Long += `Examples:
   # Allow only requests to github.com
-  jail --allow "github.com" -- curl https://github.com
+  boundary --allow "github.com" -- curl https://github.com
 
   # Monitor all requests to specific domains (allow only those)
-  jail --allow "github.com/api/issues/*" --allow "GET,HEAD github.com" -- npm install
+  boundary --allow "github.com/api/issues/*" --allow "GET,HEAD github.com" -- npm install
 
   # Block everything by default (implicit)`
 
-  return cmd
+	return cmd
 }
 
-// Base command returns the jail serpent command without the information involved in making it the
+// Base command returns the boundary serpent command without the information involved in making it the
 // *top level* serpent command. We are creating this split to make it easier to integrate into the coder
-// cli without introducing sources of drift.
+// CLI if needed.
 func BaseCommand() *serpent.Command {
-	var config Config
+	config := Config{}
 
 	return &serpent.Command{
-		Use:   "jail -- command",
-		Short: "Monitor and restrict HTTP/HTTPS requests from processes",
-		Long: `creates an isolated network environment for the target process,
-intercepting all HTTP/HTTPS traffic through a transparent proxy that enforces
-user-defined rules.`,
-		Options: serpent.OptionSet{
-			{
-				Name:        "allow",
+		Use:   "boundary",
+		Short: "Network isolation tool for monitoring and restricting HTTP/HTTPS requests",
+		Long:  `boundary creates an isolated network environment for target processes, intercepting HTTP/HTTPS traffic through a transparent proxy that enforces user-defined allow rules.`,
+		Options: []serpent.Option{
+			serpent.Option{
 				Flag:        "allow",
-				Env:         "JAIL_ALLOW",
-				Description: "Allow rule (can be specified multiple times). Format: 'pattern' or 'METHOD[,METHOD] pattern'.",
+				Env:         "BOUNDARY_ALLOW",
+				Description: "Allow rule (repeatable). Format: \"pattern\" or \"METHOD[,METHOD] pattern\".",
 				Value:       serpent.StringArrayOf(&config.AllowStrings),
 			},
-			{
-				Name:        "log-level",
+			serpent.Option{
 				Flag:        "log-level",
-				Env:         "JAIL_LOG_LEVEL",
+				Env:         "BOUNDARY_LOG_LEVEL",
 				Description: "Set log level (error, warn, info, debug).",
 				Default:     "warn",
 				Value:       serpent.StringOf(&config.LogLevel),
 			},
+			serpent.Option{
+				Flag:        "unprivileged",
+				Env:         "BOUNDARY_UNPRIVILEGED",
+				Description: "Run in unprivileged mode (no network isolation, uses proxy environment variables).",
+				Value:       serpent.BoolOf(&config.Unprivileged),
+			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
-			return Run(inv.Context(), config, inv.Args)
+			args := inv.Args
+			return Run(inv.Context(), config, args)
 		},
 	}
 }
 
-// Run executes the jail command with the given configuration and arguments
+// Run executes the boundary command with the given configuration and arguments
 func Run(ctx context.Context, config Config, args []string) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	logger := setupLogging(config.LogLevel)
-	userInfo := getUserInfo()
+	username, uid, gid, homeDir, configDir := getUserInfo()
 
 	// Get command arguments
 	if len(args) == 0 {
@@ -109,50 +113,74 @@ func Run(ctx context.Context, config Config, args []string) error {
 	ruleEngine := rules.NewRuleEngine(allowRules, logger)
 
 	// Create auditor
-	auditor := audit.NewLoggingAuditor(logger)
+	auditor := audit.NewLogAuditor(logger)
 
-	// Create certificate manager
+	// Create TLS certificate manager
 	certManager, err := tls.NewCertificateManager(tls.Config{
 		Logger:    logger,
-		ConfigDir: userInfo.ConfigDir,
+		ConfigDir: configDir,
+		Uid:       uid,
+		Gid:       gid,
 	})
 	if err != nil {
 		logger.Error("Failed to create certificate manager", "error", err)
 		return fmt.Errorf("failed to create certificate manager: %v", err)
 	}
 
-	// Create jail instance
-	jailInstance, err := jail.New(ctx, jail.Config{
-		RuleEngine:  ruleEngine,
-		Auditor:     auditor,
-		CertManager: certManager,
-		Logger:      logger,
+	// Setup TLS to get cert path for jailer
+	tlsConfig, caCertPath, configDir, err := certManager.SetupTLSAndWriteCACert()
+	if err != nil {
+		return fmt.Errorf("failed to setup TLS and CA certificate: %v", err)
+	}
+
+	// Create jailer with cert path from TLS setup
+	jailer, err := createJailer(jail.Config{
+		Logger:        logger,
+		HttpProxyPort: 8080,
+		Username:      username,
+		Uid:           uid,
+		Gid:           gid,
+		HomeDir:       homeDir,
+		ConfigDir:     configDir,
+		CACertPath:    caCertPath,
+	}, config.Unprivileged)
+	if err != nil {
+		return fmt.Errorf("failed to create jailer: %v", err)
+	}
+
+	// Create boundary instance
+	boundaryInstance, err := boundary.New(ctx, boundary.Config{
+		RuleEngine: ruleEngine,
+		Auditor:    auditor,
+		TLSConfig:  tlsConfig,
+		Logger:     logger,
+		Jailer:     jailer,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create jail instance: %v", err)
+		return fmt.Errorf("failed to create boundary instance: %v", err)
 	}
 
 	// Setup signal handling BEFORE any setup
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Open jail (starts network namespace and proxy server)
-	err = jailInstance.Start()
+	// Open boundary (starts network namespace and proxy server)
+	err = boundaryInstance.Start()
 	if err != nil {
-		return fmt.Errorf("failed to open jail: %v", err)
+		return fmt.Errorf("failed to open boundary: %v", err)
 	}
 	defer func() {
-		logger.Info("Closing jail...")
-		err := jailInstance.Close()
+		logger.Info("Closing boundary...")
+		err := boundaryInstance.Close()
 		if err != nil {
-			logger.Error("Failed to close jail", "error", err)
+			logger.Error("Failed to close boundary", "error", err)
 		}
 	}()
 
-	// Execute command in jail
+	// Execute command in boundary
 	go func() {
 		defer cancel()
-		err := jailInstance.Command(args).Run()
+		err := boundaryInstance.Command(args).Run()
 		if err != nil {
 			logger.Error("Command execution failed", "error", err)
 		}
@@ -171,46 +199,39 @@ func Run(ctx context.Context, config Config, args []string) error {
 	return nil
 }
 
-func getUserInfo() namespace.UserInfo {
-	// get the user info of the original user even if we are running under sudo
-	sudoUser := os.Getenv("SUDO_USER")
-
-	// If running under sudo, get original user information
-	if sudoUser != "" {
+// getUserInfo returns information about the current user, handling sudo scenarios
+func getUserInfo() (string, int, int, string, string) {
+	// Only consider SUDO_USER if we're actually running with elevated privileges
+	// In environments like Coder workspaces, SUDO_USER may be set to 'root'
+	// but we're not actually running under sudo
+	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" && os.Geteuid() == 0 && sudoUser != "root" {
+		// We're actually running under sudo with a non-root original user
 		user, err := user.Lookup(sudoUser)
 		if err != nil {
-			// Fallback to current user if lookup fails
-			return getCurrentUserInfo()
+			return getCurrentUserInfo() // Fallback to current user
 		}
 
-		// Parse SUDO_UID and SUDO_GID
-		uid := 0
-		gid := 0
+		uid, _ := strconv.Atoi(os.Getenv("SUDO_UID"))
+		gid, _ := strconv.Atoi(os.Getenv("SUDO_GID"))
 
-		if sudoUID := os.Getenv("SUDO_UID"); sudoUID != "" {
-			if parsedUID, err := strconv.Atoi(sudoUID); err == nil {
+		// If we couldn't get UID/GID from env, parse from user info
+		if uid == 0 {
+			if parsedUID, err := strconv.Atoi(user.Uid); err == nil {
 				uid = parsedUID
 			}
 		}
-
-		if sudoGID := os.Getenv("SUDO_GID"); sudoGID != "" {
-			if parsedGID, err := strconv.Atoi(sudoGID); err == nil {
+		if gid == 0 {
+			if parsedGID, err := strconv.Atoi(user.Gid); err == nil {
 				gid = parsedGID
 			}
 		}
 
 		configDir := getConfigDir(user.HomeDir)
 
-		return namespace.UserInfo{
-			Username:  sudoUser,
-			Uid:       uid,
-			Gid:       gid,
-			HomeDir:   user.HomeDir,
-			ConfigDir: configDir,
-		}
+		return sudoUser, uid, gid, user.HomeDir, configDir
 	}
 
-	// Not running under sudo, use current user
+	// Not actually running under sudo, use current user
 	return getCurrentUserInfo()
 }
 
@@ -239,11 +260,11 @@ func setupLogging(logLevel string) *slog.Logger {
 }
 
 // getCurrentUserInfo gets information for the current user
-func getCurrentUserInfo() namespace.UserInfo {
+func getCurrentUserInfo() (string, int, int, string, string) {
 	currentUser, err := user.Current()
 	if err != nil {
 		// Fallback with empty values if we can't get user info
-		return namespace.UserInfo{}
+		return "", 0, 0, "", ""
 	}
 
 	uid, _ := strconv.Atoi(currentUser.Uid)
@@ -251,20 +272,24 @@ func getCurrentUserInfo() namespace.UserInfo {
 
 	configDir := getConfigDir(currentUser.HomeDir)
 
-	return namespace.UserInfo{
-		Username:  currentUser.Username,
-		Uid:       uid,
-		Gid:       gid,
-		HomeDir:   currentUser.HomeDir,
-		ConfigDir: configDir,
-	}
+	return currentUser.Username, uid, gid, currentUser.HomeDir, configDir
 }
 
 // getConfigDir determines the config directory based on XDG_CONFIG_HOME or fallback
 func getConfigDir(homeDir string) string {
-	// Use XDG_CONFIG_HOME if set, otherwise fallback to ~/.config/coder_jail
+	// Use XDG_CONFIG_HOME if set, otherwise fallback to ~/.config/coder_boundary
 	if xdgConfigHome := os.Getenv("XDG_CONFIG_HOME"); xdgConfigHome != "" {
-		return filepath.Join(xdgConfigHome, "coder_jail")
+		return filepath.Join(xdgConfigHome, "coder_boundary")
 	}
-	return filepath.Join(homeDir, ".config", "coder_jail")
+	return filepath.Join(homeDir, ".config", "coder_boundary")
+}
+
+// createJailer creates a new jail instance for the current platform
+func createJailer(config jail.Config, unprivileged bool) (jail.Jailer, error) {
+	if unprivileged {
+		return jail.NewUnprivileged(config)
+	}
+
+	// Use the DefaultOS function for platform-specific jail creation
+	return jail.DefaultOS(config)
 }

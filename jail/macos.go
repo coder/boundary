@@ -1,6 +1,6 @@
 //go:build darwin
 
-package namespace
+package jail
 
 import (
 	"fmt"
@@ -13,147 +13,130 @@ import (
 )
 
 const (
-	pfAnchorName = "coder_jail"
-	groupName    = "coder_jail"
+	pfAnchorName = "coder_boundary"
+	groupName    = "coder_boundary"
 )
 
-// MacOSNetJail implements network jail using macOS PF (Packet Filter) and group-based isolation
-type MacOSNetJail struct {
-	restrictedGid  int
-	pfRulesPath    string
-	mainRulesPath  string
-	logger         *slog.Logger
-	preparedEnv    map[string]string
-	procAttr       *syscall.SysProcAttr
-	httpProxyPort  int
-	httpsProxyPort int
-	userInfo       UserInfo
+// MacOSJail implements network boundary using macOS PF (Packet Filter) and group-based isolation
+type MacOSJail struct {
+	restrictedGid int
+	pfRulesPath   string
+	mainRulesPath string
+	logger        *slog.Logger
+	commandEnv    []string
+	procAttr      *syscall.SysProcAttr
+	httpProxyPort int
+	configDir     string
+	caCertPath    string
+	homeDir       string
+	username      string
+	uid           int
+	gid           int
 }
 
-// NewMacOS creates a new macOS network jail instance
-func NewMacOS(config Config) (*MacOSNetJail, error) {
+// NewMacOSJail creates a new macOS network boundary instance
+func NewMacOSJail(config Config) (*MacOSJail, error) {
 	ns := newNamespaceName()
 	pfRulesPath := fmt.Sprintf("/tmp/%s.pf", ns)
 	mainRulesPath := fmt.Sprintf("/tmp/%s_main.pf", ns)
 
-	// Initialize preparedEnv with config environment variables
-	preparedEnv := make(map[string]string)
-	for key, value := range config.Env {
-		preparedEnv[key] = value
-	}
-
-	return &MacOSNetJail{
-		pfRulesPath:    pfRulesPath,
-		mainRulesPath:  mainRulesPath,
-		logger:         config.Logger,
-		preparedEnv:    preparedEnv,
-		httpProxyPort:  config.HttpProxyPort,
-		httpsProxyPort: config.HttpsProxyPort,
-		userInfo:       config.UserInfo,
+	return &MacOSJail{
+		pfRulesPath:   pfRulesPath,
+		mainRulesPath: mainRulesPath,
+		logger:        config.Logger,
+		httpProxyPort: config.HttpProxyPort,
+		configDir:     config.ConfigDir,
+		caCertPath:    config.CACertPath,
+		homeDir:       config.HomeDir,
+		username:      config.Username,
+		uid:           config.Uid,
+		gid:           config.Gid,
 	}, nil
 }
 
-// Setup creates the network jail group and configures PF rules
-func (m *MacOSNetJail) Start() error {
-	m.logger.Debug("Setup called")
+// Setup creates the network boundary group and configures PF rules
+func (n *MacOSJail) Start() error {
+	n.logger.Debug("Setup called")
 
-	// Create or get network jail group
-	m.logger.Debug("Creating or ensuring network jail group")
-	err := m.ensureGroup()
+	// Create or get network boundary group
+	n.logger.Debug("Creating or ensuring network boundary group")
+	err := n.ensureGroup()
 	if err != nil {
 		return fmt.Errorf("failed to ensure group: %v", err)
 	}
 
 	// Setup PF rules
-	m.logger.Debug("Setting up PF rules")
-	err = m.setupPFRules()
+	n.logger.Debug("Setting up PF rules")
+	err = n.setupPFRules()
 	if err != nil {
 		return fmt.Errorf("failed to setup PF rules: %v", err)
 	}
 
 	// Prepare environment once during setup
-	m.logger.Debug("Preparing environment")
+	n.logger.Debug("Preparing environment")
 
-	// Start with current environment
-	for _, envVar := range os.Environ() {
-		if parts := strings.SplitN(envVar, "=", 2); len(parts) == 2 {
-			// Only set if not already set by config
-			if _, exists := m.preparedEnv[parts[0]]; !exists {
-				m.preparedEnv[parts[0]] = parts[1]
-			}
-		}
-	}
-
-	// Set HOME to original user's home directory
-	m.preparedEnv["HOME"] = m.userInfo.HomeDir
-	// Set USER to original username
-	m.preparedEnv["USER"] = m.userInfo.Username
-	// Set LOGNAME to original username (some tools check this instead of USER)
-	m.preparedEnv["LOGNAME"] = m.userInfo.Username
+	e := getEnvs(n.configDir, n.caCertPath)
+	n.commandEnv = mergeEnvs(e, map[string]string{
+		"HOME":    n.homeDir,
+		"USER":    n.username,
+		"LOGNAME": n.username,
+	})
 
 	// Prepare process credentials once during setup
-	m.logger.Debug("Preparing process credentials")
-	// Use original user ID but KEEP the jail group for network isolation
+	n.logger.Debug("Preparing process credentials")
+	// Use original user ID but KEEP the boundary group for network isolation
 	procAttr := &syscall.SysProcAttr{
 		Credential: &syscall.Credential{
-			Uid: uint32(m.userInfo.Uid),
-			Gid: uint32(m.restrictedGid),
+			Uid: uint32(n.uid),
+			Gid: uint32(n.restrictedGid),
 		},
 	}
 
 	// Store prepared process attributes for use in Command method
-	m.procAttr = procAttr
+	n.procAttr = procAttr
 
-	m.logger.Debug("Setup completed successfully")
+	n.logger.Debug("Setup completed successfully")
 	return nil
 }
 
-// Command runs the command with the network jail group membership
-func (m *MacOSNetJail) Command(command []string) *exec.Cmd {
-	m.logger.Debug("Command called", "command", command)
+// Command runs the command with the network boundary group membership
+func (n *MacOSJail) Command(command []string) *exec.Cmd {
+	n.logger.Debug("Command called", "command", command)
 
 	// Create command directly (no sg wrapper needed)
-	m.logger.Debug("Creating command with group membership", "groupID", m.restrictedGid)
+	n.logger.Debug("Creating command with group membership", "groupID", n.restrictedGid)
 	cmd := exec.Command(command[0], command[1:]...)
-	m.logger.Debug("Full command args", "args", command)
+	n.logger.Debug("Full command args", "args", command)
 
-	// Use prepared environment from Open method
-	env := make([]string, 0, len(m.preparedEnv))
-	for key, value := range m.preparedEnv {
-		env = append(env, fmt.Sprintf("%s=%s", key, value))
-	}
-	cmd.Env = env
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
+	cmd.Env = n.commandEnv
 
 	// Use prepared process attributes from Open method
-	cmd.SysProcAttr = m.procAttr
+	cmd.SysProcAttr = n.procAttr
 
 	return cmd
 }
 
 // Cleanup removes PF rules and cleans up temporary files
-func (m *MacOSNetJail) Close() error {
-	m.logger.Debug("Starting cleanup process")
+func (n *MacOSJail) Close() error {
+	n.logger.Debug("Starting cleanup process")
 
 	// Remove PF rules
-	m.logger.Debug("Removing PF rules")
-	err := m.removePFRules()
+	n.logger.Debug("Removing PF rules")
+	err := n.removePFRules()
 	if err != nil {
 		return fmt.Errorf("failed to remove PF rules: %v", err)
 	}
 
 	// Clean up temporary files
-	m.logger.Debug("Cleaning up temporary files")
-	m.cleanupTempFiles()
+	n.logger.Debug("Cleaning up temporary files")
+	n.cleanupTempFiles()
 
-	m.logger.Debug("Cleanup completed successfully")
+	n.logger.Debug("Cleanup completed successfully")
 	return nil
 }
 
-// ensureGroup creates the network jail group if it doesn't exist
-func (m *MacOSNetJail) ensureGroup() error {
+// ensureGroup creates the network boundary group if it doesn't exist
+func (n *MacOSJail) ensureGroup() error {
 	// Check if group already exists
 	output, err := exec.Command("dscl", ".", "-read", fmt.Sprintf("/Groups/%s", groupName), "PrimaryGroupID").Output()
 	if err == nil {
@@ -167,7 +150,7 @@ func (m *MacOSNetJail) ensureGroup() error {
 					if err != nil {
 						return fmt.Errorf("failed to parse GID: %v", err)
 					}
-					m.restrictedGid = gid
+					n.restrictedGid = gid
 					return nil
 				}
 			}
@@ -196,7 +179,7 @@ func (m *MacOSNetJail) ensureGroup() error {
 				if err != nil {
 					return fmt.Errorf("failed to parse GID: %v", err)
 				}
-				m.restrictedGid = gid
+				n.restrictedGid = gid
 				return nil
 			}
 		}
@@ -206,7 +189,7 @@ func (m *MacOSNetJail) ensureGroup() error {
 }
 
 // getDefaultInterface gets the default network interface
-func (m *MacOSNetJail) getDefaultInterface() (string, error) {
+func (n *MacOSJail) getDefaultInterface() (string, error) {
 	output, err := exec.Command("route", "-n", "get", "default").Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to get default route: %v", err)
@@ -227,21 +210,21 @@ func (m *MacOSNetJail) getDefaultInterface() (string, error) {
 }
 
 // createPFRules creates PF rules for comprehensive TCP traffic diversion
-func (m *MacOSNetJail) createPFRules() (string, error) {
+func (n *MacOSJail) createPFRules() (string, error) {
 	// Get the default network interface
-	iface, err := m.getDefaultInterface()
+	iface, err := n.getDefaultInterface()
 	if err != nil {
 		return "", fmt.Errorf("failed to get default interface: %v", err)
 	}
 
 	// Create comprehensive PF rules for ALL TCP traffic interception
 	// This prevents bypass via non-standard ports (8080, 3306, 22, etc.)
-	rules := fmt.Sprintf(`# comprehensive TCP jailing PF rules for GID %d on interface %s
-# COMPREHENSIVE APPROACH: Intercept ALL TCP traffic from the jailed group
+	rules := fmt.Sprintf(`# comprehensive TCP boundarying PF rules for GID %d on interface %s
+# COMPREHENSIVE APPROACH: Intercept ALL TCP traffic from the boundaryed group
 # This ensures NO TCP traffic can bypass the proxy by using alternative ports
 
-# First, redirect ALL TCP traffic arriving on lo0 to our HTTPS proxy port
-# The HTTPS proxy can handle both HTTP and HTTPS traffic
+# First, redirect ALL TCP traffic arriving on lo0 to our HTTP proxy with TLS termination
+# The HTTP proxy with TLS termination can handle both HTTP and HTTPS traffic
 rdr pass on lo0 inet proto tcp from any to any -> 127.0.0.1 port %d
 
 # Route ALL TCP traffic from boundary group to lo0 where it will be redirected
@@ -253,36 +236,37 @@ pass out on %s route-to (lo0 127.0.0.1) inet proto tcp from any to any group %d 
 # Allow all loopback traffic
 pass on lo0 all
 `,
-		m.restrictedGid,
+		n.restrictedGid,
 		iface,
-		m.httpsProxyPort, // Use HTTPS proxy port for all TCP traffic
-		m.restrictedGid,
+		n.httpProxyPort, // Use HTTP proxy with TLS termination for all TCP traffic
+		n.restrictedGid,
 		iface,
-		m.restrictedGid,
+		n.restrictedGid,
 	)
 
-	m.logger.Debug("Comprehensive TCP jailing enabled for macOS", "group_id", m.restrictedGid, "proxy_port", m.httpsProxyPort)
+	n.logger.Debug("Comprehensive TCP boundarying enabled for macOS", "group_id", n.restrictedGid, "proxy_port", n.httpProxyPort)
 	return rules, nil
 }
 
 // setupPFRules configures packet filter rules to redirect traffic
-func (m *MacOSNetJail) setupPFRules() error {
+func (n *MacOSJail) setupPFRules() error {
 	// Create PF rules
-	rules, err := m.createPFRules()
+	rules, err := n.createPFRules()
 	if err != nil {
 		return fmt.Errorf("failed to create PF rules: %v", err)
 	}
 
 	// Write rules to temp file
-	err = os.WriteFile(m.pfRulesPath, []byte(rules), 0644)
+	err = os.WriteFile(n.pfRulesPath, []byte(rules), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write PF rules file: %v", err)
 	}
 
 	// Load rules into anchor
-	cmd := exec.Command("pfctl", "-a", pfAnchorName, "-f", m.pfRulesPath)
+	cmd := exec.Command("pfctl", "-a", pfAnchorName, "-f", n.pfRulesPath)
 	err = cmd.Run()
 	if err != nil {
+		n.logger.Error("Failed to load PF rules", "error", err, "rules_file", n.pfRulesPath)
 		return fmt.Errorf("failed to load PF rules: %v", err)
 	}
 
@@ -307,12 +291,12 @@ anchor "%s"
 `, pfAnchorName, pfAnchorName)
 
 	// Write and load the main ruleset
-	err = os.WriteFile(m.mainRulesPath, []byte(mainRules), 0644)
+	err = os.WriteFile(n.mainRulesPath, []byte(mainRules), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write main PF rules: %v", err)
 	}
 
-	cmd = exec.Command("pfctl", "-f", m.mainRulesPath)
+	cmd = exec.Command("pfctl", "-f", n.mainRulesPath)
 	err = cmd.Run()
 	if err != nil {
 		// Don't fail if main rules can't be loaded, but warn
@@ -331,7 +315,7 @@ anchor "%s"
 }
 
 // removePFRules removes PF rules from anchor
-func (m *MacOSNetJail) removePFRules() error {
+func (n *MacOSJail) removePFRules() error {
 	// Flush the anchor
 	cmd := exec.Command("pfctl", "-a", pfAnchorName, "-F", "all")
 	cmd.Run() // Ignore errors during cleanup
@@ -340,11 +324,11 @@ func (m *MacOSNetJail) removePFRules() error {
 }
 
 // cleanupTempFiles removes temporary rule files
-func (m *MacOSNetJail) cleanupTempFiles() {
-	if m.pfRulesPath != "" {
-		os.Remove(m.pfRulesPath)
+func (n *MacOSJail) cleanupTempFiles() {
+	if n.pfRulesPath != "" {
+		os.Remove(n.pfRulesPath)
 	}
-	if m.mainRulesPath != "" {
-		os.Remove(m.mainRulesPath)
+	if n.mainRulesPath != "" {
+		os.Remove(n.mainRulesPath)
 	}
 }
