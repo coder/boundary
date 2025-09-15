@@ -1,0 +1,88 @@
+name: Build Binaries
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Build All Platforms
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+        check-latest: true
+
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download and verify dependencies
+      run: make deps
+
+    - name: Build all platforms
+      run: make build-all
+
+    - name: Upload Linux x64 binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: boundary-linux-amd64
+        path: build/boundary-linux-amd64
+        retention-days: 30
+
+    - name: Upload Linux ARM64 binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: boundary-linux-arm64
+        path: build/boundary-linux-arm64
+        retention-days: 30
+
+    - name: Upload macOS Intel binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: boundary-darwin-amd64
+        path: build/boundary-darwin-amd64
+        retention-days: 30
+
+    - name: Upload macOS Apple Silicon binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: boundary-darwin-arm64
+        path: build/boundary-darwin-arm64
+        retention-days: 30
+
+  summary:
+    name: Build Summary
+    needs: build
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+    - name: Build Summary
+      run: |
+        echo "## 🛠️ Build Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Cross-platform binaries have been built and are available as artifacts." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📦 Available Binaries" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- 🐧 **Linux (x64)**: boundary-linux-amd64" >> $GITHUB_STEP_SUMMARY
+        echo "- 🐧 **Linux (ARM64)**: boundary-linux-arm64" >> $GITHUB_STEP_SUMMARY
+        echo "- 🍎 **macOS (Intel)**: boundary-darwin-amd64" >> $GITHUB_STEP_SUMMARY
+        echo "- 🍎 **macOS (Apple Silicon)**: boundary-darwin-arm64" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📎 Download Instructions" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Artifacts can be downloaded from the [Actions tab](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})." >> $GITHUB_STEP_SUMMARY
