@@ -1,51 +1,46 @@
 //go:build linux
 
-package namespace
+package jail
 
 import (
 	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
-	"strings"
-	"syscall"
 	"time"
 )
 
-// Linux implements jail.Commander using Linux network namespaces
-type Linux struct {
-	namespace      string
-	vethHost       string // Host-side veth interface name for iptables rules
-	logger         *slog.Logger
-	preparedEnv    map[string]string
-	procAttr       *syscall.SysProcAttr
-	httpProxyPort  int
-	httpsProxyPort int
-	user           string
-	homeDir        string
-	uid            int
-	gid            int
+// LinuxJail implements Jailer using Linux network namespaces
+type LinuxJail struct {
+	logger        *slog.Logger
+	namespace     string
+	vethHost      string // Host-side veth interface name for iptables rules
+	commandEnv    []string
+	httpProxyPort int
+	configDir     string
+	caCertPath    string
+	homeDir       string
+	username      string
+	uid           int
+	gid           int
 }
 
-// NewLinux creates a new Linux network jail instance
-func NewLinux(config Config) (*Linux, error) {
-	// Initialize preparedEnv with config environment variables
-	preparedEnv := make(map[string]string)
-	for key, value := range config.Env {
-		preparedEnv[key] = value
-	}
-
-	return &Linux{
-		namespace:      newNamespaceName(),
-		logger:         config.Logger,
-		preparedEnv:    preparedEnv,
-		httpProxyPort:  config.HttpProxyPort,
-		httpsProxyPort: config.HttpsProxyPort,
+func NewLinuxJail(config Config) (*LinuxJail, error) {
+	return &LinuxJail{
+		logger:        config.Logger,
+		namespace:     newNamespaceName(),
+		httpProxyPort: config.HttpProxyPort,
+		configDir:     config.ConfigDir,
+		caCertPath:    config.CACertPath,
+		homeDir:       config.HomeDir,
+		username:      config.Username,
+		uid:           config.Uid,
+		gid:           config.Gid,
 	}, nil
 }
 
-// Setup creates network namespace and configures iptables rules
-func (l *Linux) Start() error {
+// Start creates network namespace and configures iptables rules
+func (l *LinuxJail) Start() error {
 	l.logger.Debug("Setup called")
 
 	// Setup DNS configuration BEFORE creating namespace
@@ -67,87 +62,52 @@ func (l *Linux) Start() error {
 		return fmt.Errorf("failed to setup networking: %v", err)
 	}
 
-	// Setup iptables rules
+	// Setup iptables rules on host
 	err = l.setupIptables()
 	if err != nil {
 		return fmt.Errorf("failed to setup iptables: %v", err)
 	}
 
-	// Prepare environment once during setup
-	l.logger.Debug("Preparing environment")
-
-	// Start with current environment
-	for _, envVar := range os.Environ() {
-		if parts := strings.SplitN(envVar, "=", 2); len(parts) == 2 {
-			// Only set if not already set by config
-			if _, exists := l.preparedEnv[parts[0]]; !exists {
-				l.preparedEnv[parts[0]] = parts[1]
-			}
-		}
-	}
-
-	// Set HOME to original user's home directory
-	l.preparedEnv["HOME"] = l.homeDir
-	// Set USER to original username
-	l.preparedEnv["USER"] = l.user
-	// Set LOGNAME to original username (some tools check this instead of USER)
-	l.preparedEnv["LOGNAME"] = l.user
-
-	l.procAttr = &syscall.SysProcAttr{
-		Credential: &syscall.Credential{
-			Uid: uint32(l.uid),
-			Gid: uint32(l.gid),
-		},
-	}
-
-	l.logger.Debug("Setup completed successfully")
 	return nil
 }
 
 // Command returns an exec.Cmd configured to run within the network namespace
-func (l *Linux) Command(command []string) *exec.Cmd {
-	l.logger.Debug("Command called", "command", command)
-
-	// Create command with ip netns exec
+func (l *LinuxJail) Command(command []string) *exec.Cmd {
 	l.logger.Debug("Creating command with namespace", "namespace", l.namespace)
+
 	cmdArgs := []string{"ip", "netns", "exec", l.namespace}
 	cmdArgs = append(cmdArgs, command...)
-	l.logger.Debug("Full command args", "args", cmdArgs)
 
-	cmd := exec.Command("ip", cmdArgs[1:]...)
-
-	// Use prepared environment from Open method
-	env := make([]string, 0, len(l.preparedEnv))
-	for key, value := range l.preparedEnv {
-		env = append(env, fmt.Sprintf("%s=%s", key, value))
-	}
-	cmd.Env = env
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	// Use prepared process attributes from Open method
-	cmd.SysProcAttr = l.procAttr
+	cmd := exec.Command("sudo", cmdArgs...)
+	cmd.Env = l.commandEnv
 
 	return cmd
 }
 
-// Cleanup removes the network namespace and iptables rules
-func (l *Linux) Close() error {
-	// Remove iptables rules
-	err := l.removeIptables()
+// Close removes the network namespace and iptables rules
+func (l *LinuxJail) Close() error {
+	l.logger.Debug("Close called")
+
+	// Clean up iptables rules
+	err := l.cleanupIptables()
 	if err != nil {
-		return fmt.Errorf("failed to remove iptables rules: %v", err)
+		l.logger.Error("Failed to clean up iptables rules", "error", err)
+		// Continue with other cleanup even if this fails
+	}
+
+	// Clean up networking
+	err = l.cleanupNetworking()
+	if err != nil {
+		l.logger.Error("Failed to clean up networking", "error", err)
+		// Continue with other cleanup even if this fails
 	}
 
 	// Clean up namespace-specific DNS config directory
 	netnsEtc := fmt.Sprintf("/etc/netns/%s", l.namespace)
-	if _, err := os.Stat(netnsEtc); err == nil {
-		err := os.RemoveAll(netnsEtc)
-		if err != nil {
-			// Don't fail cleanup for this, just log
-			fmt.Printf("Warning: failed to remove DNS config directory %s: %v\n", netnsEtc, err)
-		}
+	err = os.RemoveAll(netnsEtc)
+	if err != nil {
+		l.logger.Warn("Failed to remove namespace DNS config", "dir", netnsEtc, "error", err)
+		// Continue with other cleanup
 	}
 
 	// Remove network namespace
@@ -160,7 +120,7 @@ func (l *Linux) Close() error {
 }
 
 // createNamespace creates a new network namespace
-func (l *Linux) createNamespace() error {
+func (l *LinuxJail) createNamespace() error {
 	cmd := exec.Command("ip", "netns", "add", l.namespace)
 	err := cmd.Run()
 	if err != nil {
@@ -170,7 +130,7 @@ func (l *Linux) createNamespace() error {
 }
 
 // setupNetworking configures networking within the namespace
-func (l *Linux) setupNetworking() error {
+func (l *LinuxJail) setupNetworking() error {
 	// Create veth pair with short names (Linux interface names limited to 15 chars)
 	// Generate unique ID to avoid conflicts
 	uniqueID := fmt.Sprintf("%d", time.Now().UnixNano()%10000000) // 7 digits max
@@ -206,7 +166,7 @@ func (l *Linux) setupNetworking() error {
 // setupDNS configures DNS resolution for the namespace
 // This ensures reliable DNS resolution by using public DNS servers
 // instead of relying on the host's potentially complex DNS configuration
-func (l *Linux) setupDNS() error {
+func (l *LinuxJail) setupDNS() error {
 	// Always create namespace-specific resolv.conf with reliable public DNS servers
 	// This avoids issues with systemd-resolved, Docker DNS, and other complex setups
 	netnsEtc := fmt.Sprintf("/etc/netns/%s", l.namespace)
@@ -234,7 +194,7 @@ options timeout:2 attempts:2
 }
 
 // setupIptables configures iptables rules for comprehensive TCP traffic interception
-func (l *Linux) setupIptables() error {
+func (l *LinuxJail) setupIptables() error {
 	// Enable IP forwarding
 	cmd := exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1")
 	cmd.Run() // Ignore error
@@ -246,23 +206,22 @@ func (l *Linux) setupIptables() error {
 		return fmt.Errorf("failed to add NAT rule: %v", err)
 	}
 
-	// COMPREHENSIVE APPROACH: Intercept ALL TCP traffic from namespace
-	// Use PREROUTING on host to catch traffic after it exits namespace but before routing
-	// This ensures NO TCP traffic can bypass the proxy
-	cmd = exec.Command("iptables", "-t", "nat", "-A", "PREROUTING", "-i", l.vethHost, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.httpsProxyPort))
+	// COMPREHENSIVE APPROACH: Route ALL TCP traffic to HTTP proxy
+	// The HTTP proxy will intelligently handle both HTTP and TLS traffic
+	cmd = exec.Command("iptables", "-t", "nat", "-A", "PREROUTING", "-i", l.vethHost, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.httpProxyPort))
 	err = cmd.Run()
 	if err != nil {
 		return fmt.Errorf("failed to add comprehensive TCP redirect rule: %v", err)
 	}
 
-	l.logger.Debug("Comprehensive TCP jailing enabled", "interface", l.vethHost, "proxy_port", l.httpsProxyPort)
+	l.logger.Debug("Comprehensive TCP boundarying enabled", "interface", l.vethHost, "proxy_port", l.httpProxyPort)
 	return nil
 }
 
-// removeIptables removes iptables rules
-func (l *Linux) removeIptables() error {
+// cleanupIptables removes iptables rules
+func (l *LinuxJail) cleanupIptables() error {
 	// Remove comprehensive TCP redirect rule
-	cmd := exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-i", l.vethHost, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.httpsProxyPort))
+	cmd := exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-i", l.vethHost, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.httpProxyPort))
 	cmd.Run() // Ignore errors during cleanup
 
 	// Remove NAT rule
@@ -272,8 +231,31 @@ func (l *Linux) removeIptables() error {
 	return nil
 }
 
+// cleanupNetworking removes networking configuration
+func (l *LinuxJail) cleanupNetworking() error {
+	// Generate unique ID to match veth pair
+	uniqueID := fmt.Sprintf("%d", time.Now().UnixNano()%10000000) // 7 digits max
+	vethHost := fmt.Sprintf("veth_h_%s", uniqueID)                // veth_h_1234567 = 14 chars
+
+	// Clean up networking
+	cleanupCmds := []struct {
+		description string
+		command     *exec.Cmd
+	}{
+		{"delete veth pair", exec.Command("ip", "link", "del", vethHost)},
+	}
+
+	for _, command := range cleanupCmds {
+		if err := command.command.Run(); err != nil {
+			return fmt.Errorf("failed to %s: %v", command.description, err)
+		}
+	}
+
+	return nil
+}
+
 // removeNamespace removes the network namespace
-func (l *Linux) removeNamespace() error {
+func (l *LinuxJail) removeNamespace() error {
 	cmd := exec.Command("ip", "netns", "del", l.namespace)
 	err := cmd.Run()
 	if err != nil {

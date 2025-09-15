@@ -2,20 +2,20 @@ package audit
 
 import "log/slog"
 
-// LoggingAuditor implements proxy.Auditor by logging to slog
-type LoggingAuditor struct {
+// LogAuditor implements proxy.Auditor by logging to slog
+type LogAuditor struct {
 	logger *slog.Logger
 }
 
-// NewLoggingAuditor creates a new LoggingAuditor
-func NewLoggingAuditor(logger *slog.Logger) *LoggingAuditor {
-	return &LoggingAuditor{
+// NewLogAuditor creates a new LogAuditor
+func NewLogAuditor(logger *slog.Logger) *LogAuditor {
+	return &LogAuditor{
 		logger: logger,
 	}
 }
 
 // AuditRequest logs the request using structured logging
-func (a *LoggingAuditor) AuditRequest(req Request) {
+func (a *LogAuditor) AuditRequest(req Request) {
 	if req.Allowed {
 		a.logger.Info("ALLOW",
 			"method", req.Method,

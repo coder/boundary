@@ -35,11 +35,8 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-go-
 
-    - name: Download dependencies
-      run: go mod download
-
-    - name: Verify dependencies
-      run: go mod verify
+    - name: Download and verify dependencies
+      run: make deps
 
     - name: Run tests
       run: make test

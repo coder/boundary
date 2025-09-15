@@ -3,30 +3,11 @@ name: Build Binaries
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
 
 jobs:
   build:
-    name: Build Cross-Platform Binaries
+    name: Build All Platforms
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          # Linux builds
-          - goos: linux
-            goarch: amd64
-            name: jail-linux-amd64
-          - goos: linux
-            goarch: arm64
-            name: jail-linux-arm64
-          # macOS builds
-          - goos: darwin
-            goarch: amd64
-            name: jail-darwin-amd64
-          - goos: darwin
-            goarch: arm64
-            name: jail-darwin-arm64
 
     steps:
     - name: Check out code
@@ -48,33 +29,38 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-go-
 
-    - name: Download dependencies
-      run: go mod download
+    - name: Download and verify dependencies
+      run: make deps
 
-    - name: Verify dependencies
-      run: go mod verify
+    - name: Build all platforms
+      run: make build-all
 
-    - name: Build binary
-      run: |
-        # Set target for cross-compilation
-        export GOOS=${{ matrix.goos }}
-        export GOARCH=${{ matrix.goarch }}
-        export CGO_ENABLED=0
-        
-        # Add version info if available
-        VERSION="dev-${{ github.sha }}"
-        if [ "${{ github.ref_type }}" = "tag" ]; then
-          VERSION="${{ github.ref_name }}"
-        fi
-        
-        # Build using Go directly for cross-compilation
-        go build -ldflags="-s -w -X main.version=$VERSION" -o ${{ matrix.name }} ./cmd/jail
-
-    - name: Upload binary as artifact
+    - name: Upload Linux x64 binary
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.name }}
-        path: ${{ matrix.name }}
+        name: boundary-linux-amd64
+        path: build/boundary-linux-amd64
+        retention-days: 30
+
+    - name: Upload Linux ARM64 binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: boundary-linux-arm64
+        path: build/boundary-linux-arm64
+        retention-days: 30
+
+    - name: Upload macOS Intel binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: boundary-darwin-amd64
+        path: build/boundary-darwin-amd64
+        retention-days: 30
+
+    - name: Upload macOS Apple Silicon binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: boundary-darwin-arm64
+        path: build/boundary-darwin-arm64
         retention-days: 30
 
   summary:
@@ -92,14 +78,11 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 📦 Available Binaries" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "- 🐧 **Linux (x64)**: jail-linux-amd64" >> $GITHUB_STEP_SUMMARY
-        echo "- 🐧 **Linux (ARM64)**: jail-linux-arm64" >> $GITHUB_STEP_SUMMARY
-        echo "- 🍎 **macOS (Intel)**: jail-darwin-amd64" >> $GITHUB_STEP_SUMMARY
-        echo "- 🍎 **macOS (Apple Silicon)**: jail-darwin-arm64" >> $GITHUB_STEP_SUMMARY
+        echo "- 🐧 **Linux (x64)**: boundary-linux-amd64" >> $GITHUB_STEP_SUMMARY
+        echo "- 🐧 **Linux (ARM64)**: boundary-linux-arm64" >> $GITHUB_STEP_SUMMARY
+        echo "- 🍎 **macOS (Intel)**: boundary-darwin-amd64" >> $GITHUB_STEP_SUMMARY
+        echo "- 🍎 **macOS (Apple Silicon)**: boundary-darwin-arm64" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 📎 Download Instructions" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "1. Go to the **Actions** tab" >> $GITHUB_STEP_SUMMARY
-        echo "2. Click on this workflow run" >> $GITHUB_STEP_SUMMARY
-        echo "3. Scroll down to **Artifacts** section" >> $GITHUB_STEP_SUMMARY
-        echo "4. Download the binary for your platform" >> $GITHUB_STEP_SUMMARY
+        echo "Artifacts can be downloaded from the [Actions tab](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})." >> $GITHUB_STEP_SUMMARY

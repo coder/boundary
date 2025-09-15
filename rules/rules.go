@@ -17,8 +17,60 @@ type Rule struct {
 	Raw     string          // rule string for logging
 }
 
+// ParseAllowSpecs parses a slice of --allow specs into allow Rules.
+func ParseAllowSpecs(allowStrings []string) ([]Rule, error) {
+	var out []Rule
+	for _, s := range allowStrings {
+		r, err := newAllowRule(s)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse allow '%s': %v", s, err)
+		}
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+// Engine evaluates HTTP requests against a set of rules
+type Engine struct {
+	rules  []Rule
+	logger *slog.Logger
+}
+
+// NewRuleEngine creates a new rule engine
+func NewRuleEngine(rules []Rule, logger *slog.Logger) *Engine {
+	return &Engine{
+		rules:  rules,
+		logger: logger,
+	}
+}
+
+// Result contains the result of rule evaluation
+type Result struct {
+	Allowed bool
+	Rule    string // The rule that matched (if any)
+}
+
+// Evaluate evaluates a request and returns both result and matching rule
+func (re *Engine) Evaluate(method, url string) Result {
+	// Check if any allow rule matches
+	for _, rule := range re.rules {
+		if re.matches(rule, method, url) {
+			return Result{
+				Allowed: true,
+				Rule:    rule.Raw,
+			}
+		}
+	}
+
+	// Default deny if no allow rules match
+	return Result{
+		Allowed: false,
+		Rule:    "",
+	}
+}
+
 // Matches checks if the rule matches the given method and URL using wildcard patterns
-func (r *Rule) Matches(method, url string) bool {
+func (re *Engine) matches(r Rule, method, url string) bool {
 	// Check method if specified
 	if r.Methods != nil && !r.Methods[strings.ToUpper(method)] {
 		return false
@@ -66,86 +118,50 @@ func (r *Rule) Matches(method, url string) bool {
 // wildcardMatch performs wildcard pattern matching
 // Supports * (matches any sequence of characters)
 func wildcardMatch(pattern, text string) bool {
-	return wildcardMatchRecursive(pattern, text, 0, 0)
-}
+	pattern = strings.ToLower(pattern)
+	text = strings.ToLower(text)
 
-// wildcardMatchRecursive is the recursive implementation of wildcard matching
-func wildcardMatchRecursive(pattern, text string, p, t int) bool {
-	// If we've reached the end of the pattern
-	if p == len(pattern) {
-		return t == len(text) // Match if we've also reached the end of text
-	}
-
-	// If we've reached the end of text but not pattern
-	if t == len(text) {
-		// Only match if remaining pattern is all '*'
-		for i := p; i < len(pattern); i++ {
-			if pattern[i] != '*' {
-				return false
-			}
-		}
+	// Handle simple case
+	if pattern == "*" {
 		return true
 	}
 
-	// Handle current character in pattern
-	switch pattern[p] {
-	case '*':
-		// '*' matches zero or more characters
-		// Try matching zero characters (skip the '*')
-		if wildcardMatchRecursive(pattern, text, p+1, t) {
-			return true
-		}
-		// Try matching one or more characters
-		return wildcardMatchRecursive(pattern, text, p, t+1)
+	// Split pattern by '*' and check each part exists in order
+	parts := strings.Split(pattern, "*")
 
-	default:
-		// Regular character must match exactly (case-insensitive for domains)
-		patternChar := strings.ToLower(string(pattern[p]))
-		textChar := strings.ToLower(string(text[t]))
-		if patternChar == textChar {
-			return wildcardMatchRecursive(pattern, text, p+1, t+1)
-		}
-		return false
+	// If no wildcards, must be exact match
+	if len(parts) == 1 {
+		return pattern == text
 	}
-}
 
-// RuleEngine evaluates HTTP requests against a set of rules
-type RuleEngine struct {
-	rules  []*Rule
-	logger *slog.Logger
-}
+	textPos := 0
+	for i, part := range parts {
+		if part == "" {
+			continue // Skip empty parts from consecutive '*'
+		}
 
-// NewRuleEngine creates a new rule engine
-func NewRuleEngine(rules []*Rule, logger *slog.Logger) *RuleEngine {
-	return &RuleEngine{
-		rules:  rules,
-		logger: logger,
-	}
-}
-
-// Result contains the result of rule evaluation
-type Result struct {
-	Allowed bool
-	Rule    string // The rule that matched (if any)
-}
-
-// Evaluate evaluates a request and returns both result and matching rule
-func (re *RuleEngine) Evaluate(method, url string) Result {
-	// Check if any allow rule matches
-	for _, rule := range re.rules {
-		if rule.Matches(method, url) {
-			return Result{
-				Allowed: true,
-				Rule:    rule.Raw,
+		if i == 0 {
+			// First part must be at the beginning
+			if !strings.HasPrefix(text, part) {
+				return false
 			}
+			textPos = len(part)
+		} else if i == len(parts)-1 {
+			// Last part must be at the end
+			if !strings.HasSuffix(text[textPos:], part) {
+				return false
+			}
+		} else {
+			// Middle parts must exist in order
+			idx := strings.Index(text[textPos:], part)
+			if idx == -1 {
+				return false
+			}
+			textPos += idx + len(part)
 		}
 	}
 
-	// Default deny if no allow rules match
-	return Result{
-		Allowed: false,
-		Rule:    "",
-	}
+	return true
 }
 
 // newAllowRule creates an allow Rule from a spec string used by --allow.
@@ -153,10 +169,10 @@ func (re *RuleEngine) Evaluate(method, url string) Result {
 //
 //	"pattern"                    -> allow all methods to pattern
 //	"GET,HEAD pattern"           -> allow only listed methods to pattern
-func newAllowRule(spec string) (*Rule, error) {
+func newAllowRule(spec string) (Rule, error) {
 	s := strings.TrimSpace(spec)
 	if s == "" {
-		return nil, fmt.Errorf("invalid allow spec: empty")
+		return Rule{}, fmt.Errorf("invalid allow spec: empty")
 	}
 
 	var methods map[string]bool
@@ -185,25 +201,12 @@ func newAllowRule(spec string) (*Rule, error) {
 	}
 
 	if pattern == "" {
-		return nil, fmt.Errorf("invalid allow spec: missing pattern")
+		return Rule{}, fmt.Errorf("invalid allow spec: missing pattern")
 	}
 
-	return &Rule{
+	return Rule{
 		Pattern: pattern,
 		Methods: methods,
 		Raw:     "allow " + spec,
 	}, nil
-}
-
-// ParseAllowSpecs parses a slice of --allow specs into allow Rules.
-func ParseAllowSpecs(allowStrings []string) ([]*Rule, error) {
-	var out []*Rule
-	for _, s := range allowStrings {
-		r, err := newAllowRule(s)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse allow '%s': %v", s, err)
-		}
-		out = append(out, r)
-	}
-	return out, nil
 }

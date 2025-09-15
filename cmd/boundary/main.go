@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/coder/jail/cli"
+	"github.com/coder/boundary/cli"
 )
 
 // Version information injected at build time
