@@ -322,7 +322,7 @@ func (p *Server) handleTLSConnection(tlsConn *tls.Conn, hostname string) {
 	p.logger.Debug("Creating HTTP server for TLS connection", "hostname", hostname)
 
 	// Set read timeout to detect hanging connections
-	tlsConn.SetReadTimeout(5 * time.Second)
+	tlsConn.SetReadDeadline(time.Now().Add(5 * time.Second))
 
 	// Use ReadRequest to manually read HTTP requests from the TLS connection
 	bufReader := bufio.NewReader(tlsConn)
@@ -363,6 +363,9 @@ func (p *Server) handleTLSConnection(tlsConn *tls.Conn, hostname string) {
 			p.logger.Debug("Failed to write response", "hostname", hostname, "error", err)
 			break
 		}
+
+		// Reset read deadline for next request
+		tlsConn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	}
 
 	p.logger.Debug("TLS connection handling completed", "hostname", hostname)
