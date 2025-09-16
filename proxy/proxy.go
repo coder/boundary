@@ -116,6 +116,14 @@ func (p *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Ensure URL is fully qualified
+	if r.URL.Host == "" {
+		r.URL.Host = r.Host
+	}
+	if r.URL.Scheme == "" {
+		r.URL.Scheme = "http"
+	}
+
 	// Check if request should be allowed
 	result := p.ruleEngine.Evaluate(r.Method, r.URL.String())
 
