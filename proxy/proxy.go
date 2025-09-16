@@ -133,16 +133,20 @@ func (p *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Forward regular HTTP request
-	p.forwardHTTPRequest(w, r)
+	p.forwardRequest(w, r, false)
 }
 
-// forwardHTTPRequest forwards a regular HTTP request
-func (p *Server) forwardHTTPRequest(w http.ResponseWriter, r *http.Request) {
+// forwardRequest forwards a regular HTTP request
+func (p *Server) forwardRequest(w http.ResponseWriter, r *http.Request, https bool) {
 	p.logger.Debug("forwardHTTPRequest called", "method", r.Method, "url", r.URL.String(), "host", r.Host)
 
+	s := "http"
+	if https {
+		s = "https"
+	}
 	// Create a new request to the target server
 	targetURL := &url.URL{
-		Scheme:   "http",
+		Scheme:   s,
 		Host:     r.Host,
 		Path:     r.URL.Path,
 		RawQuery: r.URL.RawQuery,
@@ -303,6 +307,10 @@ func (p *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	p.logger.Debug("TLS handshake successful", "hostname", hostname)
 
+	// Log connection state after handshake
+	state := tlsConn.ConnectionState()
+	p.logger.Debug("TLS connection established", "hostname", hostname, "version", state.Version, "cipher_suite", state.CipherSuite, "negotiated_protocol", state.NegotiatedProtocol)
+
 	// Now we have a TLS connection - handle HTTPS requests
 	p.logger.Debug("Starting HTTPS request handling", "hostname", hostname)
 	p.handleTLSConnection(tlsConn, hostname)
@@ -313,6 +321,9 @@ func (p *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 func (p *Server) handleTLSConnection(tlsConn *tls.Conn, hostname string) {
 	p.logger.Debug("Creating HTTP server for TLS connection", "hostname", hostname)
 
+	// Set read timeout to detect hanging connections
+	tlsConn.SetReadDeadline(time.Now().Add(5 * time.Second))
+
 	// Use ReadRequest to manually read HTTP requests from the TLS connection
 	bufReader := bufio.NewReader(tlsConn)
 	for {
@@ -321,6 +332,8 @@ func (p *Server) handleTLSConnection(tlsConn *tls.Conn, hostname string) {
 		if err != nil {
 			if err == io.EOF {
 				p.logger.Debug("TLS connection closed by client", "hostname", hostname)
+			} else if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				p.logger.Debug("TLS connection read timeout - client not sending HTTP requests", "hostname", hostname)
 			} else {
 				p.logger.Debug("Failed to read HTTP request", "hostname", hostname, "error", err)
 			}
@@ -350,6 +363,9 @@ func (p *Server) handleTLSConnection(tlsConn *tls.Conn, hostname string) {
 			p.logger.Debug("Failed to write response", "hostname", hostname, "error", err)
 			break
 		}
+
+		// Reset read deadline for next request
+		tlsConn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	}
 
 	p.logger.Debug("TLS connection handling completed", "hostname", hostname)
@@ -357,13 +373,27 @@ func (p *Server) handleTLSConnection(tlsConn *tls.Conn, hostname string) {
 
 // handleDecryptedHTTPS handles decrypted HTTPS requests and applies rules
 func (p *Server) handleDecryptedHTTPS(w http.ResponseWriter, r *http.Request) {
+	// Handle CONNECT method for HTTPS tunneling
+	if r.Method == "CONNECT" {
+		p.handleConnect(w, r)
+		return
+	}
+
+	fullURL := r.URL.String()
+	if r.URL.Host == "" {
+		// Fallback: construct URL from Host header
+		fullURL = fmt.Sprintf("https://%s%s", r.Host, r.URL.Path)
+		if r.URL.RawQuery != "" {
+			fullURL += "?" + r.URL.RawQuery
+		}
+	}
 	// Check if request should be allowed
-	result := p.ruleEngine.Evaluate(r.Method, r.URL.String())
+	result := p.ruleEngine.Evaluate(r.Method, fullURL)
 
 	// Audit the request
 	p.auditor.AuditRequest(audit.Request{
 		Method:  r.Method,
-		URL:     r.URL.String(),
+		URL:     fullURL,
 		Allowed: result.Allowed,
 		Rule:    result.Rule,
 	})
@@ -374,7 +404,7 @@ func (p *Server) handleDecryptedHTTPS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Forward the HTTPS request (now handled same as HTTP after TLS termination)
-	p.forwardHTTPRequest(w, r)
+	p.forwardRequest(w, r, true)
 }
 
 // handleConnectionWithTLSDetection detects TLS vs HTTP and handles appropriately
