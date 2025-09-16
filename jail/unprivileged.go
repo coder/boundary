@@ -39,7 +39,7 @@ func (u *Unprivileged) Start() error {
 		"USER":        u.username,
 		"LOGNAME":     u.username,
 		"HTTP_PROXY":  fmt.Sprintf("http://localhost:%d", u.httpProxyPort),
-		"HTTPS_PROXY": fmt.Sprintf("https://localhost:%d", u.httpProxyPort),
+		"HTTPS_PROXY": fmt.Sprintf("http://localhost:%d", u.httpProxyPort),
 	})
 	return nil
 }
