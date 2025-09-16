@@ -361,6 +361,12 @@ func (p *Server) handleTLSConnection(tlsConn *tls.Conn, hostname string) {
 
 // handleDecryptedHTTPS handles decrypted HTTPS requests and applies rules
 func (p *Server) handleDecryptedHTTPS(w http.ResponseWriter, r *http.Request) {
+	// Handle CONNECT method for HTTPS tunneling
+	if r.Method == "CONNECT" {
+		p.handleConnect(w, r)
+		return
+	}
+
 	fullURL := r.URL.String()
 	if r.URL.Host == "" {
 		// Fallback: construct URL from Host header
