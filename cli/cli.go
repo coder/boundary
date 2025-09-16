@@ -31,7 +31,7 @@ func NewCommand() *serpent.Command {
 	// To make the top level jail command, we just make some minor changes to the base command
 	cmd := BaseCommand()
 	cmd.Use = "jail [flags] -- command [args...]" // Add the flags and args pieces to usage.
-	
+
 	// Add example usage to the long description. This is different from usage as a subcommand because it
 	// may be called something different when used as a subcommand / there will be a leading binary (i.e. `coder jail` vs. `jail`).
 	cmd.Long += `Examples:
@@ -43,7 +43,7 @@ func NewCommand() *serpent.Command {
 
   # Block everything by default (implicit)`
 
-  return cmd
+	return cmd
 }
 
 // Base command returns the jail serpent command without the information involved in making it the
@@ -99,14 +99,18 @@ func Run(ctx context.Context, config Config, args []string) error {
 	}
 
 	// Parse allow rules
-	allowRules, err := rules.ParseAllowSpecs(config.AllowStrings)
-	if err != nil {
-		logger.Error("Failed to parse allow rules", "error", err)
-		return fmt.Errorf("failed to parse allow rules: %v", err)
+	allowRules := []rules.Rule{}
+	for _, allowStr := range config.AllowStrings {
+		rule, err := rules.ParseRule(allowStr)
+		if err != nil {
+			logger.Error("Failed to parse allow rule", "error", err)
+			return fmt.Errorf("failed to parse allow rule: %v", err)
+		}
+		allowRules = append(allowRules, rule)
 	}
 
 	// Create rule engine
-	ruleEngine := rules.NewRuleEngine(allowRules, logger)
+	ruleEngine := rules.NewEngine(allowRules, logger)
 
 	// Create auditor
 	auditor := audit.NewLoggingAuditor(logger)
