@@ -186,7 +186,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 		cmd.Stdin = os.Stdin
 
 		logger.Debug("Executing command in boundary", "command", strings.Join(args, " "))
-		err := boundaryInstance.Command(args).Run()
+		err := cmd.Run()
 		if err != nil {
 			logger.Error("Command execution failed", "error", err)
 		}

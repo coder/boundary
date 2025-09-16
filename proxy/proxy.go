@@ -133,16 +133,20 @@ func (p *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Forward regular HTTP request
-	p.forwardHTTPRequest(w, r)
+	p.forwardRequest(w, r, false)
 }
 
-// forwardHTTPRequest forwards a regular HTTP request
-func (p *Server) forwardHTTPRequest(w http.ResponseWriter, r *http.Request) {
+// forwardRequest forwards a regular HTTP request
+func (p *Server) forwardRequest(w http.ResponseWriter, r *http.Request, https bool) {
 	p.logger.Debug("forwardHTTPRequest called", "method", r.Method, "url", r.URL.String(), "host", r.Host)
 
+	s := "http"
+	if https {
+		s = "https"
+	}
 	// Create a new request to the target server
 	targetURL := &url.URL{
-		Scheme:   "http",
+		Scheme:   s,
 		Host:     r.Host,
 		Path:     r.URL.Path,
 		RawQuery: r.URL.RawQuery,
@@ -357,13 +361,21 @@ func (p *Server) handleTLSConnection(tlsConn *tls.Conn, hostname string) {
 
 // handleDecryptedHTTPS handles decrypted HTTPS requests and applies rules
 func (p *Server) handleDecryptedHTTPS(w http.ResponseWriter, r *http.Request) {
+	fullURL := r.URL.String()
+	if r.URL.Host == "" {
+		// Fallback: construct URL from Host header
+		fullURL = fmt.Sprintf("https://%s%s", r.Host, r.URL.Path)
+		if r.URL.RawQuery != "" {
+			fullURL += "?" + r.URL.RawQuery
+		}
+	}
 	// Check if request should be allowed
-	result := p.ruleEngine.Evaluate(r.Method, r.URL.String())
+	result := p.ruleEngine.Evaluate(r.Method, fullURL)
 
 	// Audit the request
 	p.auditor.AuditRequest(audit.Request{
 		Method:  r.Method,
-		URL:     r.URL.String(),
+		URL:     fullURL,
 		Allowed: result.Allowed,
 		Rule:    result.Rule,
 	})
@@ -374,7 +386,7 @@ func (p *Server) handleDecryptedHTTPS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Forward the HTTPS request (now handled same as HTTP after TLS termination)
-	p.forwardHTTPRequest(w, r)
+	p.forwardRequest(w, r, true)
 }
 
 // handleConnectionWithTLSDetection detects TLS vs HTTP and handles appropriately

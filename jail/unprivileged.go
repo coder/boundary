@@ -1,6 +1,7 @@
 package jail
 
 import (
+	"fmt"
 	"log/slog"
 	"os/exec"
 )
@@ -34,9 +35,11 @@ func (u *Unprivileged) Start() error {
 	u.logger.Debug("Starting in unprivileged mode")
 	e := getEnvs(u.configDir, u.caCertPath)
 	u.commandEnv = mergeEnvs(e, map[string]string{
-		"HOME":    u.homeDir,
-		"USER":    u.username,
-		"LOGNAME": u.username,
+		"HOME":        u.homeDir,
+		"USER":        u.username,
+		"LOGNAME":     u.username,
+		"HTTP_PROXY":  fmt.Sprintf("http://localhost:%d", u.httpProxyPort),
+		"HTTPS_PROXY": fmt.Sprintf("https://localhost:%d", u.httpProxyPort),
 	})
 	return nil
 }
