@@ -307,6 +307,10 @@ func (p *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	p.logger.Debug("TLS handshake successful", "hostname", hostname)
 
+	// Log connection state after handshake
+	state := tlsConn.ConnectionState()
+	p.logger.Debug("TLS connection established", "hostname", hostname, "version", state.Version, "cipher_suite", state.CipherSuite, "negotiated_protocol", state.NegotiatedProtocol)
+
 	// Now we have a TLS connection - handle HTTPS requests
 	p.logger.Debug("Starting HTTPS request handling", "hostname", hostname)
 	p.handleTLSConnection(tlsConn, hostname)
@@ -317,6 +321,9 @@ func (p *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 func (p *Server) handleTLSConnection(tlsConn *tls.Conn, hostname string) {
 	p.logger.Debug("Creating HTTP server for TLS connection", "hostname", hostname)
 
+	// Set read timeout to detect hanging connections
+	tlsConn.SetReadTimeout(5 * time.Second)
+
 	// Use ReadRequest to manually read HTTP requests from the TLS connection
 	bufReader := bufio.NewReader(tlsConn)
 	for {
@@ -325,6 +332,8 @@ func (p *Server) handleTLSConnection(tlsConn *tls.Conn, hostname string) {
 		if err != nil {
 			if err == io.EOF {
 				p.logger.Debug("TLS connection closed by client", "hostname", hostname)
+			} else if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				p.logger.Debug("TLS connection read timeout - client not sending HTTP requests", "hostname", hostname)
 			} else {
 				p.logger.Debug("Failed to read HTTP request", "hostname", hostname, "error", err)
 			}
