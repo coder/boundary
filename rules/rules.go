@@ -218,7 +218,7 @@ func parseLabel(rest string) (label, string, error) {
 
 	// Go until the next character is not a valid char
 	var i int
-	for i = 0; i < len(rest) && isValidLabelChar(rest[i]); i += 1 {
+	for i = 1; i < len(rest) && isValidLabelChar(rest[i]); i += 1 {
 	}
 
 	// Confirm that the final character is valid
