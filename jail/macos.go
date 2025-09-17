@@ -272,7 +272,7 @@ func (n *MacOSJail) setupPFRules() error {
 
 	// Enable PF if not already enabled
 	cmd = exec.Command("pfctl", "-E")
-	cmd.Run() // Ignore error as PF might already be enabled
+	_ = cmd.Run() // Ignore error as PF might already be enabled
 
 	// Create and load main ruleset that includes our anchor
 	mainRules := fmt.Sprintf(`# Temporary main ruleset to include boundary anchor
@@ -318,7 +318,7 @@ anchor "%s"
 func (n *MacOSJail) removePFRules() error {
 	// Flush the anchor
 	cmd := exec.Command("pfctl", "-a", pfAnchorName, "-F", "all")
-	cmd.Run() // Ignore errors during cleanup
+	_ = cmd.Run() // Ignore errors during cleanup
 
 	return nil
 }
@@ -326,9 +326,9 @@ func (n *MacOSJail) removePFRules() error {
 // cleanupTempFiles removes temporary rule files
 func (n *MacOSJail) cleanupTempFiles() {
 	if n.pfRulesPath != "" {
-		os.Remove(n.pfRulesPath)
+		_ = os.Remove(n.pfRulesPath)
 	}
 	if n.mainRulesPath != "" {
-		os.Remove(n.mainRulesPath)
+		_ = os.Remove(n.mainRulesPath)
 	}
 }

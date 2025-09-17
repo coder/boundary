@@ -185,7 +185,7 @@ func newAllowRule(spec string) (Rule, error) {
 		right := strings.TrimSpace(s[idx:])
 		// methods part is valid if it only contains letters and commas
 		valid := left != "" && strings.IndexFunc(left, func(r rune) bool {
-			return !(r == ',' || (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z'))
+			return r != ',' && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z')
 		}) == -1
 		if valid {
 			methods = make(map[string]bool)

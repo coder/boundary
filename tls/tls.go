@@ -229,9 +229,9 @@ func (cm *CertificateManager) generateCA(keyPath, certPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create key file: %v", err)
 	}
-	defer keyFile.Close()
+	defer func() { _ = keyFile.Close() }()
 
-	pem.Encode(keyFile, &pem.Block{
+	_ = pem.Encode(keyFile, &pem.Block{
 		Type:  "RSA PRIVATE KEY",
 		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
 	})
@@ -241,9 +241,9 @@ func (cm *CertificateManager) generateCA(keyPath, certPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create cert file: %v", err)
 	}
-	defer certFile.Close()
+	defer func() { _ = certFile.Close() }()
 
-	pem.Encode(certFile, &pem.Block{
+	_ = pem.Encode(certFile, &pem.Block{
 		Type:  "CERTIFICATE",
 		Bytes: certDER,
 	})

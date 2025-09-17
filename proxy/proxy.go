@@ -71,7 +71,7 @@ func (p *Server) Start(ctx context.Context) error {
 			if err != nil {
 				select {
 				case <-ctx.Done():
-					listener.Close()
+					_ = listener.Close()
 					return
 				default:
 					p.logger.Error("Failed to accept connection", "error", err)
@@ -194,7 +194,7 @@ func (p *Server) forwardRequest(w http.ResponseWriter, r *http.Request, https bo
 		http.Error(w, fmt.Sprintf("Failed to make request: %v", err), http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	p.logger.Debug("Received response", "status", resp.StatusCode, "target", targetURL.String())
 
@@ -238,7 +238,7 @@ func (p *Server) writeBlockedResponse(w http.ResponseWriter, r *http.Request) {
 		host = r.Host
 	}
 
-	fmt.Fprintf(w, `🚫 Request Blocked by Boundary
+	_, _ = fmt.Fprintf(w, `🚫 Request Blocked by Boundary
 
 Request: %s %s
 Host: %s
@@ -290,7 +290,7 @@ func (p *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 		p.logger.Error("Failed to hijack connection", "error", err)
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Send 200 Connection established response manually
 	_, err = conn.Write([]byte("HTTP/1.1 200 Connection established\r\n\r\n"))
@@ -416,7 +416,7 @@ func (p *Server) handleDecryptedHTTPS(w http.ResponseWriter, r *http.Request) {
 
 // handleConnectionWithTLSDetection detects TLS vs HTTP and handles appropriately
 func (p *Server) handleConnectionWithTLSDetection(conn net.Conn) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Peek at first byte to detect protocol
 	buf := make([]byte, 1)
@@ -442,7 +442,7 @@ func (p *Server) handleConnectionWithTLSDetection(conn net.Conn) {
 		p.logger.Debug("TLS handshake successful")
 		// Use HTTP server with TLS connection
 		listener := newSingleConnectionListener(tlsConn)
-		defer listener.Close()
+		defer func() { _ = listener.Close() }()
 		err = http.Serve(listener, http.HandlerFunc(p.handleDecryptedHTTPS))
 		p.logger.Debug("http.Serve completed for HTTPS", "error", err)
 	} else {
@@ -450,7 +450,7 @@ func (p *Server) handleConnectionWithTLSDetection(conn net.Conn) {
 		// Use HTTP server with regular connection
 		p.logger.Debug("About to call http.Serve for HTTP connection")
 		listener := newSingleConnectionListener(connWrapper)
-		defer listener.Close()
+		defer func() { _ = listener.Close() }()
 		err = http.Serve(listener, http.HandlerFunc(p.handleHTTP))
 		p.logger.Debug("http.Serve completed", "error", err)
 	}
@@ -519,7 +519,7 @@ func (sl *singleConnectionListener) Close() error {
 	}
 
 	if sl.conn != nil {
-		sl.conn.Close()
+		_ = sl.conn.Close()
 		sl.conn = nil
 	}
 	return nil
@@ -613,9 +613,9 @@ func (p *Server) constructFullURL(req *http.Request, hostname string) string {
 
 // writeBlockedResponseStreaming writes a blocked response directly to the TLS connection
 func (p *Server) writeBlockedResponseStreaming(tlsConn *tls.Conn, req *http.Request) {
-	response := fmt.Sprintf("HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n🚫 Request Blocked by Boundary\n\nRequest: %s %s\nHost: %s\n\nTo allow this request, restart boundary with:\n  --allow \"%s\"\n", 
+	response := fmt.Sprintf("HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n🚫 Request Blocked by Boundary\n\nRequest: %s %s\nHost: %s\n\nTo allow this request, restart boundary with:\n  --allow \"%s\"\n",
 		req.Method, req.URL.Path, req.Host, req.Host)
-	tlsConn.Write([]byte(response))
+	_, _ = tlsConn.Write([]byte(response))
 }
 
 // streamRequestToTarget streams the HTTP request (including body) to the target server
@@ -625,29 +625,29 @@ func (p *Server) streamRequestToTarget(clientConn *tls.Conn, bufReader *bufio.Re
 	if err != nil {
 		return fmt.Errorf("failed to connect to target %s: %v", hostname, err)
 	}
-	defer targetConn.Close()
+	defer func() { _ = targetConn.Close() }()
 
 	// Send HTTP request headers to target
 	reqLine := fmt.Sprintf("%s %s %s\r\n", req.Method, req.URL.RequestURI(), req.Proto)
-	targetConn.Write([]byte(reqLine))
+	_, _ = targetConn.Write([]byte(reqLine))
 
 	// Send headers
 	for name, values := range req.Header {
 		for _, value := range values {
 			headerLine := fmt.Sprintf("%s: %s\r\n", name, value)
-			targetConn.Write([]byte(headerLine))
+			_, _ = targetConn.Write([]byte(headerLine))
 		}
 	}
-	targetConn.Write([]byte("\r\n")) // End of headers
+	_, _ = targetConn.Write([]byte("\r\n")) // End of headers
 
 	// Stream request body and response bidirectionally
 	go func() {
 		// Stream request body: client -> target
-		io.Copy(targetConn, bufReader)
+		_, _ = io.Copy(targetConn, bufReader)
 	}()
 
 	// Stream response: target -> client
-	io.Copy(clientConn, targetConn)
+	_, _ = io.Copy(clientConn, targetConn)
 	return nil
 }
 
@@ -661,7 +661,7 @@ func (p *Server) handleConnectStreaming(tlsConn *tls.Conn, req *http.Request, ho
 	
 	// Send CONNECT response
 	response := "HTTP/1.1 200 Connection established\r\n\r\n"
-	tlsConn.Write([]byte(response))
+	_, _ = tlsConn.Write([]byte(response))
 	
 	// Now the client will try to do TLS handshake for the target server
 	// But we want to intercept and terminate it
@@ -676,9 +676,9 @@ func (p *Server) handleConnectStreaming(tlsConn *tls.Conn, req *http.Request, ho
 		p.logger.Error("Failed to connect to CONNECT target", "target", req.Host, "error", err)
 		return
 	}
-	defer targetConn.Close()
-	
+	defer func() { _ = targetConn.Close() }()
+
 	// Bidirectional copy
-	go io.Copy(targetConn, tlsConn)
-	io.Copy(tlsConn, targetConn)
+	go func() { _, _ = io.Copy(targetConn, tlsConn) }()
+	_, _ = io.Copy(tlsConn, targetConn)
 }
