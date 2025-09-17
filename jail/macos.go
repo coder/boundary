@@ -266,7 +266,6 @@ func (n *MacOSJail) setupPFRules() error {
 	cmd := exec.Command("pfctl", "-a", pfAnchorName, "-f", n.pfRulesPath)
 	err = cmd.Run()
 	if err != nil {
-		n.logger.Error("Failed to load PF rules", "error", err, "rules_file", n.pfRulesPath)
 		return fmt.Errorf("failed to load PF rules: %v", err)
 	}
 
@@ -318,7 +317,10 @@ anchor "%s"
 func (n *MacOSJail) removePFRules() error {
 	// Flush the anchor
 	cmd := exec.Command("pfctl", "-a", pfAnchorName, "-F", "all")
-	_ = cmd.Run() // Ignore errors during cleanup
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("failed to flush PF anchor: %v", err)
+	}
 
 	return nil
 }
@@ -326,9 +328,15 @@ func (n *MacOSJail) removePFRules() error {
 // cleanupTempFiles removes temporary rule files
 func (n *MacOSJail) cleanupTempFiles() {
 	if n.pfRulesPath != "" {
-		_ = os.Remove(n.pfRulesPath)
+		err := os.Remove(n.pfRulesPath)
+		if err != nil {
+			n.logger.Error("Failed to remove temporary PF rules file", "file", n.pfRulesPath, "error", err)
+		}
 	}
 	if n.mainRulesPath != "" {
-		_ = os.Remove(n.mainRulesPath)
+		err := os.Remove(n.mainRulesPath)
+		if err != nil {
+			n.logger.Error("Failed to remove temporary main PF rules file", "file", n.mainRulesPath, "error", err)
+		}
 	}
 }

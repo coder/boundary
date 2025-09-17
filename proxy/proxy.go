@@ -71,7 +71,10 @@ func (p *Server) Start(ctx context.Context) error {
 			if err != nil {
 				select {
 				case <-ctx.Done():
-					_ = listener.Close()
+					err = listener.Close()
+					if err != nil {
+						p.logger.Error("Failed to close listener", "error", err)
+					}
 					return
 				default:
 					p.logger.Error("Failed to accept connection", "error", err)
@@ -290,7 +293,12 @@ func (p *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 		p.logger.Error("Failed to hijack connection", "error", err)
 		return
 	}
-	defer func() { _ = conn.Close() }()
+	defer func() {
+		err := conn.Close()
+		if err != nil {
+			p.logger.Error("Failed to close connection", "error", err)
+		}
+	}()
 
 	// Send 200 Connection established response manually
 	_, err = conn.Write([]byte("HTTP/1.1 200 Connection established\r\n\r\n"))
@@ -416,7 +424,12 @@ func (p *Server) handleDecryptedHTTPS(w http.ResponseWriter, r *http.Request) {
 
 // handleConnectionWithTLSDetection detects TLS vs HTTP and handles appropriately
 func (p *Server) handleConnectionWithTLSDetection(conn net.Conn) {
-	defer func() { _ = conn.Close() }()
+	defer func() {
+		err := conn.Close()
+		if err != nil {
+			p.logger.Error("Failed to close connection", "error", err)
+		}
+	}()
 
 	// Peek at first byte to detect protocol
 	buf := make([]byte, 1)
@@ -442,7 +455,12 @@ func (p *Server) handleConnectionWithTLSDetection(conn net.Conn) {
 		p.logger.Debug("TLS handshake successful")
 		// Use HTTP server with TLS connection
 		listener := newSingleConnectionListener(tlsConn)
-		defer func() { _ = listener.Close() }()
+		defer func() {
+			err := listener.Close()
+			if err != nil {
+				p.logger.Error("Failed to close connection", "error", err)
+			}
+		}()
 		err = http.Serve(listener, http.HandlerFunc(p.handleDecryptedHTTPS))
 		p.logger.Debug("http.Serve completed for HTTPS", "error", err)
 	} else {
@@ -450,7 +468,12 @@ func (p *Server) handleConnectionWithTLSDetection(conn net.Conn) {
 		// Use HTTP server with regular connection
 		p.logger.Debug("About to call http.Serve for HTTP connection")
 		listener := newSingleConnectionListener(connWrapper)
-		defer func() { _ = listener.Close() }()
+		defer func() {
+			err := listener.Close()
+			if err != nil {
+				p.logger.Error("Failed to close connection", "error", err)
+			}
+		}()
 		err = http.Serve(listener, http.HandlerFunc(p.handleHTTP))
 		p.logger.Debug("http.Serve completed", "error", err)
 	}
@@ -519,7 +542,10 @@ func (sl *singleConnectionListener) Close() error {
 	}
 
 	if sl.conn != nil {
-		_ = sl.conn.Close()
+		err := sl.conn.Close()
+		if err != nil {
+			return fmt.Errorf("failed to close connection: %w", err)
+		}
 		sl.conn = nil
 	}
 	return nil
@@ -625,51 +651,76 @@ func (p *Server) streamRequestToTarget(clientConn *tls.Conn, bufReader *bufio.Re
 	if err != nil {
 		return fmt.Errorf("failed to connect to target %s: %v", hostname, err)
 	}
-	defer func() { _ = targetConn.Close() }()
+	defer func() {
+		err := targetConn.Close()
+		if err != nil {
+			p.logger.Error("Failed to close target connection", "error", err)
+		}
+	}()
 
 	// Send HTTP request headers to target
 	reqLine := fmt.Sprintf("%s %s %s\r\n", req.Method, req.URL.RequestURI(), req.Proto)
-	_, _ = targetConn.Write([]byte(reqLine))
+	_, err = targetConn.Write([]byte(reqLine))
+	if err != nil {
+		return fmt.Errorf("failed to write request line to target: %v", err)
+	}
 
 	// Send headers
 	for name, values := range req.Header {
 		for _, value := range values {
 			headerLine := fmt.Sprintf("%s: %s\r\n", name, value)
-			_, _ = targetConn.Write([]byte(headerLine))
+			_, err = targetConn.Write([]byte(headerLine))
+			if err != nil {
+				return fmt.Errorf("failed to write header to target: %v", err)
+			}
 		}
 	}
-	_, _ = targetConn.Write([]byte("\r\n")) // End of headers
+	_, err = targetConn.Write([]byte("\r\n")) // End of headers
+	if err != nil {
+		return fmt.Errorf("failed to write headers to target: %v", err)
+	}
 
 	// Stream request body and response bidirectionally
 	go func() {
 		// Stream request body: client -> target
-		_, _ = io.Copy(targetConn, bufReader)
+		_, err := io.Copy(targetConn, bufReader)
+		if err != nil {
+			p.logger.Error("Error copying request body to target", "error", err)
+		}
 	}()
 
 	// Stream response: target -> client
-	_, _ = io.Copy(clientConn, targetConn)
+	_, err = io.Copy(clientConn, targetConn)
+	if err != nil {
+		p.logger.Error("Error copying response from target to client", "error", err)
+	}
+
 	return nil
 }
 
 // handleConnectStreaming handles CONNECT requests with streaming TLS termination
 func (p *Server) handleConnectStreaming(tlsConn *tls.Conn, req *http.Request, hostname string) {
 	p.logger.Debug("Handling CONNECT request with streaming", "hostname", hostname)
-	
+
 	// For CONNECT, we need to establish a tunnel but still maintain TLS termination
 	// This is the tricky part - we're already inside a TLS connection from the client
 	// The client is asking us to CONNECT to another server, but we want to intercept that too
-	
+
 	// Send CONNECT response
 	response := "HTTP/1.1 200 Connection established\r\n\r\n"
-	_, _ = tlsConn.Write([]byte(response))
-	
+	_, err := tlsConn.Write([]byte(response))
+	if err != nil {
+		p.logger.Error("Failed to send CONNECT response", "error", err)
+		return
+	}
+
 	// Now the client will try to do TLS handshake for the target server
 	// But we want to intercept and terminate it
 	// This means we need to do another level of TLS termination
-	
+
 	// For now, let's create a simple tunnel and log that we're not inspecting
 	p.logger.Warn("CONNECT tunnel established - content not inspected", "hostname", hostname)
-	
+
 	// Create connection to real target
 	targetConn, err := net.Dial("tcp", req.Host)
 	if err != nil {
@@ -679,6 +730,15 @@ func (p *Server) handleConnectStreaming(tlsConn *tls.Conn, req *http.Request, ho
 	defer func() { _ = targetConn.Close() }()
 
 	// Bidirectional copy
-	go func() { _, _ = io.Copy(targetConn, tlsConn) }()
-	_, _ = io.Copy(tlsConn, targetConn)
+	go func() {
+		_, err := io.Copy(targetConn, tlsConn)
+		if err != nil {
+			p.logger.Error("Error copying from client to target", "error", err)
+		}
+	}()
+	_, err = io.Copy(tlsConn, targetConn)
+	if err != nil {
+		p.logger.Error("Error copying from target to client", "error", err)
+	}
+	p.logger.Debug("CONNECT tunnel closed", "hostname", hostname)
 }
