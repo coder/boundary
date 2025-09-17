@@ -229,24 +229,40 @@ func (cm *CertificateManager) generateCA(keyPath, certPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create key file: %v", err)
 	}
-	defer keyFile.Close()
+	defer func() {
+		err := keyFile.Close()
+		if err != nil {
+			cm.logger.Error("Failed to close key file", "error", err)
+		}
+	}()
 
-	pem.Encode(keyFile, &pem.Block{
+	err = pem.Encode(keyFile, &pem.Block{
 		Type:  "RSA PRIVATE KEY",
 		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
 	})
+	if err != nil {
+		return fmt.Errorf("failed to write key to file: %v", err)
+	}
 
 	// Save certificate
 	certFile, err := os.OpenFile(certPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to create cert file: %v", err)
 	}
-	defer certFile.Close()
+	defer func() {
+		err := certFile.Close()
+		if err != nil {
+			cm.logger.Error("Failed to close cert file", "error", err)
+		}
+	}()
 
-	pem.Encode(certFile, &pem.Block{
+	err = pem.Encode(certFile, &pem.Block{
 		Type:  "CERTIFICATE",
 		Bytes: certDER,
 	})
+	if err != nil {
+		return fmt.Errorf("failed to write cert to file: %v", err)
+	}
 
 	cm.caKey = privateKey
 	cm.caCert = cert

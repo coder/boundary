@@ -197,7 +197,7 @@ options timeout:2 attempts:2
 func (l *LinuxJail) setupIptables() error {
 	// Enable IP forwarding
 	cmd := exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1")
-	cmd.Run() // Ignore error
+	_ = cmd.Run() // Ignore error
 
 	// NAT rules for outgoing traffic (MASQUERADE for return traffic)
 	cmd = exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", "-s", "192.168.100.0/24", "-j", "MASQUERADE")
@@ -222,11 +222,19 @@ func (l *LinuxJail) setupIptables() error {
 func (l *LinuxJail) cleanupIptables() error {
 	// Remove comprehensive TCP redirect rule
 	cmd := exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-i", l.vethHost, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.httpProxyPort))
-	cmd.Run() // Ignore errors during cleanup
+	err := cmd.Run()
+	if err != nil {
+		l.logger.Error("Failed to remove TCP redirect rule", "error", err)
+		// Continue with other cleanup even if this fails
+	}
 
 	// Remove NAT rule
 	cmd = exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING", "-s", "192.168.100.0/24", "-j", "MASQUERADE")
-	cmd.Run() // Ignore errors during cleanup
+	err = cmd.Run()
+	if err != nil {
+		l.logger.Error("Failed to remove NAT rule", "error", err)
+		// Continue with other cleanup even if this fails
+	}
 
 	return nil
 }
