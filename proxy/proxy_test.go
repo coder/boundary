@@ -4,12 +4,16 @@ import (
 	"context"
 	"crypto/tls"
 	"io"
+	"log"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/user"
+	"strconv"
 	"testing"
 	"time"
 
+	boundary_tls "github.com/coder/boundary/tls"
 	"github.com/stretchr/testify/require"
 
 	"github.com/coder/boundary/audit"
@@ -103,6 +107,108 @@ func TestProxyServerBasicHTTP(t *testing.T) {
   "title": "delectus aut autem",
   "completed": false
 }`
+		require.Equal(t, expectedResponse, string(body))
+	})
+}
+
+// TestProxyServerBasicHTTPS tests basic HTTPS request handling
+func TestProxyServerBasicHTTPS(t *testing.T) {
+	// Create test logger
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+
+	// Create test rules (allow all for testing)
+	testRules, err := rules.ParseAllowSpecs([]string{"*"})
+	if err != nil {
+		t.Fatalf("Failed to parse test rules: %v", err)
+	}
+
+	// Create rule engine
+	ruleEngine := rules.NewRuleEngine(testRules, logger)
+
+	// Create mock auditor
+	auditor := &mockAuditor{}
+
+	// Create TLS config (minimal for testing)
+	tlsConfig := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+	}
+
+	currentUser, err := user.Current()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	uid, _ := strconv.Atoi(currentUser.Uid)
+	gid, _ := strconv.Atoi(currentUser.Gid)
+
+	// Create TLS certificate manager
+	certManager, err := boundary_tls.NewCertificateManager(boundary_tls.Config{
+		Logger:    logger,
+		ConfigDir: "/tmp/boundary",
+		Uid:       uid,
+		Gid:       gid,
+	})
+	require.NoError(t, err)
+
+	// Setup TLS to get cert path for jailer
+	tlsConfig, caCertPath, configDir, err := certManager.SetupTLSAndWriteCACert()
+	require.NoError(t, err)
+	_, _ = caCertPath, configDir
+
+	// Create proxy server
+	server := NewProxyServer(Config{
+		HTTPPort:   8080,
+		RuleEngine: ruleEngine,
+		Auditor:    auditor,
+		Logger:     logger,
+		TLSConfig:  tlsConfig,
+	})
+
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Start server in goroutine
+	serverDone := make(chan error, 1)
+	go func() {
+		serverDone <- server.Start(ctx)
+	}()
+
+	// Give server time to start
+	time.Sleep(100 * time.Millisecond)
+
+	// Test basic HTTPS request
+	t.Run("BasicHTTPSRequest", func(t *testing.T) {
+		// Create HTTP client
+		client := &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true, // Skip cert verification for testing
+				},
+			},
+			Timeout: 5 * time.Second,
+		}
+
+		// Make request to proxy
+		req, err := http.NewRequest("GET", "https://localhost:8080/api/v2", nil)
+		if err != nil {
+			t.Fatalf("Failed to create request: %v", err)
+		}
+		// Override the Host header
+		req.Host = "dev.coder.com"
+
+		// Make the request
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		resp.Body.Close()
+
+		expectedResponse := `{"message":"👋"}
+`
 		require.Equal(t, expectedResponse, string(body))
 	})
 }
