@@ -3,47 +3,111 @@ package rules
 import (
 	"errors"
 	"fmt"
-	"log/slog"
+	"net/http"
 	"strings"
 )
 
-// I know a private generic interface seems insane, but this one is not complicated I promise.
+// I know a generic interface seems insane, but this one is not complicated I promise.
 // a `pattern[T]` is a thing that can be matched against something of type `T`.
-// For example, a pattern[httpToken] can be used as a matcher with any httpToken.
+// For example, a pattern[http.Request] can be used to check for a match against any http.Request.
+//
+// The interface exists to help us build patterns from collections of simpler patterns, and to
+// inject specific patterns for testing.
 type pattern[T any] interface {
 
 	// Match returns whether the provided T matches the pattern.
 	Matches(T) bool
 }
 
-// Rule represents an allow rule.
-type Rule struct {
-	// A slice of patterns for matching against valid http identifiers (i.e. GET, HEAD, custom-method-1, etc.)
-	httpMethods []pattern[httpToken]
-
-	// A slice of patterns for matching against valid hosts (i.e. wibble.wobble.org)
-	domainSegments []pattern[host]
-
-	// A slice of patterns for matching against valid path segments (i.e. /wibble/wobble)
-	pathSegments []pattern[segment]
+type Request struct {
+	method 
 }
 
-// RuleParser is responsible for, well, parsing allow rules.
-// The zero value is ready to use. Consider setting the `Strict` flag.
-type RuleParser struct {
-
-	// A lot of the valid characters in https methods, host labels, and path segments open the user to the opportunity
-	// for command injection attacks when logged. If you know you're in control of the input, flexibility is probably best.
-	// However, if the allow string is coming from user input (like a runtime config), consider using the strict mode
-	// to limit the patterns that can be provided.
-	Strict bool
+// A rules engine for evaluating requests. The zero value is ready to use,
+// it simply has no allow rules, and will therefore block every request.
+type Engine struct {
+	rules []AllowRule
 }
 
-func (rp *RuleParser) ParseRule(input string) (rule Rule, err error) {
+// The result of a match. 
+type Result struct {
+	Allowed bool 
+	Rule string
+}
+
+// AddRule adds a rule to the engine. Returns an error if it couldn't successfully
+// parse the rule.
+func (engine *Engine) AddRule(rule string) error {
+	r, err := ParseAllowRule(rule)
+	if err != nil {
+		return err
+	}
+
+	engine.rules = append(engine.rules, r)
+	return nil
+}
+
+// Evaluate checks the http method and url against the engines rules,
+// and returns true if there's a match.
+// It returns an error if some aspect of the request object provided is not valid.
+func (engine *Engine) Evaluate(req http.Request) (Result, error) {
+
+	
+	
+
+	for _, rule := range engine.rules {
+		if rule.Matches(data) {
+			return Result{
+				Allowed: true,
+				Rule:    rule,
+			}, nil
+		}
+	}
+
+	// No matches (the zero value of result is a failed result).
+	return Result{}, nil
+}
+
+// `AllowRule` represents a single --allow flag which has been successfully parsed and can be used to
+// match against an `http.Request`.
+type AllowRule struct {
+	raw string // Mostly for debugging
+
+	// Used to match against a specific host string
+	hostMatcher pattern[host]
+
+	// Used to match against a specific path
+	pathMatcher pattern[path]
+
+	// Used to match against a specific http method
+	methodMatcher pattern[httpToken]
+}
+
+type allowRuleData struct {
+	method httpToken
+	host host
+	path path 
+}
+
+func (rule AllowRule) String() string {
+	return rule.raw
+}
+
+// Matches returns whether the allow rule matches a particular request
+func (rule *AllowRule) Matches(req allowRuleData) bool {
+	return rule.hostMatcher.Matches(req.host) && rule.methodMatcher.Matches(req.method) && rule.pathMatcher.Matches(req.path)
+}
+
+// Parse allow rule parses the text provided via --allow into something
+// that can be used to match against an http request.
+func ParseAllowRule(input string) (AllowRule, error) {
+	var rule AllowRule
+	var err error
 
 	// We're going to mutate this "rest" variable over and over as we parse stuff from it.
 	// Best not to confuse it with the original input.
 	rest := input
+
 	for {
 		// Trim any leading whitespace
 		rest = strings.TrimLeft(rest, " ")
@@ -57,27 +121,37 @@ func (rp *RuleParser) ParseRule(input string) (rule Rule, err error) {
 		var key string
 		key, rest, err = parseKey(rest)
 		if err != nil {
-			return Rule{}, err
+			return AllowRule{}, err
 		}
 
 		// Based on the key, parse the appropriate pattern
 		switch key {
 		case "method":
+			if rule.methodMatcher != nil {
+				return AllowRule{}, errors.New("duplicate method pattern provided in allow rule")
+			}
+
 			var pattern pattern[httpToken]
 			pattern, rest, err = parseHTTPMethodPattern(rest)
 			if err != nil {
-				return Rule{}, err
+				return AllowRule{}, fmt.Errorf("could not parse method matcher pattern: %s", err)
 			}
-			rule.httpMethods = append(rule.httpMethods, pattern)
+
+			rule.methodMatcher = pattern
 		case "domain":
+			if rule.hostMatcher != nil {
+				return AllowRule{}, errors.New("duplicate host pattern provided in allow rule")
+			}
+
 			var pattern pattern[host]
 			pattern, rest, err = parseHostPattern(rest)
 			if err != nil {
-				return Rule{}, err
+				return AllowRule{}, fmt.Errorf("could not parse host pattern: %s", err)
 			}
-			rule.domainSegments = append(rule.domainSegments, pattern)
+
+			rule.hostMatcher = pattern
 		default:
-			return Rule{}, fmt.Errorf("unsupported key: %s", key)
+			return AllowRule{}, fmt.Errorf("unsupported key: %s", key)
 		}
 
 	}
@@ -85,7 +159,15 @@ func (rp *RuleParser) ParseRule(input string) (rule Rule, err error) {
 	return rule, nil
 }
 
-func parseHTTPMethodPattern(pattern string) (pattern[httpToken], string, error) {
+// Patterns ----------
+
+// The allow string pattern for matching http methods. Luckily for us,
+// a `*` is actually a valid http method. So all we have to do is parse a
+// comma seprated list of valid http methods, and then treat the `*` specially
+// in the Matches method.
+type httpMethodPattern []httpToken
+
+func parseHTTPMethodPattern(pattern string) (httpMethodPattern, string, error) {
 	methods := []httpToken{}
 
 	// Expect at least one valid method
@@ -110,8 +192,91 @@ func parseHTTPMethodPattern(pattern string) (pattern[httpToken], string, error) 
 		methods = append(methods, httpToken(token))
 	}
 
-	ms := setOfMethods(methods)
-	return &ms, rest, nil
+	ms := httpMethodPattern(methods)
+	return ms, rest, nil
+}
+
+func (methods httpMethodPattern) Matches(method httpToken) bool {
+	for _, m := range methods {
+		// We treat the `*` method specially as a match all character.
+		if string(m) == "*" || m == method {
+			return true
+		}
+	}
+	return false
+}
+
+type hostPattern []labelPattern
+
+func (hp hostPattern) Matches(host host) bool {
+	// Single asterisk matches any valid host at all
+	if len(hp) == 1 && string(hp[0]) == "*" {
+		return true
+	}
+
+	// Too sleepy to continue, will pick up tomorrow.
+	return true
+}
+
+func parseHostPattern(input string) (pattern hostPattern, rest string, err error) {
+	if input == "" {
+		return nil, "", errors.New("expected host pattern, got empty string")
+	}
+
+	var labelPattern labelPattern
+
+	// There should be at least one label.
+	labelPattern, rest, err = parseLabelPattern(input)
+	if err != nil {
+		return nil, "", err
+	}
+	pattern = append(pattern, labelPattern)
+
+	// A host is just a bunch of labels separated by `.` characters.
+	var found bool
+	for {
+		rest, found = strings.CutPrefix(rest, ".")
+		if !found {
+			break
+		}
+
+		labelPattern, rest, err = parseLabelPattern(input)
+		if err != nil {
+			return nil, "", err
+		}
+		pattern = append(pattern, labelPattern)
+	}
+
+	return pattern, rest, nil
+}
+
+// A pattern for matching against host labels
+type labelPattern string
+
+func (lp *labelPattern) Matches(label label) bool {
+	p := string(*lp)
+	return p == "*" || p == string(label)
+}
+
+func parseLabelPattern(input string) (pattern labelPattern, rest string, err error) {
+	if rest == "" {
+		return "", "", errors.New("expected label, got empty string")
+	}
+
+	// first look to see if it's a wildcard
+	if strings.HasPrefix(rest, "*.") {
+		p := labelPattern("*")
+		return p, strings.TrimPrefix(rest, "*"), nil
+	}
+
+	// Try to parse a valid label if it's not a wildcard
+	var label label
+	label, rest, err = parseLabel(rest)
+	if err != nil {
+		return "", "", err
+	}
+	p := labelPattern(label)
+	return p, rest, nil
 }
 
 // Beyond the 9 methods defined in HTTP 1.1, there actually are many more seldom used extension methods by
@@ -211,8 +376,8 @@ func parseLabel(rest string) (label, string, error) {
 		return "", "", errors.New("expected label, got empty string")
 	}
 
-	// First try to get a valid leading char
-	if !isValidLeadingOrEndingLabelChar(rest[0]) {
+	// First try to get a valid leading char. Leading char in a label cannot be a hyphen.
+	if !isValidLabelChar(rest[0]) || rest[0] == '-' {
 		return "", "", fmt.Errorf("could not pull label from front of string: %s", rest)
 	}
 
@@ -221,17 +386,12 @@ func parseLabel(rest string) (label, string, error) {
 	for i = 1; i < len(rest) && isValidLabelChar(rest[i]); i += 1 {
 	}
 
-	// Confirm that the final character is valid
-	if !isValidLeadingOrEndingLabelChar(rest[i-1]) {
+	// Final char in a label cannot be a hyphen.
+	if rest[i-1] == '-' {
 		return "", "", fmt.Errorf("invalid label: %s", rest[:i])
 	}
 
 	return label(rest[:i]), rest[i:], nil
-}
-
-func isValidLeadingOrEndingLabelChar(c byte) bool {
-	// segments can't start or end in hyphens
-	return isValidLabelChar(c) && c != '-'
 }
 
 func isValidLabelChar(c byte) bool {
@@ -255,9 +415,11 @@ func isValidLabelChar(c byte) bool {
 
 // Represents a valid url path. For example, /wobble/wibble in `mysite.com/wobble/wibble`.
 // https://datatracker.ietf.org/doc/html/rfc3986#section-1.1.1
-//
-// We make some alterations for safety though.
 type path []segment
+
+func parsePath(input string) (path, string, error) {
+	return nil, "", errors.New("unimplemented")
+}
 
 // Represents a valid url path segment.
 type segment string
@@ -300,101 +462,13 @@ func isHexDigit(c byte) bool {
 		(c >= 'a' && c <= 'f')
 }
 
-// HTTP methods separated by commas.
-type setOfMethods []httpToken
-
-func (methods *setOfMethods) Matches(method httpToken) bool {
-	for _, m := range *methods {
-		// Technically, * is a valid httpToken. However, we use it as a shorthand for "matches everything".
-		// So as long as the provided method is a valid httpToken, we're good to go. Otherwise, we look for
-		// a direct match.
-		if string(m) == "*" || m == method {
-			return true
-		}
-	}
-
-	return false
-}
-
-type hostPattern []labelPattern
-
-func (hp *hostPattern) Matches(host host) bool {
-	// Single asterisk matches any valid host at all
-	if len(*hp) == 1 && string((*hp)[0]) == "*" {
-		return true
-	} 
-
-	// Too sleepy to continue, will pick up tomorrow.
-	return true
-}
-
-func parseHostPattern(input string) (pattern hostPattern, rest string, err error) {
-	if input == "" {
-		return nil, "", errors.New("expected host pattern, got empty string")
-	}
-
-	var labelPattern labelPattern
-
-	// There should be at least one label.
-	labelPattern, rest, err = parseLabelPattern(input)
-	if err != nil {
-		return nil, "", err
-	}
-	pattern = append(pattern, labelPattern)
-
-	// A host is just a bunch of labels separated by `.` characters.
-	var found bool
-	for {
-		rest, found = strings.CutPrefix(rest, ".")
-		if !found {
-			break
-		}
-
-		labelPattern, rest, err = parseLabelPattern(input)
-		if err != nil {
-			return nil, "", err
-		}
-		pattern = append(pattern, labelPattern)
-	}
-
-	return pattern, rest, nil
-}
-
-// A pattern for matching against host labels
-type labelPattern string
-
-func (lp *labelPattern) Matches(label label) bool {
-	p := string(*lp)
-	return p == "*" || p == string(label)
-}
-
-func parseLabelPattern(input string) (pattern labelPattern, rest string, err error) {
-	if rest == "" {
-		return "", "", errors.New("expected label, got empty string")
-	}
-
-	// first look to see if it's a wildcard
-	if strings.HasPrefix(rest, "*.") {
-		p := labelPattern("*")
-		return p, strings.TrimPrefix(rest, "*"), nil
-	}
-
-	// Try to parse a valid label if it's not a wildcard
-	var label label
-	label, rest, err = parseLabel(rest)
-	if err != nil {
-		return "", "", err
-	}
-	p := labelPattern(label)
-	return p, rest, nil
-}
-
 // parseKey parses the predefined keys that the cli can handle. Also strips the `=` following the key.
 func parseKey(rule string) (string, string, error) {
 	if rule == "" {
 		return "", "", errors.New("expected key")
 	}
 
+	// These are the current keys we support.
 	keys := []string{"method", "domain", "path"}
 
 	for _, key := range keys {
@@ -404,59 +478,4 @@ func parseKey(rule string) (string, string, error) {
 	}
 
 	return "", "", errors.New("expected key")
-}
-
-// Result contains the result of rule evaluation
-type Result struct {
-	Allowed bool
-	Rule    string // The rule that matched (if any)
-}
-
-type Evaluator interface {
-	Evaluate(method, url string) Result
-}
-
-type Engine struct {
-	rules  []Rule
-	logger *slog.Logger
-}
-
-func NewEngine(rules []Rule, logger *slog.Logger) *Engine {
-	return &Engine{
-		rules:  rules,
-		logger: logger,
-	}
-}
-
-func (e *Engine) Evaluate(method, url string) Result {
-
-	// For a rule to let a request through, the method, domain, and path segments
-	// need to be a match
-	for _, rule := range e.rules {
-		// Check if one of the methods matches.
-		methodMatch := false
-		for _, pattern := range rule.httpMethods {
-			if pattern.Matches(method) {
-				methodMatch = true
-				break
-			}
-		}
-
-		// No method match, so we ned to try the next allow rule
-		if !methodMatch {
-			continue
-		}
-
-		// Everything matched, so return the rule
-		return Result{
-			Allowed: true,
-			Rule:    rule.String(),
-		}
-	}
-
-	// If we checked all the rules and none were a match, we fail.
-	return Result{
-		Allowed: false,
-		Rule:    "",
-	}
 }

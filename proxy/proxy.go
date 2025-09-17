@@ -16,7 +16,7 @@ import (
 
 // Server handles HTTP and HTTPS requests with rule-based filtering
 type Server struct {
-	ruleEngine rules.Evaluator
+	ruleEngine rules.Engine
 	auditor    audit.Auditor
 	logger     *slog.Logger
 	tlsConfig  *tls.Config
@@ -31,7 +31,7 @@ type Server struct {
 type Config struct {
 	HTTPPort   int
 	HTTPSPort  int
-	RuleEngine rules.Evaluator
+	RuleEngine rules.Engine
 	Auditor    audit.Auditor
 	Logger     *slog.Logger
 	TLSConfig  *tls.Config
@@ -109,14 +109,17 @@ func (p *Server) Stop() error {
 // handleHTTP handles regular HTTP requests
 func (p *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	// Check if request should be allowed
-	result := p.ruleEngine.Evaluate(r.Method, r.URL.String())
+	result, err := p.ruleEngine.Evaluate(r)
+	if err != nil {
+		p.logger.Error("could not validate request because it failed to parse", "error", err)
+	}
 
 	// Audit the request
 	p.auditor.AuditRequest(audit.Request{
 		Method:  r.Method,
 		URL:     r.URL.String(),
 		Allowed: result.Allowed,
-		Rule:    result.Rule,
+		Rule:    result.Rule.String(),
 	})
 
 	if !result.Allowed {
@@ -131,14 +134,17 @@ func (p *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 // handleHTTPS handles HTTPS requests (after TLS termination)
 func (p *Server) handleHTTPS(w http.ResponseWriter, r *http.Request) {
 	// Check if request should be allowed
-	result := p.ruleEngine.Evaluate(r.Method, r.URL.String())
+	result, err := p.ruleEngine.Evaluate(r)
+	if err != nil {
+		p.logger.Error("could not parse request", "error", err)
+	}
 
 	// Audit the request
 	p.auditor.AuditRequest(audit.Request{
 		Method:  r.Method,
 		URL:     r.URL.String(),
 		Allowed: result.Allowed,
-		Rule:    result.Rule,
+		Rule:    result.Rule.String(),
 	})
 
 	if !result.Allowed {

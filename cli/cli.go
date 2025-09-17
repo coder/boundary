@@ -98,19 +98,14 @@ func Run(ctx context.Context, config Config, args []string) error {
 		logger.Warn("No allow rules specified; all network traffic will be denied by default")
 	}
 
-	// Parse allow rules
-	allowRules := []rules.Rule{}
-	for _, allowStr := range config.AllowStrings {
-		rule, err := rules.ParseRule(allowStr)
-		if err != nil {
-			logger.Error("Failed to parse allow rule", "error", err)
-			return fmt.Errorf("failed to parse allow rule: %v", err)
-		}
-		allowRules = append(allowRules, rule)
-	}
-
 	// Create rule engine
-	ruleEngine := rules.NewEngine(allowRules, logger)
+	ruleEngine := rules.Engine{}
+	for _, allow := range config.AllowStrings {
+		err := ruleEngine.AddRule(allow)
+		if err != nil {
+			logger.Error("could not add allow rule to engine", "rule", allow, "error", err)
+		}
+	}
 
 	// Create auditor
 	auditor := audit.NewLoggingAuditor(logger)
