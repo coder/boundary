@@ -34,6 +34,7 @@ jobs:
       run: make deps
 
     - name: Run linting
+      uses: golangci/golangci-lint-action@v8
       run: make lint
 
   test:
