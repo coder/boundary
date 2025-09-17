@@ -99,7 +99,7 @@ func TestProxyServerBasicHTTP(t *testing.T) {
 
 		body, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
-		resp.Body.Close()
+		require.NoError(t, resp.Body.Close())
 
 		expectedResponse := `{
   "userId": 1,
@@ -205,7 +205,7 @@ func TestProxyServerBasicHTTPS(t *testing.T) {
 
 		body, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
-		resp.Body.Close()
+		require.NoError(t, resp.Body.Close())
 
 		expectedResponse := `{"message":"👋"}
 `
