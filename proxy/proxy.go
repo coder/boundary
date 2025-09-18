@@ -2,8 +2,8 @@ package proxy
 
 import (
 	"bufio"
-	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/coder/boundary/audit"
 	"github.com/coder/boundary/rules"
@@ -24,6 +25,7 @@ type Server struct {
 	logger     *slog.Logger
 	tlsConfig  *tls.Config
 	httpPort   int
+	started    atomic.Bool
 
 	listener net.Listener
 }
@@ -49,7 +51,12 @@ func NewProxyServer(config Config) *Server {
 }
 
 // Start starts the HTTP proxy server with TLS termination capability
-func (p *Server) Start(ctx context.Context) error {
+func (p *Server) Start() error {
+	if p.isStarted() {
+		return nil
+	}
+	p.started.Store(true)
+
 	// Start HTTP server with custom listener for TLS detection
 	go func() {
 		p.logger.Info("Starting HTTP proxy with TLS termination", "port", p.httpPort)
@@ -62,18 +69,12 @@ func (p *Server) Start(ctx context.Context) error {
 
 		for {
 			conn, err := p.listener.Accept()
+			if err != nil && errors.Is(err, net.ErrClosed) && p.isStopped() {
+				return
+			}
 			if err != nil {
-				select {
-				case <-ctx.Done():
-					err = p.listener.Close()
-					if err != nil {
-						p.logger.Error("Failed to close listener", "error", err)
-					}
-					return
-				default:
-					p.logger.Error("Failed to accept connection", "error", err)
-					continue
-				}
+				p.logger.Error("Failed to accept connection", "error", err)
+				continue
 			}
 
 			// Handle connection with TLS detection
@@ -81,15 +82,18 @@ func (p *Server) Start(ctx context.Context) error {
 		}
 	}()
 
-	// Wait for context cancellation
-	<-ctx.Done()
-	return p.Stop()
+	return nil
 }
 
 // Stops proxy server
 func (p *Server) Stop() error {
-	if p.listener == nil {
+	if p.isStopped() {
 		return nil
+	}
+	p.started.Store(false)
+
+	if p.listener == nil {
+		return errors.New("listener is nil; server was not started")
 	}
 
 	err := p.listener.Close()
@@ -97,9 +101,15 @@ func (p *Server) Stop() error {
 		p.logger.Error("Failed to close listener", "error", err)
 	}
 
-	fmt.Printf("STOP is finished\n")
-
 	return nil
+}
+
+func (p *Server) isStarted() bool {
+	return p.started.Load()
+}
+
+func (p *Server) isStopped() bool {
+	return !p.started.Load()
 }
 
 // handleHTTP handles regular HTTP requests and CONNECT tunneling

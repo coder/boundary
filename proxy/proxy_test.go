@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"context"
 	"crypto/tls"
 	"io"
 	"log"
@@ -31,7 +30,7 @@ func (m *mockAuditor) AuditRequest(req audit.Request) {
 func TestProxyServerBasicHTTP(t *testing.T) {
 	// Create test logger
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
+		Level: slog.LevelError,
 	}))
 
 	// Create test rules (allow all for testing)
@@ -60,14 +59,10 @@ func TestProxyServerBasicHTTP(t *testing.T) {
 		TLSConfig:  tlsConfig,
 	})
 
-	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
 	// Start server in goroutine
 	serverDone := make(chan error, 1)
 	go func() {
-		serverDone <- server.Start(ctx)
+		serverDone <- server.Start()
 	}()
 
 	// Give server time to start
@@ -112,7 +107,6 @@ func TestProxyServerBasicHTTP(t *testing.T) {
 
 	err = server.Stop()
 	require.NoError(t, err)
-	cancel()
 	err = <-serverDone
 	require.NoError(t, err)
 }
@@ -121,7 +115,7 @@ func TestProxyServerBasicHTTP(t *testing.T) {
 func TestProxyServerBasicHTTPS(t *testing.T) {
 	// Create test logger
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
+		Level: slog.LevelError,
 	}))
 
 	// Create test rules (allow all for testing)
@@ -167,14 +161,10 @@ func TestProxyServerBasicHTTPS(t *testing.T) {
 		TLSConfig:  tlsConfig,
 	})
 
-	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
 	// Start server in goroutine
 	serverDone := make(chan error, 1)
 	go func() {
-		serverDone <- server.Start(ctx)
+		serverDone <- server.Start()
 	}()
 
 	// Give server time to start
@@ -215,7 +205,6 @@ func TestProxyServerBasicHTTPS(t *testing.T) {
 
 	err = server.Stop()
 	require.NoError(t, err)
-	cancel()
 	err = <-serverDone
 	require.NoError(t, err)
 }
