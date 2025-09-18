@@ -281,11 +281,11 @@ func TestProxyServerCONNECT(t *testing.T) {
 		// Because this is HTTPS, Go will issue CONNECT localhost:8080 → dev.coder.com:443
 		resp, err := client.Get("https://dev.coder.com/api/v2")
 		require.NoError(t, err)
-		defer resp.Body.Close()
 
 		// Read response
 		body, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
 
 		// Verify response contains expected content
 		expectedResponse := `{"message":"👋"}
@@ -311,11 +311,11 @@ func TestProxyServerCONNECT(t *testing.T) {
 		// The proxy will forward it to the target server
 		resp, err := client.Get("http://jsonplaceholder.typicode.com/todos/1")
 		require.NoError(t, err)
-		defer resp.Body.Close()
 
 		// Read response
 		body, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
 
 		// Verify response contains expected content
 		expectedResponse := `{
