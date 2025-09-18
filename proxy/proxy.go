@@ -55,7 +55,6 @@ func (p *Server) Start() error {
 	if p.isStarted() {
 		return nil
 	}
-	p.started.Store(true)
 
 	// Start HTTP server with custom listener for TLS detection
 	go func() {
@@ -82,6 +81,8 @@ func (p *Server) Start() error {
 		}
 	}()
 
+	p.started.Store(true)
+
 	return nil
 }
 
@@ -93,12 +94,14 @@ func (p *Server) Stop() error {
 	p.started.Store(false)
 
 	if p.listener == nil {
-		return errors.New("listener is nil; server was not started")
+		p.logger.Error("unexpected nil listener")
+		return errors.New("unexpected nil listener")
 	}
 
 	err := p.listener.Close()
 	if err != nil {
 		p.logger.Error("Failed to close listener", "error", err)
+		return err
 	}
 
 	return nil
