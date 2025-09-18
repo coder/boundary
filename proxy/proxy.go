@@ -56,16 +56,18 @@ func (p *Server) Start() error {
 		return nil
 	}
 
+	p.logger.Info("Starting HTTP proxy with TLS termination", "port", p.httpPort)
+	var err error
+	p.listener, err = net.Listen("tcp", fmt.Sprintf(":%d", p.httpPort))
+	if err != nil {
+		p.logger.Error("Failed to create HTTP listener", "error", err)
+		return err
+	}
+
+	p.started.Store(true)
+
 	// Start HTTP server with custom listener for TLS detection
 	go func() {
-		p.logger.Info("Starting HTTP proxy with TLS termination", "port", p.httpPort)
-		var err error
-		p.listener, err = net.Listen("tcp", fmt.Sprintf(":%d", p.httpPort))
-		if err != nil {
-			p.logger.Error("Failed to create HTTP listener", "error", err)
-			return
-		}
-
 		for {
 			conn, err := p.listener.Accept()
 			if err != nil && errors.Is(err, net.ErrClosed) && p.isStopped() {
@@ -80,8 +82,6 @@ func (p *Server) Start() error {
 			go p.handleConnectionWithTLSDetection(conn)
 		}
 	}()
-
-	p.started.Store(true)
 
 	return nil
 }
