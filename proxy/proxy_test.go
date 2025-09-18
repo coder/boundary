@@ -109,6 +109,12 @@ func TestProxyServerBasicHTTP(t *testing.T) {
 }`
 		require.Equal(t, expectedResponse, string(body))
 	})
+
+	err = server.Stop()
+	require.NoError(t, err)
+	cancel()
+	err = <-serverDone
+	require.NoError(t, err)
 }
 
 // TestProxyServerBasicHTTPS tests basic HTTPS request handling
@@ -211,4 +217,10 @@ func TestProxyServerBasicHTTPS(t *testing.T) {
 `
 		require.Equal(t, expectedResponse, string(body))
 	})
+
+	err = server.Stop()
+	require.NoError(t, err)
+	cancel()
+	err = <-serverDone
+	require.NoError(t, err)
 }
