@@ -6,6 +6,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/user"
 	"strconv"
@@ -192,6 +193,101 @@ func TestProxyServerBasicHTTPS(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, resp.Body.Close())
 
+		expectedResponse := `{"message":"👋"}
+`
+		require.Equal(t, expectedResponse, string(body))
+	})
+
+	err = server.Stop()
+	require.NoError(t, err)
+}
+
+// TestProxyServerCONNECT tests HTTP CONNECT method for HTTPS tunneling
+func TestProxyServerCONNECT(t *testing.T) {
+	// Create test logger
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelError,
+	}))
+
+	// Create test rules (allow all for testing)
+	testRules, err := rules.ParseAllowSpecs([]string{"*"})
+	if err != nil {
+		t.Fatalf("Failed to parse test rules: %v", err)
+	}
+
+	// Create rule engine
+	ruleEngine := rules.NewRuleEngine(testRules, logger)
+
+	// Create mock auditor
+	auditor := &mockAuditor{}
+
+	// Get current user for TLS setup
+	currentUser, err := user.Current()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	uid, _ := strconv.Atoi(currentUser.Uid)
+	gid, _ := strconv.Atoi(currentUser.Gid)
+
+	// Create TLS certificate manager
+	certManager, err := boundary_tls.NewCertificateManager(boundary_tls.Config{
+		Logger:    logger,
+		ConfigDir: "/tmp/boundary_connect_test",
+		Uid:       uid,
+		Gid:       gid,
+	})
+	require.NoError(t, err)
+
+	// Setup TLS to get cert path for proxy
+	tlsConfig, caCertPath, configDir, err := certManager.SetupTLSAndWriteCACert()
+	require.NoError(t, err)
+	_, _ = caCertPath, configDir
+
+	// Create proxy server
+	server := NewProxyServer(Config{
+		HTTPPort: 8080,
+
+		RuleEngine: ruleEngine,
+		Auditor:    auditor,
+		Logger:     logger,
+		TLSConfig:  tlsConfig,
+	})
+
+	// Start server
+	err = server.Start()
+	require.NoError(t, err)
+
+	// Give server time to start
+	time.Sleep(100 * time.Millisecond)
+
+	// Test HTTPS request through proxy transport (automatic CONNECT)
+	t.Run("HTTPSRequestThroughProxyTransport", func(t *testing.T) {
+		// Create proxy URL
+		proxyURL, err := url.Parse("http://localhost:8080")
+		require.NoError(t, err)
+
+		// Create HTTP client with proxy transport
+		client := &http.Client{
+			Transport: &http.Transport{
+				Proxy: http.ProxyURL(proxyURL),
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true, // Skip cert verification for testing
+				},
+			},
+			Timeout: 10 * time.Second,
+		}
+
+		// Because this is HTTPS, Go will issue CONNECT localhost:8080 → dev.coder.com:443
+		resp, err := client.Get("https://dev.coder.com/api/v2")
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		// Read response
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+
+		// Verify response contains expected content
 		expectedResponse := `{"message":"👋"}
 `
 		require.Equal(t, expectedResponse, string(body))
