@@ -59,11 +59,9 @@ func TestProxyServerBasicHTTP(t *testing.T) {
 		TLSConfig:  tlsConfig,
 	})
 
-	// Start server in goroutine
-	serverDone := make(chan error, 1)
-	go func() {
-		serverDone <- server.Start()
-	}()
+	// Start server
+	err = server.Start()
+	require.NoError(t, err)
 
 	// Give server time to start
 	time.Sleep(100 * time.Millisecond)
@@ -106,8 +104,6 @@ func TestProxyServerBasicHTTP(t *testing.T) {
 	})
 
 	err = server.Stop()
-	require.NoError(t, err)
-	err = <-serverDone
 	require.NoError(t, err)
 }
 
@@ -161,11 +157,9 @@ func TestProxyServerBasicHTTPS(t *testing.T) {
 		TLSConfig:  tlsConfig,
 	})
 
-	// Start server in goroutine
-	serverDone := make(chan error, 1)
-	go func() {
-		serverDone <- server.Start()
-	}()
+	// Start server
+	err = server.Start()
+	require.NoError(t, err)
 
 	// Give server time to start
 	time.Sleep(100 * time.Millisecond)
@@ -204,7 +198,5 @@ func TestProxyServerBasicHTTPS(t *testing.T) {
 	})
 
 	err = server.Stop()
-	require.NoError(t, err)
-	err = <-serverDone
 	require.NoError(t, err)
 }
