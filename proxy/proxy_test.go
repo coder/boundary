@@ -136,11 +136,6 @@ func TestProxyServerBasicHTTPS(t *testing.T) {
 	// Create mock auditor
 	auditor := &mockAuditor{}
 
-	// Create TLS config (minimal for testing)
-	tlsConfig := &tls.Config{
-		MinVersion: tls.VersionTLS12,
-	}
-
 	currentUser, err := user.Current()
 	if err != nil {
 		log.Fatal(err)
