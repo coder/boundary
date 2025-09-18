@@ -293,6 +293,40 @@ func TestProxyServerCONNECT(t *testing.T) {
 		require.Equal(t, expectedResponse, string(body))
 	})
 
+	// Test HTTP request through proxy transport
+	t.Run("HTTPRequestThroughProxyTransport", func(t *testing.T) {
+		// Create proxy URL
+		proxyURL, err := url.Parse("http://localhost:8080")
+		require.NoError(t, err)
+
+		// Create HTTP client with proxy transport
+		client := &http.Client{
+			Transport: &http.Transport{
+				Proxy: http.ProxyURL(proxyURL),
+			},
+			Timeout: 10 * time.Second,
+		}
+
+		// For HTTP requests, Go will send the request directly to the proxy
+		// The proxy will forward it to the target server
+		resp, err := client.Get("http://jsonplaceholder.typicode.com/todos/1")
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		// Read response
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+
+		// Verify response contains expected content
+		expectedResponse := `{
+  "userId": 1,
+  "id": 1,
+  "title": "delectus aut autem",
+  "completed": false
+}`
+		require.Equal(t, expectedResponse, string(body))
+	})
+
 	err = server.Stop()
 	require.NoError(t, err)
 }
