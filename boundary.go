@@ -62,12 +62,11 @@ func (b *Boundary) Start() error {
 	}
 
 	// Start proxy server in background
-	go func() {
-		err := b.proxyServer.Start(b.ctx)
-		if err != nil {
-			b.logger.Error("Proxy server error", "error", err)
-		}
-	}()
+	err = b.proxyServer.Start()
+	if err != nil {
+		b.logger.Error("Proxy server error", "error", err)
+		return err
+	}
 
 	// Give proxy time to start
 	time.Sleep(100 * time.Millisecond)

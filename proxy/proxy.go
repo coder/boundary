@@ -2,8 +2,8 @@ package proxy
 
 import (
 	"bufio"
-	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,7 +12,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
-	"time"
+	"sync/atomic"
 
 	"github.com/coder/boundary/audit"
 	"github.com/coder/boundary/rules"
@@ -25,8 +25,9 @@ type Server struct {
 	logger     *slog.Logger
 	tlsConfig  *tls.Config
 	httpPort   int
+	started    atomic.Bool
 
-	httpServer *http.Server
+	listener net.Listener
 }
 
 // Config holds configuration for the proxy server
@@ -50,36 +51,31 @@ func NewProxyServer(config Config) *Server {
 }
 
 // Start starts the HTTP proxy server with TLS termination capability
-func (p *Server) Start(ctx context.Context) error {
-	// Create HTTP server with TLS termination capability
-	p.httpServer = &http.Server{
-		Addr:    fmt.Sprintf(":%d", p.httpPort),
-		Handler: http.HandlerFunc(p.handleHTTPWithTLSTermination),
+func (p *Server) Start() error {
+	if p.isStarted() {
+		return nil
 	}
+
+	p.logger.Info("Starting HTTP proxy with TLS termination", "port", p.httpPort)
+	var err error
+	p.listener, err = net.Listen("tcp", fmt.Sprintf(":%d", p.httpPort))
+	if err != nil {
+		p.logger.Error("Failed to create HTTP listener", "error", err)
+		return err
+	}
+
+	p.started.Store(true)
 
 	// Start HTTP server with custom listener for TLS detection
 	go func() {
-		p.logger.Info("Starting HTTP proxy with TLS termination", "port", p.httpPort)
-		listener, err := net.Listen("tcp", fmt.Sprintf(":%d", p.httpPort))
-		if err != nil {
-			p.logger.Error("Failed to create HTTP listener", "error", err)
-			return
-		}
-
 		for {
-			conn, err := listener.Accept()
+			conn, err := p.listener.Accept()
+			if err != nil && errors.Is(err, net.ErrClosed) && p.isStopped() {
+				return
+			}
 			if err != nil {
-				select {
-				case <-ctx.Done():
-					err = listener.Close()
-					if err != nil {
-						p.logger.Error("Failed to close listener", "error", err)
-					}
-					return
-				default:
-					p.logger.Error("Failed to accept connection", "error", err)
-					continue
-				}
+				p.logger.Error("Failed to accept connection", "error", err)
+				continue
 			}
 
 			// Handle connection with TLS detection
@@ -87,25 +83,36 @@ func (p *Server) Start(ctx context.Context) error {
 		}
 	}()
 
-	// Wait for context cancellation
-	<-ctx.Done()
-	return p.Stop()
+	return nil
 }
 
 // Stops proxy server
 func (p *Server) Stop() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	if p.isStopped() {
+		return nil
+	}
+	p.started.Store(false)
 
-	var httpErr error
-	if p.httpServer != nil {
-		httpErr = p.httpServer.Shutdown(ctx)
+	if p.listener == nil {
+		p.logger.Error("unexpected nil listener")
+		return errors.New("unexpected nil listener")
 	}
 
-	if httpErr != nil {
-		return httpErr
+	err := p.listener.Close()
+	if err != nil {
+		p.logger.Error("Failed to close listener", "error", err)
+		return err
 	}
+
 	return nil
+}
+
+func (p *Server) isStarted() bool {
+	return p.started.Load()
+}
+
+func (p *Server) isStopped() bool {
+	return !p.started.Load()
 }
 
 // handleHTTP handles regular HTTP requests and CONNECT tunneling
@@ -477,13 +484,6 @@ func (p *Server) handleConnectionWithTLSDetection(conn net.Conn) {
 		err = http.Serve(listener, http.HandlerFunc(p.handleHTTP))
 		p.logger.Debug("http.Serve completed", "error", err)
 	}
-}
-
-// handleHTTPWithTLSTermination is the main handler (currently just delegates to regular HTTP)
-func (p *Server) handleHTTPWithTLSTermination(w http.ResponseWriter, r *http.Request) {
-	// This handler is not used when we do custom connection handling
-	// All traffic goes through handleConnectionWithTLSDetection
-	p.handleHTTP(w, r)
 }
 
 // connectionWrapper lets us "unread" the peeked byte
