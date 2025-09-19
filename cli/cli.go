@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/coder/boundary"
 	"github.com/coder/boundary/audit"
@@ -24,6 +25,7 @@ import (
 type Config struct {
 	AllowStrings []string
 	LogLevel     string
+	LogDir       string
 	Unprivileged bool
 }
 
@@ -58,20 +60,26 @@ func BaseCommand() *serpent.Command {
 		Short: "Network isolation tool for monitoring and restricting HTTP/HTTPS requests",
 		Long:  `boundary creates an isolated network environment for target processes, intercepting HTTP/HTTPS traffic through a transparent proxy that enforces user-defined allow rules.`,
 		Options: []serpent.Option{
-			serpent.Option{
+			{
 				Flag:        "allow",
 				Env:         "BOUNDARY_ALLOW",
 				Description: "Allow rule (repeatable). Format: \"pattern\" or \"METHOD[,METHOD] pattern\".",
 				Value:       serpent.StringArrayOf(&config.AllowStrings),
 			},
-			serpent.Option{
+			{
 				Flag:        "log-level",
 				Env:         "BOUNDARY_LOG_LEVEL",
 				Description: "Set log level (error, warn, info, debug).",
 				Default:     "warn",
 				Value:       serpent.StringOf(&config.LogLevel),
 			},
-			serpent.Option{
+			{
+				Flag:        "log-dir",
+				Env:         "BOUNDARY_LOG_DIR",
+				Description: "Set a directory to write logs to rather than stderr.",
+				Value:       serpent.StringOf(&config.LogDir),
+			},
+			{
 				Flag:        "unprivileged",
 				Env:         "BOUNDARY_UNPRIVILEGED",
 				Description: "Run in unprivileged mode (no network isolation, uses proxy environment variables).",
@@ -89,7 +97,10 @@ func BaseCommand() *serpent.Command {
 func Run(ctx context.Context, config Config, args []string) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	logger := setupLogging(config.LogLevel)
+	logger, err := setupLogging(config)
+	if err != nil {
+		return fmt.Errorf("could not set up logging: %v", err)
+	}
 	username, uid, gid, homeDir, configDir := getUserInfo()
 
 	// Get command arguments
@@ -242,9 +253,9 @@ func getUserInfo() (string, int, int, string, string) {
 }
 
 // setupLogging creates a slog logger with the specified level
-func setupLogging(logLevel string) *slog.Logger {
+func setupLogging(config Config) (*slog.Logger, error) {
 	var level slog.Level
-	switch strings.ToLower(logLevel) {
+	switch strings.ToLower(config.LogLevel) {
 	case "error":
 		level = slog.LevelError
 	case "warn":
@@ -257,12 +268,34 @@ func setupLogging(logLevel string) *slog.Logger {
 		level = slog.LevelWarn // Default to warn if invalid level
 	}
 
+	logTarget := os.Stderr
+
+	if config.LogDir != "" {
+		// Set up the logging directory if it doesn't exist yet
+		if err := os.MkdirAll(config.LogDir, 0755); err != nil {
+			return nil, fmt.Errorf("could not set up log dir %s: %v", config.LogDir, err)
+		}
+
+		// Create a logfile (timestamp and pid to avoid race conditions with multiple boundary calls running)
+		logFilePath := fmt.Sprintf("boundary-%s-%d.log",
+			time.Now().Format("2006-01-02_15-04-05"),
+			os.Getpid())
+
+		logFile, err := os.Create(filepath.Join(config.LogDir, logFilePath))
+		if err != nil {
+			return nil, fmt.Errorf("could not create log file %s: %v", logFilePath, err)
+		}
+
+		// Set the log target to the file rather than stderr.
+		logTarget = logFile
+	}
+
 	// Create a standard slog logger with the appropriate level
-	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+	handler := slog.NewTextHandler(logTarget, &slog.HandlerOptions{
 		Level: level,
 	})
 
-	return slog.New(handler)
+	return slog.New(handler), nil
 }
 
 // getCurrentUserInfo gets information for the current user
