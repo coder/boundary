@@ -86,6 +86,8 @@ func (cm *CertificateManager) loadOrGenerateCA() error {
 	caKeyPath := filepath.Join(cm.configDir, "ca-key.pem")
 	caCertPath := filepath.Join(cm.configDir, "ca-cert.pem")
 
+	cm.logger.Debug("paths", "cm.configDir", cm.configDir, "caCertPath", caCertPath)
+
 	// Try to load existing CA
 	if cm.loadExistingCA(caKeyPath, caCertPath) {
 		cm.logger.Debug("Loaded existing CA certificate")

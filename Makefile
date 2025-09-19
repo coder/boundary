@@ -45,12 +45,25 @@ deps:
 	go mod verify
 	@echo "✓ Dependencies ready!"
 
-# Run tests (needs sudo for E2E tests)
-.PHONY: test
-test:
-	@echo "Running tests..."
-	go test -v -race ./...
-	@echo "✓ All tests passed!"
+# Run unit tests only (no sudo required)
+.PHONY: unit-test
+unit-test:
+	@echo "Running unit tests..."
+	@which go > /dev/null || (echo "Go not found in PATH" && exit 1)
+	go test -v -race $$(go list ./... | grep -v e2e_tests)
+	@echo "✓ Unit tests passed!"
+
+# Run E2E tests (Linux only, needs sudo)
+.PHONY: e2e-test
+e2e-test:
+	@echo "Running E2E tests..."
+	@which go > /dev/null || (echo "Go not found in PATH" && exit 1)
+	@if [ "$$(uname)" != "Linux" ]; then \
+		echo "E2E tests require Linux platform. Current platform: $$(uname)"; \
+		exit 1; \
+	fi
+	sudo $(shell which go) test -v -race ./e2e_tests
+	@echo "✓ E2E tests passed!"
 
 # Run tests with coverage (needs sudo for E2E tests)
 .PHONY: test-coverage
