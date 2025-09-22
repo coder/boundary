@@ -34,11 +34,6 @@ type Rule struct {
 
 type methodPattern string
 
-// An asterisk is treated as matching any method
-func (t methodPattern) matches(input string) bool {
-	return t == "*" || string(t) == input
-}
-
 // Beyond the 9 methods defined in HTTP 1.1, there actually are many more seldom used extension methods by
 // various systems.
 // https://datatracker.ietf.org/doc/html/rfc7230#section-3.2.6
@@ -126,9 +121,19 @@ func parseHostPattern(input string) (host []labelPattern, rest string, err error
 // Represents a valid label in a hostname. For example, wobble in `wib-ble.wobble.com`.
 type labelPattern string
 
+// An `asterisk` is treated as matching anything
+func (lp labelPattern) matches(input string) bool {
+	return lp == "*" || string(lp) == input
+}
+
 func parseLabelPattern(rest string) (labelPattern, string, error) {
 	if rest == "" {
 		return "", "", errors.New("expected label, got empty string")
+	}
+
+	// If the label is simply an asterisk, good to go. 
+	if rest[0] == '*' {
+		return "*", rest[1:], nil
 	}
 
 	// First try to get a valid leading char. Leading char in a label cannot be a hyphen.
@@ -216,9 +221,22 @@ func parsePathPattern(input string) ([]segmentPattern, string, error) {
 // Represents a valid url path segmentPattern.
 type segmentPattern string
 
+// An `*` is treated as matching anything
+func (sp segmentPattern) matches(input string) bool {
+	return sp == "*" || string(sp) == input
+}
+
 func parsePathSegmentPattern(input string) (segmentPattern, string, error) {
 	if input == "" {
 		return "", "", nil
+	}
+
+	if len(input) > 0 && input[0] == '*' {
+		if len(input) > 1 && input[1] != '/' {
+			return "", "", fmt.Errorf("path segment wildcards must be for the entire segment, got: %s", input)
+		}
+
+		return segmentPattern(input[0]), input[1:], nil
 	}
 
 	var i int
@@ -409,84 +427,6 @@ func (re *Engine) Evaluate(method, url string) Result {
 		Allowed: false,
 		Rule:    "",
 	}
-}
-
-type protocol string
-
-func parseProtocol(input string) (protocol, string, error) {
-	if input == "" {
-		return "", "", errors.New("expected protocol, got empty string")
-	}
-
-	// Look for "://" separator
-	if idx := strings.Index(input, "://"); idx > 0 {
-		protocolPart := input[:idx]
-		rest := input[idx+3:]
-
-		// Validate protocol characters (scheme per RFC 3986)
-		// scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
-		if len(protocolPart) == 0 {
-			return "", "", errors.New("empty protocol")
-		}
-
-		// First character must be alpha
-		if !((protocolPart[0] >= 'A' && protocolPart[0] <= 'Z') ||
-			(protocolPart[0] >= 'a' && protocolPart[0] <= 'z')) {
-			return "", "", errors.New("protocol must start with a letter")
-		}
-
-		// Rest can be alphanumeric, +, -, or .
-		for i := 1; i < len(protocolPart); i++ {
-			c := protocolPart[i]
-			if !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
-				(c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.') {
-				return "", "", fmt.Errorf("invalid character in protocol: %c", c)
-			}
-		}
-
-		return protocol(protocolPart), rest, nil
-	}
-
-	// No protocol found
-	return "", input, nil
-}
-
-type port uint16
-
-func parsePort(input string) (port, string, error) {
-	if input == "" {
-		return 0, "", nil
-	}
-
-	// Port must start with ':'
-	if input[0] != ':' {
-		return 0, input, nil
-	}
-
-	// Find the end of the port number
-	i := 1
-	for i < len(input) && input[i] >= '0' && input[i] <= '9' {
-		i++
-	}
-
-	// No digits found after ':'
-	if i == 1 {
-		return 0, "", errors.New("expected port number after ':'")
-	}
-
-	portStr := input[1:i]
-	rest := input[i:]
-
-	// Convert to uint16 (port range is 0-65535)
-	portNum := 0
-	for _, digit := range portStr {
-		portNum = portNum*10 + int(digit-'0')
-		if portNum > 65535 {
-			return 0, "", errors.New("port number too large (max 65535)")
-		}
-	}
-
-	return port(portNum), rest, nil
 }
 
 // Matches checks if the rule matches the given method and URL using wildcard patterns

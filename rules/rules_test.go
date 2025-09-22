@@ -257,6 +257,34 @@ func TestParseHost(t *testing.T) {
 			expectedRest: "",
 			expectError:  false,
 		},
+		{
+			name:         "wildcard subdomain",
+			input:        "*.example.com",
+			expectedHost: []labelPattern{labelPattern("*"), labelPattern("example"), labelPattern("com")},
+			expectedRest: "",
+			expectError:  false,
+		},
+		{
+			name:         "wildcard domain",
+			input:        "api.*",
+			expectedHost: []labelPattern{labelPattern("api"), labelPattern("*")},
+			expectedRest: "",
+			expectError:  false,
+		},
+		{
+			name:         "multiple wildcards",
+			input:        "*.*.com",
+			expectedHost: []labelPattern{labelPattern("*"), labelPattern("*"), labelPattern("com")},
+			expectedRest: "",
+			expectError:  false,
+		},
+		{
+			name:         "wildcard with trailing content",
+			input:        "*.example.com/path",
+			expectedHost: []labelPattern{labelPattern("*"), labelPattern("example"), labelPattern("com")},
+			expectedRest: "/path",
+			expectError:  false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -396,6 +424,27 @@ func TestParseLabel(t *testing.T) {
 			name:          "label with trailing slash",
 			input:         "api/path",
 			expectedLabel: "api",
+			expectedRest:  "/path",
+			expectError:   false,
+		},
+		{
+			name:          "wildcard label",
+			input:         "*",
+			expectedLabel: "*",
+			expectedRest:  "",
+			expectError:   false,
+		},
+		{
+			name:          "wildcard with dot",
+			input:         "*.com",
+			expectedLabel: "*",
+			expectedRest:  ".com",
+			expectError:   false,
+		},
+		{
+			name:          "wildcard with trailing content",
+			input:         "*/path",
+			expectedLabel: "*",
 			expectedRest:  "/path",
 			expectError:   false,
 		},
@@ -554,6 +603,34 @@ func TestParsePathSegment(t *testing.T) {
 			expectedSegment: "test",
 			expectedRest:    "[bracket]",
 			expectError:     false,
+		},
+		{
+			name:            "wildcard segment",
+			input:           "*",
+			expectedSegment: "*",
+			expectedRest:    "",
+			expectError:     false,
+		},
+		{
+			name:            "wildcard with slash",
+			input:           "*/users",
+			expectedSegment: "*",
+			expectedRest:    "/users",
+			expectError:     false,
+		},
+		{
+			name:            "wildcard at end with slash",
+			input:           "*",
+			expectedSegment: "*",
+			expectedRest:    "",
+			expectError:     false,
+		},
+		{
+			name:            "invalid partial wildcard",
+			input:           "*abc",
+			expectedSegment: "",
+			expectedRest:    "",
+			expectError:     true,
 		},
 	}
 
@@ -718,6 +795,41 @@ func TestParsePath(t *testing.T) {
 			expectedRest:     "",
 			expectError:      false,
 		},
+		{
+			name:             "path with wildcard segment",
+			input:            "/api/*/users",
+			expectedSegments: []segmentPattern{"api", "*", "users"},
+			expectedRest:     "",
+			expectError:      false,
+		},
+		{
+			name:             "path with multiple wildcards",
+			input:            "/*/v1/*/profile",
+			expectedSegments: []segmentPattern{"*", "v1", "*", "profile"},
+			expectedRest:     "",
+			expectError:      false,
+		},
+		{
+			name:             "path ending with wildcard",
+			input:            "/api/users/*",
+			expectedSegments: []segmentPattern{"api", "users", "*"},
+			expectedRest:     "",
+			expectError:      false,
+		},
+		{
+			name:             "path starting with wildcard",
+			input:            "/*/users",
+			expectedSegments: []segmentPattern{"*", "users"},
+			expectedRest:     "",
+			expectError:      false,
+		},
+		{
+			name:             "path with wildcard and query",
+			input:            "/api/*/users?limit=10",
+			expectedSegments: []segmentPattern{"api", "*", "users"},
+			expectedRest:     "?limit=10",
+			expectError:      false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -814,6 +926,44 @@ func TestParseAllowRule(t *testing.T) {
 				MethodPatterns: map[methodPattern]struct{}{methodPattern("DELETE"): {}},
 				HostPattern:    []labelPattern{labelPattern("com"), labelPattern("test")},
 				PathPattern:    []segmentPattern{segmentPattern("resources"), segmentPattern("456")},
+			},
+			expectError: false,
+		},
+		{
+			name:  "wildcard domain",
+			input: "domain=*.example.com",
+			expectedRule: Rule{
+				Raw:         "domain=*.example.com",
+				HostPattern: []labelPattern{labelPattern("com"), labelPattern("example"), labelPattern("*")},
+			},
+			expectError: false,
+		},
+		{
+			name:  "wildcard path",
+			input: "path=/api/*/users",
+			expectedRule: Rule{
+				Raw:         "path=/api/*/users",
+				PathPattern: []segmentPattern{segmentPattern("api"), segmentPattern("*"), segmentPattern("users")},
+			},
+			expectError: false,
+		},
+		{
+			name:  "wildcard method",
+			input: "method=*",
+			expectedRule: Rule{
+				Raw:            "method=*",
+				MethodPatterns: map[methodPattern]struct{}{methodPattern("*"): {}},
+			},
+			expectError: false,
+		},
+		{
+			name:  "all wildcards",
+			input: "method=* domain=*.* path=/*/",
+			expectedRule: Rule{
+				Raw:            "method=* domain=*.* path=/*/",
+				MethodPatterns: map[methodPattern]struct{}{methodPattern("*"): {}},
+				HostPattern:    []labelPattern{labelPattern("*"), labelPattern("*")},
+				PathPattern:    []segmentPattern{segmentPattern("*")},
 			},
 			expectError: false,
 		},
