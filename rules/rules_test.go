@@ -134,7 +134,7 @@ func TestParseHost(t *testing.T) {
 	tests := []struct {
 		name         string
 		input        string
-		expectedHost host
+		expectedHost []label
 		expectedRest string
 		expectError  bool
 	}{
@@ -148,56 +148,56 @@ func TestParseHost(t *testing.T) {
 		{
 			name:         "simple domain",
 			input:        "google.com",
-			expectedHost: host{label("google"), label("com")},
+			expectedHost: []label{label("google"), label("com")},
 			expectedRest: "",
 			expectError:  false,
 		},
 		{
 			name:         "subdomain",
 			input:        "api.google.com",
-			expectedHost: host{label("api"), label("google"), label("com")},
+			expectedHost: []label{label("api"), label("google"), label("com")},
 			expectedRest: "",
 			expectError:  false,
 		},
 		{
 			name:         "single label",
 			input:        "localhost",
-			expectedHost: host{label("localhost")},
+			expectedHost: []label{label("localhost")},
 			expectedRest: "",
 			expectError:  false,
 		},
 		{
 			name:         "domain with trailing content",
 			input:        "example.org/path",
-			expectedHost: host{label("example"), label("org")},
+			expectedHost: []label{label("example"), label("org")},
 			expectedRest: "/path",
 			expectError:  false,
 		},
 		{
 			name:         "domain with port",
 			input:        "localhost:8080",
-			expectedHost: host{label("localhost")},
+			expectedHost: []label{label("localhost")},
 			expectedRest: ":8080",
 			expectError:  false,
 		},
 		{
 			name:         "numeric labels",
 			input:        "192.168.1.1",
-			expectedHost: host{label("192"), label("168"), label("1"), label("1")},
+			expectedHost: []label{label("192"), label("168"), label("1"), label("1")},
 			expectedRest: "",
 			expectError:  false,
 		},
 		{
 			name:         "hyphenated domain",
 			input:        "my-site.example-domain.co.uk",
-			expectedHost: host{label("my-site"), label("example-domain"), label("co"), label("uk")},
+			expectedHost: []label{label("my-site"), label("example-domain"), label("co"), label("uk")},
 			expectedRest: "",
 			expectError:  false,
 		},
 		{
 			name:         "alphanumeric labels",
 			input:        "a1b2c3.test123.com",
-			expectedHost: host{label("a1b2c3"), label("test123"), label("com")},
+			expectedHost: []label{label("a1b2c3"), label("test123"), label("com")},
 			expectedRest: "",
 			expectError:  false,
 		},
@@ -225,7 +225,7 @@ func TestParseHost(t *testing.T) {
 		{
 			name:         "invalid character",
 			input:        "test@example.com",
-			expectedHost: host{label("test")},
+			expectedHost: []label{label("test")},
 			expectedRest: "@example.com",
 			expectError:  false,
 		},
@@ -246,14 +246,14 @@ func TestParseHost(t *testing.T) {
 		{
 			name:         "single character labels",
 			input:        "a.b.c",
-			expectedHost: host{label("a"), label("b"), label("c")},
+			expectedHost: []label{label("a"), label("b"), label("c")},
 			expectedRest: "",
 			expectError:  false,
 		},
 		{
 			name:         "mixed case",
 			input:        "Example.COM",
-			expectedHost: host{label("Example"), label("COM")},
+			expectedHost: []label{label("Example"), label("COM")},
 			expectedRest: "",
 			expectError:  false,
 		},
@@ -423,6 +423,332 @@ func TestParseLabel(t *testing.T) {
 
 			if rest != tt.expectedRest {
 				t.Errorf("expected remaining %q, got %q", tt.expectedRest, rest)
+			}
+		})
+	}
+}
+
+func TestParsePathSegment(t *testing.T) {
+	tests := []struct {
+		name            string
+		input           string
+		expectedSegment segment
+		expectedRest    string
+		expectError     bool
+	}{
+		{
+			name:            "empty string",
+			input:           "",
+			expectedSegment: "",
+			expectedRest:    "",
+			expectError:     false,
+		},
+		{
+			name:            "simple segment",
+			input:           "api",
+			expectedSegment: "api",
+			expectedRest:    "",
+			expectError:     false,
+		},
+		{
+			name:            "segment with slash",
+			input:           "api/users",
+			expectedSegment: "api",
+			expectedRest:    "/users",
+			expectError:     false,
+		},
+		{
+			name:            "segment with unreserved chars",
+			input:           "my-file.txt_version~1",
+			expectedSegment: "my-file.txt_version~1",
+			expectedRest:    "",
+			expectError:     false,
+		},
+		{
+			name:            "segment with sub-delims",
+			input:           "filter='test'&sort=name",
+			expectedSegment: "filter='test'&sort=name",
+			expectedRest:    "",
+			expectError:     false,
+		},
+		{
+			name:            "segment with colon and at",
+			input:           "user:password@domain",
+			expectedSegment: "user:password@domain",
+			expectedRest:    "",
+			expectError:     false,
+		},
+		{
+			name:            "percent encoded segment",
+			input:           "hello%20world",
+			expectedSegment: "hello%20world",
+			expectedRest:    "",
+			expectError:     false,
+		},
+		{
+			name:            "multiple percent encoded",
+			input:           "%3Fkey%3Dvalue%26other%3D123",
+			expectedSegment: "%3Fkey%3Dvalue%26other%3D123",
+			expectedRest:    "",
+			expectError:     false,
+		},
+		{
+			name:            "invalid percent encoding incomplete",
+			input:           "test%2",
+			expectedSegment: "test",
+			expectedRest:    "%2",
+			expectError:     false,
+		},
+		{
+			name:            "invalid percent encoding non-hex",
+			input:           "test%ZZ",
+			expectedSegment: "test",
+			expectedRest:    "%ZZ",
+			expectError:     false,
+		},
+		{
+			name:            "segment stops at space",
+			input:           "test hello",
+			expectedSegment: "test",
+			expectedRest:    " hello",
+			expectError:     false,
+		},
+		{
+			name:            "segment with question mark stops",
+			input:           "path?query=value",
+			expectedSegment: "path",
+			expectedRest:    "?query=value",
+			expectError:     false,
+		},
+		{
+			name:            "segment with hash stops",
+			input:           "path#fragment",
+			expectedSegment: "path",
+			expectedRest:    "#fragment",
+			expectError:     false,
+		},
+		{
+			name:            "numeric segment",
+			input:           "123456",
+			expectedSegment: "123456",
+			expectedRest:    "",
+			expectError:     false,
+		},
+		{
+			name:            "mixed alphanumeric",
+			input:           "abc123XYZ",
+			expectedSegment: "abc123XYZ",
+			expectedRest:    "",
+			expectError:     false,
+		},
+		{
+			name:            "all sub-delims",
+			input:           "!$&'()*+,;=",
+			expectedSegment: "!$&'()*+,;=",
+			expectedRest:    "",
+			expectError:     false,
+		},
+		{
+			name:            "segment with brackets",
+			input:           "test[bracket]",
+			expectedSegment: "test",
+			expectedRest:    "[bracket]",
+			expectError:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			segment, rest, err := parsePathSegment(tt.input)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			if segment != tt.expectedSegment {
+				t.Errorf("expected segment %q, got %q", tt.expectedSegment, segment)
+			}
+
+			if rest != tt.expectedRest {
+				t.Errorf("expected rest %q, got %q", tt.expectedRest, rest)
+			}
+		})
+	}
+}
+
+func TestParsePath(t *testing.T) {
+	tests := []struct {
+		name             string
+		input            string
+		expectedSegments []segment
+		expectedRest     string
+		expectError      bool
+	}{
+		{
+			name:             "empty string",
+			input:            "",
+			expectedSegments: nil,
+			expectedRest:     "",
+			expectError:      false,
+		},
+		{
+			name:             "single segment",
+			input:            "/api",
+			expectedSegments: []segment{"api"},
+			expectedRest:     "",
+			expectError:      false,
+		},
+		{
+			name:             "multiple segments",
+			input:            "/api/v1/users",
+			expectedSegments: []segment{"api", "v1", "users"},
+			expectedRest:     "",
+			expectError:      false,
+		},
+		{
+			name:             "relative path",
+			input:            "api/users",
+			expectedSegments: []segment{"api", "users"},
+			expectedRest:     "",
+			expectError:      false,
+		},
+		{
+			name:             "path with trailing slash",
+			input:            "/api/users/",
+			expectedSegments: []segment{"api", "users"},
+			expectedRest:     "",
+			expectError:      false,
+		},
+		{
+			name:             "path with query string",
+			input:            "/api/users?limit=10",
+			expectedSegments: []segment{"api", "users"},
+			expectedRest:     "?limit=10",
+			expectError:      false,
+		},
+		{
+			name:             "path with fragment",
+			input:            "/docs/api#authentication",
+			expectedSegments: []segment{"docs", "api"},
+			expectedRest:     "#authentication",
+			expectError:      false,
+		},
+		{
+			name:             "path with encoded segments",
+			input:            "/api/hello%20world/test",
+			expectedSegments: []segment{"api", "hello%20world", "test"},
+			expectedRest:     "",
+			expectError:      false,
+		},
+		{
+			name:             "path with special chars",
+			input:            "/api/filter='test'&sort=name/results",
+			expectedSegments: []segment{"api", "filter='test'&sort=name", "results"},
+			expectedRest:     "",
+			expectError:      false,
+		},
+		{
+			name:             "just slash",
+			input:            "/",
+			expectedSegments: nil,
+			expectedRest:     "",
+			expectError:      false,
+		},
+		{
+			name:             "empty segments",
+			input:            "/api//users",
+			expectedSegments: []segment{"api"},
+			expectedRest:     "/users",
+			expectError:      false,
+		},
+		{
+			name:             "path with port-like segment",
+			input:            "/host:8080/status",
+			expectedSegments: []segment{"host:8080", "status"},
+			expectedRest:     "",
+			expectError:      false,
+		},
+		{
+			name:             "path stops at space",
+			input:            "/api/test hello",
+			expectedSegments: []segment{"api", "test"},
+			expectedRest:     " hello",
+			expectError:      false,
+		},
+		{
+			name:             "path with hyphens and underscores",
+			input:            "/my-api/user_data/file-name.txt",
+			expectedSegments: []segment{"my-api", "user_data", "file-name.txt"},
+			expectedRest:     "",
+			expectError:      false,
+		},
+		{
+			name:             "path with tildes",
+			input:            "/api/~user/docs~backup",
+			expectedSegments: []segment{"api", "~user", "docs~backup"},
+			expectedRest:     "",
+			expectError:      false,
+		},
+		{
+			name:             "numeric segments",
+			input:            "/api/v2/users/12345",
+			expectedSegments: []segment{"api", "v2", "users", "12345"},
+			expectedRest:     "",
+			expectError:      false,
+		},
+		{
+			name:             "single character segments",
+			input:            "/a/b/c",
+			expectedSegments: []segment{"a", "b", "c"},
+			expectedRest:     "",
+			expectError:      false,
+		},
+		{
+			name:             "path with at symbol",
+			input:            "/user@domain.com/profile",
+			expectedSegments: []segment{"user@domain.com", "profile"},
+			expectedRest:     "",
+			expectError:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			segments, rest, err := parsePath(tt.input)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			if len(segments) != len(tt.expectedSegments) {
+				t.Errorf("expected %d segments, got %d", len(tt.expectedSegments), len(segments))
+				return
+			}
+
+			for i, expectedSeg := range tt.expectedSegments {
+				if segments[i] != expectedSeg {
+					t.Errorf("expected segment[%d] %q, got %q", i, expectedSeg, segments[i])
+				}
+			}
+
+			if rest != tt.expectedRest {
+				t.Errorf("expected rest %q, got %q", tt.expectedRest, rest)
 			}
 		})
 	}

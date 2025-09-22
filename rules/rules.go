@@ -85,9 +85,7 @@ func isHTTPTokenChar(c byte) bool {
 // Represents a valid host.
 // https://datatracker.ietf.org/doc/html/rfc952
 // https://datatracker.ietf.org/doc/html/rfc1123#page-13
-type host []label
-
-func parseHost(input string) (host host, rest string, err error) {
+func parseHost(input string) (host []label, rest string, err error) {
 	rest = input
 	var label label
 
@@ -163,6 +161,129 @@ func isValidLabelChar(c byte) bool {
 	default:
 		return false
 	}
+}
+
+func parsePath(input string) ([]segment, string, error) {
+	if input == "" {
+		return nil, "", nil
+	}
+
+	var segments []segment
+	rest := input
+
+	// If the path doesn't start with '/', it's not a valid absolute path
+	// But we'll be flexible and parse relative paths too
+	for {
+		// Skip leading slash if present
+		if rest != "" && rest[0] == '/' {
+			rest = rest[1:]
+		}
+
+		// If we've consumed all input, we're done
+		if rest == "" {
+			break
+		}
+
+		// Parse the next segment
+		seg, remaining, err := parsePathSegment(rest)
+		if err != nil {
+			return nil, "", err
+		}
+
+		// If we got an empty segment and there's still input, 
+		// it means we hit an invalid character
+		if seg == "" && remaining != "" {
+			break
+		}
+
+		segments = append(segments, seg)
+		rest = remaining
+
+		// If there's no slash after the segment, we're done parsing the path
+		if rest == "" || rest[0] != '/' {
+			break
+		}
+	}
+
+	return segments, rest, nil
+}
+
+// Represents a valid url path segment.
+type segment string
+
+func parsePathSegment(input string) (segment, string, error) {
+	if input == "" {
+		return "", "", nil
+	}
+
+	var i int
+	for i = 0; i < len(input); i++ {
+		c := input[i]
+		
+		// Check for percent-encoded characters (%XX)
+		if c == '%' {
+			if i+2 >= len(input) || !isHexDigit(input[i+1]) || !isHexDigit(input[i+2]) {
+				break
+			}
+			i += 2
+			continue
+		}
+		
+		// Check for valid pchar characters
+		if !isPChar(c) {
+			break
+		}
+	}
+
+	return segment(input[:i]), input[i:], nil
+}
+
+// isUnreserved returns true if the character is unreserved per RFC 3986
+// unreserved = ALPHA / DIGIT / "-" / "." / "_" / "~"
+func isUnreserved(c byte) bool {
+	return (c >= 'A' && c <= 'Z') ||
+		(c >= 'a' && c <= 'z') ||
+		(c >= '0' && c <= '9') ||
+		c == '-' || c == '.' || c == '_' || c == '~'
+}
+
+// isSubDelim returns true if the character is a sub-delimiter per RFC 3986
+// sub-delims = "!" / "$" / "&" / "'" / "(" / ")" / "*" / "+" / "," / ";" / "="
+func isSubDelim(c byte) bool {
+	return c == '!' || c == '$' || c == '&' || c == '\'' ||
+		c == '(' || c == ')' || c == '*' || c == '+' ||
+		c == ',' || c == ';' || c == '='
+}
+
+// isPChar returns true if the character is valid in a path segment (excluding percent-encoded)
+// pchar = unreserved / sub-delims / ":" / "@"
+func isPChar(c byte) bool {
+	return isUnreserved(c) || isSubDelim(c) || c == ':' || c == '@'
+}
+
+// isHexDigit returns true if the character is a hexadecimal digit
+func isHexDigit(c byte) bool {
+	return (c >= '0' && c <= '9') ||
+		(c >= 'A' && c <= 'F') ||
+		(c >= 'a' && c <= 'f')
+}
+
+// parseKey parses the predefined keys that the cli can handle. Also strips the `=` following the key.
+func parseKey(rule string) (string, string, error) {
+	if rule == "" {
+		return "", "", errors.New("expected key")
+	}
+
+	// These are the current keys we support.
+	keys := []string{"method", "domain", "path"}
+
+	for _, key := range keys {
+		if rest, found := strings.CutPrefix(rule, key+"="); found {
+			return key, rest, nil
+		}
+	}
+
+	return "", "", errors.New("expected key")
 }
 
 func parseAllowRule(string) (Rule, error) {
