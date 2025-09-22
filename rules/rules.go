@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 )
 
 type Evaluator interface {
@@ -74,6 +75,89 @@ func isHTTPTokenChar(c byte) bool {
 	case c == '!' || c == '#' || c == '$' || c == '%' || c == '&' ||
 		c == '\'' || c == '*' || c == '+' || c == '-' || c == '.' ||
 		c == '^' || c == '_' || c == '`' || c == '|' || c == '~':
+		return true
+
+	default:
+		return false
+	}
+}
+
+// Represents a valid host.
+// https://datatracker.ietf.org/doc/html/rfc952
+// https://datatracker.ietf.org/doc/html/rfc1123#page-13
+type host []label
+
+func parseHost(input string) (host host, rest string, err error) {
+	rest = input
+	var label label
+
+	if input == "" {
+		return nil, "", errors.New("expected host, got empty string")
+	}
+
+	// There should be at least one label.
+	label, rest, err = parseLabel(rest)
+	if err != nil {
+		return nil, "", err
+	}
+	host = append(host, label)
+
+	// A host is just a bunch of labels separated by `.` characters.
+	var found bool
+	for {
+		rest, found = strings.CutPrefix(rest, ".")
+		if !found {
+			break
+		}
+
+		label, rest, err = parseLabel(rest)
+		if err != nil {
+			return nil, "", err
+		}
+		host = append(host, label)
+	}
+
+	return host, rest, nil
+}
+
+// Represents a valid label in a hostname. For example, wobble in `wib-ble.wobble.com`.
+type label string
+
+func parseLabel(rest string) (label, string, error) {
+	if rest == "" {
+		return "", "", errors.New("expected label, got empty string")
+	}
+
+	// First try to get a valid leading char. Leading char in a label cannot be a hyphen.
+	if !isValidLabelChar(rest[0]) || rest[0] == '-' {
+		return "", "", fmt.Errorf("could not pull label from front of string: %s", rest)
+	}
+
+	// Go until the next character is not a valid char
+	var i int
+	for i = 1; i < len(rest) && isValidLabelChar(rest[i]); i += 1 {
+	}
+
+	// Final char in a label cannot be a hyphen.
+	if rest[i-1] == '-' {
+		return "", "", fmt.Errorf("invalid label: %s", rest[:i])
+	}
+
+	return label(rest[:i]), rest[i:], nil
+}
+
+func isValidLabelChar(c byte) bool {
+	switch {
+	// Alpha numeric is fine.
+	case c >= 'A' && c <= 'Z':
+		return true
+	case c >= 'a' && c <= 'z':
+		return true
+	case c >= '0' && c <= '9':
+		return true
+
+	// Hyphens are good
+	case c == '-':
 		return true
 
 	default:
