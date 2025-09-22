@@ -17,47 +17,52 @@ type Rule struct {
 	// The path segments of the url
 	// nil means all paths allowed
 	// a path segment of `*` acts as a wild card.
-	Path []string
+	PathPattern []segmentPattern
 
 	// The labels of the host, i.e. ["google", "com"]
-	// nil means no hosts allowed
-	// subdomains automatically match
-	Host []string
+	// nil means all hosts allowed
+	// A label of `*` acts as a wild card.
+	HostPattern []labelPattern
 
 	// The allowed http methods
 	// nil means all methods allowed
-	Methods map[string]struct{}
+	MethodPatterns map[methodPattern]struct{}
 
 	// Raw rule string for logging
-	Raw string 
+	Raw string
 }
 
-type httpToken string
+type methodPattern string
+
+// An asterisk is treated as matching any method
+func (t methodPattern) matches(input string) bool {
+	return t == "*" || string(t) == input
+}
 
 // Beyond the 9 methods defined in HTTP 1.1, there actually are many more seldom used extension methods by
 // various systems.
 // https://datatracker.ietf.org/doc/html/rfc7230#section-3.2.6
-func parseHTTPToken(token string) (httpToken, string, error) {
+func parseMethodPattern(token string) (methodPattern, string, error) {
 	if token == "" {
 		return "", "", errors.New("expected http token, got empty string")
 	}
-	return doParseHTTPToken(token, nil)
+	return doParseMethodPattern(token, nil)
 }
 
-func doParseHTTPToken(token string, acc []byte) (httpToken, string, error) {
+func doParseMethodPattern(token string, acc []byte) (methodPattern, string, error) {
 	// BASE CASE: if the token passed in is empty, we're done parsing
 	if token == "" {
-		return httpToken(acc), "", nil
+		return methodPattern(acc), "", nil
 	}
 
 	// If the next byte in the string is not a valid http token character, we're done parsing.
 	if !isHTTPTokenChar(token[0]) {
-		return httpToken(acc), token, nil
+		return methodPattern(acc), token, nil
 	}
 
 	// The next character is valid, so the http token continues
 	acc = append(acc, token[0])
-	return doParseHTTPToken(token[1:], acc)
+	return doParseMethodPattern(token[1:], acc)
 }
 
 // The valid characters that can be in an http token (like the lexer/parser kind of token).
@@ -85,16 +90,16 @@ func isHTTPTokenChar(c byte) bool {
 // Represents a valid host.
 // https://datatracker.ietf.org/doc/html/rfc952
 // https://datatracker.ietf.org/doc/html/rfc1123#page-13
-func parseHost(input string) (host []label, rest string, err error) {
+func parseHostPattern(input string) (host []labelPattern, rest string, err error) {
 	rest = input
-	var label label
+	var label labelPattern
 
 	if input == "" {
 		return nil, "", errors.New("expected host, got empty string")
 	}
 
 	// There should be at least one label.
-	label, rest, err = parseLabel(rest)
+	label, rest, err = parseLabelPattern(rest)
 	if err != nil {
 		return nil, "", err
 	}
@@ -108,7 +113,7 @@ func parseHost(input string) (host []label, rest string, err error) {
 			break
 		}
 
-		label, rest, err = parseLabel(rest)
+		label, rest, err = parseLabelPattern(rest)
 		if err != nil {
 			return nil, "", err
 		}
@@ -119,9 +124,9 @@ func parseHost(input string) (host []label, rest string, err error) {
 }
 
 // Represents a valid label in a hostname. For example, wobble in `wib-ble.wobble.com`.
-type label string
+type labelPattern string
 
-func parseLabel(rest string) (label, string, error) {
+func parseLabelPattern(rest string) (labelPattern, string, error) {
 	if rest == "" {
 		return "", "", errors.New("expected label, got empty string")
 	}
@@ -141,7 +146,7 @@ func parseLabel(rest string) (label, string, error) {
 		return "", "", fmt.Errorf("invalid label: %s", rest[:i])
 	}
 
-	return label(rest[:i]), rest[i:], nil
+	return labelPattern(rest[:i]), rest[i:], nil
 }
 
 func isValidLabelChar(c byte) bool {
@@ -163,12 +168,12 @@ func isValidLabelChar(c byte) bool {
 	}
 }
 
-func parsePath(input string) ([]segment, string, error) {
+func parsePathPattern(input string) ([]segmentPattern, string, error) {
 	if input == "" {
 		return nil, "", nil
 	}
 
-	var segments []segment
+	var segments []segmentPattern
 	rest := input
 
 	// If the path doesn't start with '/', it's not a valid absolute path
@@ -185,12 +190,12 @@ func parsePath(input string) ([]segment, string, error) {
 		}
 
 		// Parse the next segment
-		seg, remaining, err := parsePathSegment(rest)
+		seg, remaining, err := parsePathSegmentPattern(rest)
 		if err != nil {
 			return nil, "", err
 		}
 
-		// If we got an empty segment and there's still input, 
+		// If we got an empty segment and there's still input,
 		// it means we hit an invalid character
 		if seg == "" && remaining != "" {
 			break
@@ -208,10 +213,10 @@ func parsePath(input string) ([]segment, string, error) {
 	return segments, rest, nil
 }
 
-// Represents a valid url path segment.
-type segment string
+// Represents a valid url path segmentPattern.
+type segmentPattern string
 
-func parsePathSegment(input string) (segment, string, error) {
+func parsePathSegmentPattern(input string) (segmentPattern, string, error) {
 	if input == "" {
 		return "", "", nil
 	}
@@ -219,7 +224,7 @@ func parsePathSegment(input string) (segment, string, error) {
 	var i int
 	for i = 0; i < len(input); i++ {
 		c := input[i]
-		
+
 		// Check for percent-encoded characters (%XX)
 		if c == '%' {
 			if i+2 >= len(input) || !isHexDigit(input[i+1]) || !isHexDigit(input[i+2]) {
@@ -228,14 +233,14 @@ func parsePathSegment(input string) (segment, string, error) {
 			i += 2
 			continue
 		}
-		
+
 		// Check for valid pchar characters
 		if !isPChar(c) {
 			break
 		}
 	}
 
-	return segment(input[:i]), input[i:], nil
+	return segmentPattern(input[:i]), input[i:], nil
 }
 
 // isUnreserved returns true if the character is unreserved per RFC 3986
@@ -286,8 +291,72 @@ func parseKey(rule string) (string, string, error) {
 	return "", "", errors.New("expected key")
 }
 
-func parseAllowRule(string) (Rule, error) {
-	return Rule{}, nil
+func parseAllowRule(ruleStr string) (Rule, error) {
+	rule := Rule{
+		Raw: ruleStr,
+	}
+
+	rest := ruleStr
+
+	for rest != "" {
+		// Parse the key
+		key, valueRest, err := parseKey(rest)
+		if err != nil {
+			return Rule{}, fmt.Errorf("failed to parse key: %v", err)
+		}
+
+		// Parse the value based on the key type
+		switch key {
+		case "method":
+			token, remaining, err := parseMethodPattern(valueRest)
+			if err != nil {
+				return Rule{}, fmt.Errorf("failed to parse method: %v", err)
+			}
+
+			// Initialize Methods map if needed
+			if rule.MethodPatterns == nil {
+				rule.MethodPatterns = make(map[methodPattern]struct{})
+			}
+			rule.MethodPatterns[token] = struct{}{}
+			rest = remaining
+
+		case "domain":
+			hostLabels, remaining, err := parseHostPattern(valueRest)
+			if err != nil {
+				return Rule{}, fmt.Errorf("failed to parse domain: %v", err)
+			}
+
+			// Convert labels to strings in reverse order (TLD first)
+			rule.HostPattern = make([]labelPattern, len(hostLabels))
+			for i, label := range hostLabels {
+				rule.HostPattern[len(hostLabels)-1-i] = label
+			}
+			rest = remaining
+
+		case "path":
+			segments, remaining, err := parsePathPattern(valueRest)
+			if err != nil {
+				return Rule{}, fmt.Errorf("failed to parse path: %v", err)
+			}
+
+			// Convert segments to strings
+			rule.PathPattern = make([]segmentPattern, len(segments))
+			for i, segment := range segments {
+				rule.PathPattern[i] = segment
+			}
+			rest = remaining
+
+		default:
+			return Rule{}, fmt.Errorf("unknown key: %s", key)
+		}
+
+		// Skip whitespace or comma separators
+		for rest != "" && (rest[0] == ' ' || rest[0] == '\t' || rest[0] == ',') {
+			rest = rest[1:]
+		}
+	}
+
+	return rule, nil
 }
 
 // ParseAllowSpecs parses a slice of --allow specs into allow Rules.
@@ -342,17 +411,85 @@ func (re *Engine) Evaluate(method, url string) Result {
 	}
 }
 
+type protocol string
+
+func parseProtocol(input string) (protocol, string, error) {
+	if input == "" {
+		return "", "", errors.New("expected protocol, got empty string")
+	}
+
+	// Look for "://" separator
+	if idx := strings.Index(input, "://"); idx > 0 {
+		protocolPart := input[:idx]
+		rest := input[idx+3:]
+
+		// Validate protocol characters (scheme per RFC 3986)
+		// scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
+		if len(protocolPart) == 0 {
+			return "", "", errors.New("empty protocol")
+		}
+
+		// First character must be alpha
+		if !((protocolPart[0] >= 'A' && protocolPart[0] <= 'Z') ||
+			(protocolPart[0] >= 'a' && protocolPart[0] <= 'z')) {
+			return "", "", errors.New("protocol must start with a letter")
+		}
+
+		// Rest can be alphanumeric, +, -, or .
+		for i := 1; i < len(protocolPart); i++ {
+			c := protocolPart[i]
+			if !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+				(c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.') {
+				return "", "", fmt.Errorf("invalid character in protocol: %c", c)
+			}
+		}
+
+		return protocol(protocolPart), rest, nil
+	}
+
+	// No protocol found
+	return "", input, nil
+}
+
+type port uint16
+
+func parsePort(input string) (port, string, error) {
+	if input == "" {
+		return 0, "", nil
+	}
+
+	// Port must start with ':'
+	if input[0] != ':' {
+		return 0, input, nil
+	}
+
+	// Find the end of the port number
+	i := 1
+	for i < len(input) && input[i] >= '0' && input[i] <= '9' {
+		i++
+	}
+
+	// No digits found after ':'
+	if i == 1 {
+		return 0, "", errors.New("expected port number after ':'")
+	}
+
+	portStr := input[1:i]
+	rest := input[i:]
+
+	// Convert to uint16 (port range is 0-65535)
+	portNum := 0
+	for _, digit := range portStr {
+		portNum = portNum*10 + int(digit-'0')
+		if portNum > 65535 {
+			return 0, "", errors.New("port number too large (max 65535)")
+		}
+	}
+
+	return port(portNum), rest, nil
+}
+
 // Matches checks if the rule matches the given method and URL using wildcard patterns
 func (re *Engine) matches(r Rule, method, url string) bool {
-	// If the rule doesn't have any method filters, don't restrict the allowed methods
-	if r.Methods == nil {
-		return true
-	}
-
-	// If the rule has method filters and the provided method is not one of them, block the request.
-	if _, methodIsAllowed := r.Methods[method]; !methodIsAllowed {
-		return false
-	}
-
 	return true
 }
