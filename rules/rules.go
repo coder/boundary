@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	neturl "net/url"
 	"strings"
 )
 
@@ -17,11 +18,13 @@ type Rule struct {
 	// The path segments of the url
 	// nil means all paths allowed
 	// a path segment of `*` acts as a wild card.
+	// sub paths automatically match
 	PathPattern []segmentPattern
 
 	// The labels of the host, i.e. ["google", "com"]
 	// nil means all hosts allowed
 	// A label of `*` acts as a wild card.
+	// subdomains automatically match
 	HostPattern []labelPattern
 
 	// The allowed http methods
@@ -121,17 +124,12 @@ func parseHostPattern(input string) (host []labelPattern, rest string, err error
 // Represents a valid label in a hostname. For example, wobble in `wib-ble.wobble.com`.
 type labelPattern string
 
-// An `asterisk` is treated as matching anything
-func (lp labelPattern) matches(input string) bool {
-	return lp == "*" || string(lp) == input
-}
-
 func parseLabelPattern(rest string) (labelPattern, string, error) {
 	if rest == "" {
 		return "", "", errors.New("expected label, got empty string")
 	}
 
-	// If the label is simply an asterisk, good to go. 
+	// If the label is simply an asterisk, good to go.
 	if rest[0] == '*' {
 		return "*", rest[1:], nil
 	}
@@ -220,11 +218,6 @@ func parsePathPattern(input string) ([]segmentPattern, string, error) {
 
 // Represents a valid url path segmentPattern.
 type segmentPattern string
-
-// An `*` is treated as matching anything
-func (sp segmentPattern) matches(input string) bool {
-	return sp == "*" || string(sp) == input
-}
 
 func parsePathSegmentPattern(input string) (segmentPattern, string, error) {
 	if input == "" {
@@ -359,9 +352,7 @@ func parseAllowRule(ruleStr string) (Rule, error) {
 
 			// Convert segments to strings
 			rule.PathPattern = make([]segmentPattern, len(segments))
-			for i, segment := range segments {
-				rule.PathPattern[i] = segment
-			}
+			copy(rule.PathPattern, segments)
 			rest = remaining
 
 		default:
@@ -431,5 +422,63 @@ func (re *Engine) Evaluate(method, url string) Result {
 
 // Matches checks if the rule matches the given method and URL using wildcard patterns
 func (re *Engine) matches(r Rule, method, url string) bool {
+
+	// Check method patterns if they exist
+	if r.MethodPatterns != nil {
+		methodMatches := false
+		for mp := range r.MethodPatterns {
+			if string(mp) == method || string(mp) == "*" {
+				methodMatches = true
+				break
+			}
+		}
+		if !methodMatches {
+			return false
+		}
+	}
+
+	parsedUrl, err := neturl.Parse(url)
+	if err != nil {
+		return false
+	}
+
+	if r.HostPattern != nil {
+		// For a host pattern to match, every label has to match or be an `*`.
+		// Subdomains also match automatically, meaning if the pattern is "wobble.com"
+		// and the real is "wibble.wobble.com", it should match. We check this by comparing
+		// from the end since patterns are stored in reverse order (TLD first).
+
+		labels := strings.Split(parsedUrl.Hostname(), ".")
+
+		// If the host pattern is longer than the actual host, it's definitely not a match
+		if len(r.HostPattern) > len(labels) {
+			return false
+		}
+
+		// Compare from the end of both arrays since pattern is stored in reverse order
+		for i, lp := range r.HostPattern {
+			labelIndex := len(labels) - 1 - i
+			if string(lp) != labels[labelIndex] && lp != "*" {
+				return false
+			}
+		}
+	}
+
+	if r.PathPattern != nil {
+		segments := strings.Split(parsedUrl.Path, "/")
+
+		// If the path pattern is longer than the actual path, definitely not a match
+		if len(r.PathPattern) > len(segments) {
+			return false
+		}
+
+		// Each segment in the pattern must be either as asterisk or match the actual path segment
+		for i, sp := range r.PathPattern {
+			if string(sp) != segments[i] && sp != "*" {
+				return false
+			}
+		}
+	}
+
 	return true
 }
