@@ -37,10 +37,10 @@ func NewCommand() *serpent.Command {
 	// may be called something different when used as a subcommand / there will be a leading binary (i.e. `coder boundary` vs. `boundary`).
 	cmd.Long += `Examples:
   # Allow only requests to github.com
-  boundary --allow "github.com" -- curl https://github.com
+  boundary --allow "domain=github.com" -- curl https://github.com
 
   # Monitor all requests to specific domains (allow only those)
-  boundary --allow "github.com/api/issues/*" --allow "GET,HEAD github.com" -- npm install
+  boundary --allow "domain=github.com path=/api/issues/*" --allow "method=GET,HEAD domain=github.com" -- npm install
 
   # Block everything by default (implicit)`
 
