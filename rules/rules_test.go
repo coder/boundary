@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"fmt"
 	"log/slog"
 	"testing"
 )
@@ -268,11 +269,11 @@ func TestParseHost(t *testing.T) {
 			expectError:  false,
 		},
 		{
-			name:         "wildcard domain",
+			name:         "wildcard domain - should error",
 			input:        "api.*",
-			expectedHost: []labelPattern{labelPattern("api"), labelPattern("*")},
+			expectedHost: nil,
 			expectedRest: "",
-			expectError:  false,
+			expectError:  true,
 		},
 		{
 			name:         "multiple wildcards",
@@ -287,6 +288,13 @@ func TestParseHost(t *testing.T) {
 			expectedHost: []labelPattern{labelPattern("*"), labelPattern("example"), labelPattern("com")},
 			expectedRest: "/path",
 			expectError:  false,
+		},
+		{
+			name:         "host pattern ending with asterisk - rejected",
+			input:        "api.*",
+			expectedHost: nil,
+			expectedRest: "",
+			expectError:  true,
 		},
 	}
 
@@ -960,15 +968,10 @@ func TestParseAllowRule(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:  "all wildcards",
-			input: "method=* domain=*.* path=/*/",
-			expectedRule: Rule{
-				Raw:            "method=* domain=*.* path=/*/",
-				MethodPatterns: map[methodPattern]struct{}{methodPattern("*"): {}},
-				HostPattern:    []labelPattern{labelPattern("*"), labelPattern("*")},
-				PathPattern:    []segmentPattern{segmentPattern("*")},
-			},
-			expectError: false,
+			name:         "all wildcards - domain ending with asterisk should error",
+			input:        "method=* domain=*.* path=/*/",
+			expectedRule: Rule{},
+			expectError:  true,
 		},
 		{
 			name:         "invalid key",
@@ -1171,7 +1174,7 @@ func TestEngineMatches(t *testing.T) {
 		{
 			name: "path matches exact",
 			rule: Rule{
-				PathPattern: []segmentPattern{segmentPattern(""), segmentPattern("api"), segmentPattern("users")},
+				PathPattern: []segmentPattern{segmentPattern("api"), segmentPattern("users")},
 			},
 			method:   "GET",
 			url:      "https://example.com/api/users",
@@ -1180,7 +1183,7 @@ func TestEngineMatches(t *testing.T) {
 		{
 			name: "path does not match",
 			rule: Rule{
-				PathPattern: []segmentPattern{segmentPattern(""), segmentPattern("api"), segmentPattern("posts")},
+				PathPattern: []segmentPattern{segmentPattern("api"), segmentPattern("posts")},
 			},
 			method:   "GET",
 			url:      "https://example.com/api/users",
@@ -1189,7 +1192,7 @@ func TestEngineMatches(t *testing.T) {
 		{
 			name: "subpath matches",
 			rule: Rule{
-				PathPattern: []segmentPattern{segmentPattern(""), segmentPattern("api")},
+				PathPattern: []segmentPattern{segmentPattern("api")},
 			},
 			method:   "GET",
 			url:      "https://example.com/api/users/123",
@@ -1198,7 +1201,7 @@ func TestEngineMatches(t *testing.T) {
 		{
 			name: "path pattern too long",
 			rule: Rule{
-				PathPattern: []segmentPattern{segmentPattern(""), segmentPattern("api"), segmentPattern("v1"), segmentPattern("users"), segmentPattern("profile")},
+				PathPattern: []segmentPattern{segmentPattern("api"), segmentPattern("v1"), segmentPattern("users"), segmentPattern("profile")},
 			},
 			method:   "GET",
 			url:      "https://example.com/api/v1/users",
@@ -1207,7 +1210,7 @@ func TestEngineMatches(t *testing.T) {
 		{
 			name: "path wildcard matches",
 			rule: Rule{
-				PathPattern: []segmentPattern{segmentPattern(""), segmentPattern("api"), segmentPattern("*"), segmentPattern("profile")},
+				PathPattern: []segmentPattern{segmentPattern("api"), segmentPattern("*"), segmentPattern("profile")},
 			},
 			method:   "GET",
 			url:      "https://example.com/api/users/profile",
@@ -1216,7 +1219,7 @@ func TestEngineMatches(t *testing.T) {
 		{
 			name: "multiple path wildcards",
 			rule: Rule{
-				PathPattern: []segmentPattern{segmentPattern(""), segmentPattern("*"), segmentPattern("*")},
+				PathPattern: []segmentPattern{segmentPattern("*"), segmentPattern("*")},
 			},
 			method:   "GET",
 			url:      "https://example.com/api/users/123",
@@ -1229,7 +1232,7 @@ func TestEngineMatches(t *testing.T) {
 			rule: Rule{
 				MethodPatterns: map[methodPattern]struct{}{methodPattern("POST"): {}},
 				HostPattern:    []labelPattern{labelPattern("api"), labelPattern("com")},
-				PathPattern:    []segmentPattern{segmentPattern(""), segmentPattern("users")},
+				PathPattern:    []segmentPattern{segmentPattern("users")},
 			},
 			method:   "POST",
 			url:      "https://api.com/users",
@@ -1240,7 +1243,7 @@ func TestEngineMatches(t *testing.T) {
 			rule: Rule{
 				MethodPatterns: map[methodPattern]struct{}{methodPattern("POST"): {}},
 				HostPattern:    []labelPattern{labelPattern("api"), labelPattern("com")},
-				PathPattern:    []segmentPattern{segmentPattern(""), segmentPattern("users")},
+				PathPattern:    []segmentPattern{segmentPattern("users")},
 			},
 			method:   "GET",
 			url:      "https://api.com/users",
@@ -1251,7 +1254,7 @@ func TestEngineMatches(t *testing.T) {
 			rule: Rule{
 				MethodPatterns: map[methodPattern]struct{}{methodPattern("POST"): {}},
 				HostPattern:    []labelPattern{labelPattern("api"), labelPattern("org")},
-				PathPattern:    []segmentPattern{segmentPattern(""), segmentPattern("users")},
+				PathPattern:    []segmentPattern{segmentPattern("users")},
 			},
 			method:   "POST",
 			url:      "https://api.com/users",
@@ -1262,7 +1265,7 @@ func TestEngineMatches(t *testing.T) {
 			rule: Rule{
 				MethodPatterns: map[methodPattern]struct{}{methodPattern("POST"): {}},
 				HostPattern:    []labelPattern{labelPattern("api"), labelPattern("com")},
-				PathPattern:    []segmentPattern{segmentPattern(""), segmentPattern("posts")},
+				PathPattern:    []segmentPattern{segmentPattern("posts")},
 			},
 			method:   "POST",
 			url:      "https://api.com/users",
@@ -1273,7 +1276,7 @@ func TestEngineMatches(t *testing.T) {
 			rule: Rule{
 				MethodPatterns: map[methodPattern]struct{}{methodPattern("*"): {}},
 				HostPattern:    []labelPattern{labelPattern("*"), labelPattern("*")},
-				PathPattern:    []segmentPattern{segmentPattern(""), segmentPattern("*"), segmentPattern("*")},
+				PathPattern:    []segmentPattern{segmentPattern("*"), segmentPattern("*")},
 			},
 			method:   "PATCH",
 			url:      "https://test.example.com/api/users/123",
@@ -1300,7 +1303,7 @@ func TestEngineMatches(t *testing.T) {
 		{
 			name: "root path",
 			rule: Rule{
-				PathPattern: []segmentPattern{segmentPattern("")},
+				PathPattern: []segmentPattern{},
 			},
 			method:   "GET",
 			url:      "https://example.com/",
@@ -1322,6 +1325,173 @@ func TestEngineMatches(t *testing.T) {
 			result := engine.matches(tt.rule, tt.method, tt.url)
 			if result != tt.expected {
 				t.Errorf("expected %v, got %v", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestReadmeExamples(t *testing.T) {
+	logger := slog.Default()
+
+	tests := []struct {
+		name      string
+		allowRule string
+		testCases []struct {
+			method   string
+			url      string
+			expected bool
+		}
+	}{
+		{
+			name:      "domain only - github.com",
+			allowRule: "domain=github.com",
+			testCases: []struct {
+				method   string
+				url      string
+				expected bool
+			}{
+				{"GET", "https://github.com", true},
+				{"POST", "https://github.com/user/repo", true},
+				{"GET", "https://api.github.com", true}, // subdomain match
+				{"GET", "https://example.com", false},
+			},
+		},
+		{
+			name:      "domain with path - github.com/api/issues/*",
+			allowRule: "domain=github.com path=/api/issues/*",
+			testCases: []struct {
+				method   string
+				url      string
+				expected bool
+			}{
+				{"GET", "https://github.com/api/issues/123", true},
+				{"POST", "https://github.com/api/issues/new", true},
+				{"GET", "https://github.com/api/users", false},       // wrong path
+				{"GET", "https://example.com/api/issues/123", false}, // wrong domain
+			},
+		},
+		{
+			name:      "method with domain - GET,HEAD github.com",
+			allowRule: "method=GET,HEAD domain=github.com",
+			testCases: []struct {
+				method   string
+				url      string
+				expected bool
+			}{
+				{"GET", "https://github.com/user/repo", true},
+				{"HEAD", "https://github.com/user/repo", true},
+				{"POST", "https://github.com/user/repo", false}, // wrong method
+				{"GET", "https://example.com", false},           // wrong domain
+			},
+		},
+		{
+			name:      "wildcard subdomain - *.github.com",
+			allowRule: "domain=*.github.com",
+			testCases: []struct {
+				method   string
+				url      string
+				expected bool
+			}{
+				{"GET", "https://api.github.com", true},
+				{"GET", "https://raw.github.com", true},
+				{"GET", "https://github.com", false}, // no subdomain
+				{"GET", "https://example.com", false},
+			},
+		},
+		{
+			name:      "method with domain and specific host",
+			allowRule: "method=GET,HEAD domain=api.github.com",
+			testCases: []struct {
+				method   string
+				url      string
+				expected bool
+			}{
+				{"GET", "https://api.github.com/users", true},
+				{"HEAD", "https://api.github.com/repos", true},
+				{"POST", "https://api.github.com/users", false}, // wrong method
+				{"GET", "https://github.com", false},            // wrong domain
+			},
+		},
+		{
+			name:      "method with domain and path",
+			allowRule: "method=POST domain=api.example.com path=/users",
+			testCases: []struct {
+				method   string
+				url      string
+				expected bool
+			}{
+				{"POST", "https://api.example.com/users", true},
+				{"POST", "https://api.example.com/users/123", true}, // subpath match
+				{"GET", "https://api.example.com/users", false},     // wrong method
+				{"POST", "https://api.example.com/posts", false},    // wrong path
+				{"POST", "https://example.com/users", false},        // wrong domain
+			},
+		},
+		{
+			name:      "method wildcard - all methods",
+			allowRule: "method=*",
+			testCases: []struct {
+				method   string
+				url      string
+				expected bool
+			}{
+				{"GET", "https://example.com", true},
+				{"POST", "https://example.com", true},
+				{"DELETE", "https://example.com", true},
+				{"PATCH", "https://example.com", true},
+				{"OPTIONS", "https://example.com", true},
+			},
+		},
+		{
+			name:      "multiple wildcards - wildcard subdomains",
+			allowRule: "domain=*.npmjs.org",
+			testCases: []struct {
+				method   string
+				url      string
+				expected bool
+			}{
+				{"GET", "https://registry.npmjs.org", true},
+				{"GET", "https://api.npmjs.org", true},
+				{"GET", "https://npmjs.org", false}, // no subdomain
+				{"GET", "https://example.com", false},
+			},
+		},
+		{
+			name:      "registry domain exact match",
+			allowRule: "domain=registry.npmjs.org",
+			testCases: []struct {
+				method   string
+				url      string
+				expected bool
+			}{
+				{"GET", "https://registry.npmjs.org", true},
+				{"GET", "https://registry.npmjs.org/package", true},
+				{"GET", "https://api.npmjs.org", false}, // different subdomain
+				{"GET", "https://npmjs.org", false},     // missing subdomain
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Parse the allow rule
+			rule, err := parseAllowRule(tt.allowRule)
+			if err != nil {
+				t.Fatalf("Failed to parse allow rule %q: %v", tt.allowRule, err)
+			}
+
+			// Create engine with the single rule
+			engine := NewRuleEngine([]Rule{rule}, logger)
+
+			// Test each case
+			for i, tc := range tt.testCases {
+				t.Run(fmt.Sprintf("case_%d_%s_%s", i, tc.method, tc.url), func(t *testing.T) {
+					result := engine.matches(rule, tc.method, tc.url)
+					if result != tc.expected {
+						t.Errorf("Rule %q with method %q and URL %q: expected %v, got %v",
+							tt.allowRule, tc.method, tc.url, tc.expected, result)
+					}
+				})
 			}
 		})
 	}

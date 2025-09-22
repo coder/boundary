@@ -118,6 +118,11 @@ func parseHostPattern(input string) (host []labelPattern, rest string, err error
 		host = append(host, label)
 	}
 
+	// Validate: host patterns cannot end with asterisk
+	if len(host) > 0 && host[len(host)-1] == "*" {
+		return nil, "", errors.New("host patterns cannot end with asterisk")
+	}
+
 	return host, rest, nil
 }
 
@@ -319,17 +324,31 @@ func parseAllowRule(ruleStr string) (Rule, error) {
 		// Parse the value based on the key type
 		switch key {
 		case "method":
-			token, remaining, err := parseMethodPattern(valueRest)
-			if err != nil {
-				return Rule{}, fmt.Errorf("failed to parse method: %v", err)
-			}
+			// Handle comma-separated methods
+			methodsRest := valueRest
 
 			// Initialize Methods map if needed
 			if rule.MethodPatterns == nil {
 				rule.MethodPatterns = make(map[methodPattern]struct{})
 			}
-			rule.MethodPatterns[token] = struct{}{}
-			rest = remaining
+
+			for {
+				token, remaining, err := parseMethodPattern(methodsRest)
+				if err != nil {
+					return Rule{}, fmt.Errorf("failed to parse method: %v", err)
+				}
+
+				rule.MethodPatterns[token] = struct{}{}
+
+				// Check if there's a comma for more methods
+				if remaining != "" && remaining[0] == ',' {
+					methodsRest = remaining[1:] // Skip the comma
+					continue
+				}
+
+				rest = remaining
+				break
+			}
 
 		case "domain":
 			hostLabels, remaining, err := parseHostPattern(valueRest)
@@ -429,14 +448,14 @@ func (re *Engine) matches(r Rule, method, url string) bool {
 			}
 		}
 		if !methodMatches {
-			re.logger.Info("rule does not match", "reason", "method pattern mismatch", "rule", r.Raw, "method", method, "url", url)
+			re.logger.Debug("rule does not match", "reason", "method pattern mismatch", "rule", r.Raw, "method", method, "url", url)
 			return false
 		}
 	}
 
 	parsedUrl, err := neturl.Parse(url)
 	if err != nil {
-		re.logger.Info("rule does not match", "reason", "invalid URL", "rule", r.Raw, "method", method, "url", url, "error", err)
+		re.logger.Debug("rule does not match", "reason", "invalid URL", "rule", r.Raw, "method", method, "url", url, "error", err)
 		return false
 	}
 
@@ -450,15 +469,16 @@ func (re *Engine) matches(r Rule, method, url string) bool {
 
 		// If the host pattern is longer than the actual host, it's definitely not a match
 		if len(r.HostPattern) > len(labels) {
-			re.logger.Info("rule does not match", "reason", "host pattern too long", "rule", r.Raw, "method", method, "url", url, "pattern_length", len(r.HostPattern), "hostname_labels", len(labels))
+			re.logger.Debug("rule does not match", "reason", "host pattern too long", "rule", r.Raw, "method", method, "url", url, "pattern_length", len(r.HostPattern), "hostname_labels", len(labels))
 			return false
 		}
 
-		// Compare pattern with the end of labels (allowing subdomains)
+		// Since host patterns cannot end with asterisk, we only need to handle:
+		// "example.com" or "*.example.com" - match from the end (allowing subdomains)
 		for i, lp := range r.HostPattern {
 			labelIndex := len(labels) - len(r.HostPattern) + i
 			if string(lp) != labels[labelIndex] && lp != "*" {
-				re.logger.Info("rule does not match", "reason", "host pattern label mismatch", "rule", r.Raw, "method", method, "url", url, "expected", string(lp), "actual", labels[labelIndex])
+				re.logger.Debug("rule does not match", "reason", "host pattern label mismatch", "rule", r.Raw, "method", method, "url", url, "expected", string(lp), "actual", labels[labelIndex])
 				return false
 			}
 		}
@@ -467,21 +487,26 @@ func (re *Engine) matches(r Rule, method, url string) bool {
 	if r.PathPattern != nil {
 		segments := strings.Split(parsedUrl.Path, "/")
 
+		// Skip the first empty segment if the path starts with "/"
+		if len(segments) > 0 && segments[0] == "" {
+			segments = segments[1:]
+		}
+
 		// If the path pattern is longer than the actual path, definitely not a match
 		if len(r.PathPattern) > len(segments) {
-			re.logger.Info("rule does not match", "reason", "path pattern too long", "rule", r.Raw, "method", method, "url", url, "pattern_length", len(r.PathPattern), "path_segments", len(segments))
+			re.logger.Debug("rule does not match", "reason", "path pattern too long", "rule", r.Raw, "method", method, "url", url, "pattern_length", len(r.PathPattern), "path_segments", len(segments))
 			return false
 		}
 
 		// Each segment in the pattern must be either as asterisk or match the actual path segment
 		for i, sp := range r.PathPattern {
 			if string(sp) != segments[i] && sp != "*" {
-				re.logger.Info("rule does not match", "reason", "path pattern segment mismatch", "rule", r.Raw, "method", method, "url", url, "expected", string(sp), "actual", segments[i])
+				re.logger.Debug("rule does not match", "reason", "path pattern segment mismatch", "rule", r.Raw, "method", method, "url", url, "expected", string(sp), "actual", segments[i])
 				return false
 			}
 		}
 	}
 
-	re.logger.Info("rule matches", "reason", "all patterns matched", "rule", r.Raw, "method", method, "url", url)
+	re.logger.Debug("rule matches", "reason", "all patterns matched", "rule", r.Raw, "method", method, "url", url)
 	return true
 }
