@@ -337,11 +337,8 @@ func parseAllowRule(ruleStr string) (Rule, error) {
 				return Rule{}, fmt.Errorf("failed to parse domain: %v", err)
 			}
 
-			// Convert labels to strings in reverse order (TLD first)
-			rule.HostPattern = make([]labelPattern, len(hostLabels))
-			for i, label := range hostLabels {
-				rule.HostPattern[len(hostLabels)-1-i] = label
-			}
+			// Convert labels to strings
+			rule.HostPattern = append(rule.HostPattern, hostLabels...)
 			rest = remaining
 
 		case "path":
@@ -351,8 +348,7 @@ func parseAllowRule(ruleStr string) (Rule, error) {
 			}
 
 			// Convert segments to strings
-			rule.PathPattern = make([]segmentPattern, len(segments))
-			copy(rule.PathPattern, segments)
+			rule.PathPattern = append(rule.PathPattern, segments...)
 			rest = remaining
 
 		default:
@@ -444,9 +440,9 @@ func (re *Engine) matches(r Rule, method, url string) bool {
 
 	if r.HostPattern != nil {
 		// For a host pattern to match, every label has to match or be an `*`.
-		// Subdomains also match automatically, meaning if the pattern is "wobble.com"
-		// and the real is "wibble.wobble.com", it should match. We check this by comparing
-		// from the end since patterns are stored in reverse order (TLD first).
+		// Subdomains also match automatically, meaning if the pattern is "example.com"
+		// and the real is "api.example.com", it should match. We check this by comparing
+		// from the end of the actual hostname with the pattern (which is in normal order).
 
 		labels := strings.Split(parsedUrl.Hostname(), ".")
 
@@ -455,9 +451,9 @@ func (re *Engine) matches(r Rule, method, url string) bool {
 			return false
 		}
 
-		// Compare from the end of both arrays since pattern is stored in reverse order
+		// Compare pattern with the end of labels (allowing subdomains)
 		for i, lp := range r.HostPattern {
-			labelIndex := len(labels) - 1 - i
+			labelIndex := len(labels) - len(r.HostPattern) + i
 			if string(lp) != labels[labelIndex] && lp != "*" {
 				return false
 			}
