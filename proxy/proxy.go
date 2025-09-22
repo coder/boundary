@@ -254,8 +254,8 @@ Request: %s %s
 Host: %s
 
 To allow this request, restart boundary with:
-  --allow "%s"                    # Allow all methods to this host
-  --allow "%s %s"          # Allow only %s requests to this host
+  --allow "domain=%s"                    # Allow all methods to this host
+  --allow "method=%s domain=%s"          # Allow only %s requests to this host
 
 For more help: https://github.com/coder/boundary
 `,
@@ -639,7 +639,7 @@ func (p *Server) constructFullURL(req *http.Request, hostname string) string {
 
 // writeBlockedResponseStreaming writes a blocked response directly to the TLS connection
 func (p *Server) writeBlockedResponseStreaming(tlsConn *tls.Conn, req *http.Request) {
-	response := fmt.Sprintf("HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n🚫 Request Blocked by Boundary\n\nRequest: %s %s\nHost: %s\n\nTo allow this request, restart boundary with:\n  --allow \"%s\"\n",
+	response := fmt.Sprintf("HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n🚫 Request Blocked by Boundary\n\nRequest: %s %s\nHost: %s\n\nTo allow this request, restart boundary with:\n  --allow \"domain=%s\"\n",
 		req.Method, req.URL.Path, req.Host, req.Host)
 	_, _ = tlsConn.Write([]byte(response))
 }
