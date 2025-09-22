@@ -429,12 +429,14 @@ func (re *Engine) matches(r Rule, method, url string) bool {
 			}
 		}
 		if !methodMatches {
+			re.logger.Info("rule does not match", "reason", "method pattern mismatch", "rule", r.Raw, "method", method, "url", url)
 			return false
 		}
 	}
 
 	parsedUrl, err := neturl.Parse(url)
 	if err != nil {
+		re.logger.Info("rule does not match", "reason", "invalid URL", "rule", r.Raw, "method", method, "url", url, "error", err)
 		return false
 	}
 
@@ -448,6 +450,7 @@ func (re *Engine) matches(r Rule, method, url string) bool {
 
 		// If the host pattern is longer than the actual host, it's definitely not a match
 		if len(r.HostPattern) > len(labels) {
+			re.logger.Info("rule does not match", "reason", "host pattern too long", "rule", r.Raw, "method", method, "url", url, "pattern_length", len(r.HostPattern), "hostname_labels", len(labels))
 			return false
 		}
 
@@ -455,6 +458,7 @@ func (re *Engine) matches(r Rule, method, url string) bool {
 		for i, lp := range r.HostPattern {
 			labelIndex := len(labels) - len(r.HostPattern) + i
 			if string(lp) != labels[labelIndex] && lp != "*" {
+				re.logger.Info("rule does not match", "reason", "host pattern label mismatch", "rule", r.Raw, "method", method, "url", url, "expected", string(lp), "actual", labels[labelIndex])
 				return false
 			}
 		}
@@ -465,16 +469,19 @@ func (re *Engine) matches(r Rule, method, url string) bool {
 
 		// If the path pattern is longer than the actual path, definitely not a match
 		if len(r.PathPattern) > len(segments) {
+			re.logger.Info("rule does not match", "reason", "path pattern too long", "rule", r.Raw, "method", method, "url", url, "pattern_length", len(r.PathPattern), "path_segments", len(segments))
 			return false
 		}
 
 		// Each segment in the pattern must be either as asterisk or match the actual path segment
 		for i, sp := range r.PathPattern {
 			if string(sp) != segments[i] && sp != "*" {
+				re.logger.Info("rule does not match", "reason", "path pattern segment mismatch", "rule", r.Raw, "method", method, "url", url, "expected", string(sp), "actual", segments[i])
 				return false
 			}
 		}
 	}
 
+	re.logger.Info("rule matches", "reason", "all patterns matched", "rule", r.Raw, "method", method, "url", url)
 	return true
 }

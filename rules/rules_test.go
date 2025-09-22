@@ -1063,7 +1063,7 @@ func TestParseAllowRule(t *testing.T) {
 }
 
 func TestEngineMatches(t *testing.T) {
-	logger := &slog.Logger{}
+	logger := slog.Default()
 	engine := NewRuleEngine(nil, logger)
 
 	tests := []struct {
@@ -1282,8 +1282,8 @@ func TestEngineMatches(t *testing.T) {
 
 		// Edge cases
 		{
-			name: "empty rule matches everything",
-			rule: Rule{},
+			name:     "empty rule matches everything",
+			rule:     Rule{},
 			method:   "GET",
 			url:      "https://example.com/api/users",
 			expected: true,
