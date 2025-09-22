@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, bcpeinhardt/action-debug ]
   pull_request:
     branches: [ main ]
 
@@ -78,3 +78,6 @@ jobs:
 
     - name: Check build
       run: make build
+
+    - name: Setup tmate session
+      uses: mxschmitt/action-tmate@v3
