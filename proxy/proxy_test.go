@@ -35,7 +35,7 @@ func TestProxyServerBasicHTTP(t *testing.T) {
 	}))
 
 	// Create test rules (allow all for testing)
-	testRules, err := rules.ParseAllowSpecs([]string{"*"})
+	testRules, err := rules.ParseAllowSpecs([]string{"method=*"})
 	if err != nil {
 		t.Fatalf("Failed to parse test rules: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestProxyServerBasicHTTPS(t *testing.T) {
 	}))
 
 	// Create test rules (allow all for testing)
-	testRules, err := rules.ParseAllowSpecs([]string{"*"})
+	testRules, err := rules.ParseAllowSpecs([]string{"method=*"})
 	if err != nil {
 		t.Fatalf("Failed to parse test rules: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestProxyServerCONNECT(t *testing.T) {
 	}))
 
 	// Create test rules (allow all for testing)
-	testRules, err := rules.ParseAllowSpecs([]string{"*"})
+	testRules, err := rules.ParseAllowSpecs([]string{"method=*"})
 	if err != nil {
 		t.Fatalf("Failed to parse test rules: %v", err)
 	}
