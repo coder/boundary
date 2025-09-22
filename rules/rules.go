@@ -1,9 +1,9 @@
 package rules
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 )
 
 type Evaluator interface {
@@ -12,16 +12,84 @@ type Evaluator interface {
 
 // Rule represents an allow rule with optional HTTP method restrictions
 type Rule struct {
-	Pattern string          // wildcard pattern for matching
-	Methods map[string]bool // nil means all methods allowed
-	Raw     string          // rule string for logging
+
+	// The path segments of the url
+	// nil means all paths allowed
+	// a path segment of `*` acts as a wild card.
+	Path []string
+
+	// The labels of the host, i.e. ["google", "com"]
+	// nil means no hosts allowed
+	// subdomains automatically match
+	Host []string
+
+	// The allowed http methods
+	// nil means all methods allowed
+	Methods map[string]struct{}
+
+	// Raw rule string for logging
+	Raw string 
+}
+
+type httpToken string
+
+// Beyond the 9 methods defined in HTTP 1.1, there actually are many more seldom used extension methods by
+// various systems.
+// https://datatracker.ietf.org/doc/html/rfc7230#section-3.2.6
+func parseHTTPToken(token string) (httpToken, string, error) {
+	if token == "" {
+		return "", "", errors.New("expected http token, got empty string")
+	}
+	return doParseHTTPToken(token, nil)
+}
+
+func doParseHTTPToken(token string, acc []byte) (httpToken, string, error) {
+	// BASE CASE: if the token passed in is empty, we're done parsing
+	if token == "" {
+		return httpToken(acc), "", nil
+	}
+
+	// If the next byte in the string is not a valid http token character, we're done parsing.
+	if !isHTTPTokenChar(token[0]) {
+		return httpToken(acc), token, nil
+	}
+
+	// The next character is valid, so the http token continues
+	acc = append(acc, token[0])
+	return doParseHTTPToken(token[1:], acc)
+}
+
+// The valid characters that can be in an http token (like the lexer/parser kind of token).
+func isHTTPTokenChar(c byte) bool {
+	switch {
+	// Alpha numeric is fine.
+	case c >= 'A' && c <= 'Z':
+		return true
+	case c >= 'a' && c <= 'z':
+		return true
+	case c >= '0' && c <= '9':
+		return true
+
+	// These special characters are also allowed unbelievably.
+	case c == '!' || c == '#' || c == '$' || c == '%' || c == '&' ||
+		c == '\'' || c == '*' || c == '+' || c == '-' || c == '.' ||
+		c == '^' || c == '_' || c == '`' || c == '|' || c == '~':
+		return true
+
+	default:
+		return false
+	}
+}
+
+func parseAllowRule(string) (Rule, error) {
+	return Rule{}, nil
 }
 
 // ParseAllowSpecs parses a slice of --allow specs into allow Rules.
 func ParseAllowSpecs(allowStrings []string) ([]Rule, error) {
 	var out []Rule
 	for _, s := range allowStrings {
-		r, err := newAllowRule(s)
+		r, err := parseAllowRule(s)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse allow '%s': %v", s, err)
 		}
@@ -71,142 +139,15 @@ func (re *Engine) Evaluate(method, url string) Result {
 
 // Matches checks if the rule matches the given method and URL using wildcard patterns
 func (re *Engine) matches(r Rule, method, url string) bool {
-	// Check method if specified
-	if r.Methods != nil && !r.Methods[strings.ToUpper(method)] {
+	// If the rule doesn't have any method filters, don't restrict the allowed methods
+	if r.Methods == nil {
+		return true
+	}
+
+	// If the rule has method filters and the provided method is not one of them, block the request.
+	if _, methodIsAllowed := r.Methods[method]; !methodIsAllowed {
 		return false
 	}
 
-	// Check URL pattern using wildcard matching
-	// Try exact match first
-	if wildcardMatch(r.Pattern, url) {
-		return true
-	}
-
-	// If pattern doesn't start with protocol, try matching against the URL without protocol
-	if !strings.HasPrefix(r.Pattern, "http://") && !strings.HasPrefix(r.Pattern, "https://") {
-		// Extract domain and path from URL
-		urlWithoutProtocol := url
-		if strings.HasPrefix(url, "https://") {
-			urlWithoutProtocol = url[8:] // Remove "https://"
-		} else if strings.HasPrefix(url, "http://") {
-			urlWithoutProtocol = url[7:] // Remove "http://"
-		}
-
-		// Try matching against URL without protocol
-		if wildcardMatch(r.Pattern, urlWithoutProtocol) {
-			return true
-		}
-
-		// Also try matching just the domain part
-		domainEnd := strings.Index(urlWithoutProtocol, "/")
-		if domainEnd > 0 {
-			domain := urlWithoutProtocol[:domainEnd]
-			if wildcardMatch(r.Pattern, domain) {
-				return true
-			}
-		} else {
-			// No path, just domain
-			if wildcardMatch(r.Pattern, urlWithoutProtocol) {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
-// wildcardMatch performs wildcard pattern matching
-// Supports * (matches any sequence of characters)
-func wildcardMatch(pattern, text string) bool {
-	pattern = strings.ToLower(pattern)
-	text = strings.ToLower(text)
-
-	// Handle simple case
-	if pattern == "*" {
-		return true
-	}
-
-	// Split pattern by '*' and check each part exists in order
-	parts := strings.Split(pattern, "*")
-
-	// If no wildcards, must be exact match
-	if len(parts) == 1 {
-		return pattern == text
-	}
-
-	textPos := 0
-	for i, part := range parts {
-		if part == "" {
-			continue // Skip empty parts from consecutive '*'
-		}
-
-		if i == 0 {
-			// First part must be at the beginning
-			if !strings.HasPrefix(text, part) {
-				return false
-			}
-			textPos = len(part)
-		} else if i == len(parts)-1 {
-			// Last part must be at the end
-			if !strings.HasSuffix(text[textPos:], part) {
-				return false
-			}
-		} else {
-			// Middle parts must exist in order
-			idx := strings.Index(text[textPos:], part)
-			if idx == -1 {
-				return false
-			}
-			textPos += idx + len(part)
-		}
-	}
-
 	return true
-}
-
-// newAllowRule creates an allow Rule from a spec string used by --allow.
-// Supported formats:
-//
-//	"pattern"                    -> allow all methods to pattern
-//	"GET,HEAD pattern"           -> allow only listed methods to pattern
-func newAllowRule(spec string) (Rule, error) {
-	s := strings.TrimSpace(spec)
-	if s == "" {
-		return Rule{}, fmt.Errorf("invalid allow spec: empty")
-	}
-
-	var methods map[string]bool
-	pattern := s
-
-	// Detect optional leading methods list separated by commas and a space before pattern
-	// e.g., "GET,HEAD github.com"
-	if idx := strings.IndexFunc(s, func(r rune) bool { return r == ' ' || r == '\t' }); idx > 0 {
-		left := strings.TrimSpace(s[:idx])
-		right := strings.TrimSpace(s[idx:])
-		// methods part is valid if it only contains letters and commas
-		valid := left != "" && strings.IndexFunc(left, func(r rune) bool {
-			return r != ',' && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z')
-		}) == -1
-		if valid {
-			methods = make(map[string]bool)
-			for _, m := range strings.Split(left, ",") {
-				m = strings.TrimSpace(m)
-				if m == "" {
-					continue
-				}
-				methods[strings.ToUpper(m)] = true
-			}
-			pattern = right
-		}
-	}
-
-	if pattern == "" {
-		return Rule{}, fmt.Errorf("invalid allow spec: missing pattern")
-	}
-
-	return Rule{
-		Pattern: pattern,
-		Methods: methods,
-		Raw:     "allow " + spec,
-	}, nil
 }
