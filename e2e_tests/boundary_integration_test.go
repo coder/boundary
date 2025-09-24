@@ -78,8 +78,8 @@ func TestBoundaryIntegration(t *testing.T) {
 
 	// Start boundary process with sudo
 	boundaryCmd := exec.CommandContext(ctx, "/tmp/boundary-test",
-		"--allow", "dev.coder.com",
-		"--allow", "jsonplaceholder.typicode.com",
+		"--allow", "domain=dev.coder.com",
+		"--allow", "domain=jsonplaceholder.typicode.com",
 		"--log-level", "debug",
 		"--", "bash", "-c", "sleep 10 && echo 'Test completed'")
 
