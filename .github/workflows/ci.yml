@@ -73,8 +73,12 @@ jobs:
     - name: Download and verify dependencies
       run: make deps
 
-    - name: Run tests
-      run: make test
+    - name: Run unit tests
+      run: make unit-test
+
+    - name: Run e2e tests
+      run: make e2e-test
+      if: matrix.os == 'ubuntu-latest'
 
     - name: Check build
       run: make build
