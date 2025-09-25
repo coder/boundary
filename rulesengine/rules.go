@@ -116,8 +116,8 @@ func parseAllowRule(ruleStr string) (Rule, error) {
 			return Rule{}, fmt.Errorf("unknown key: %s", key)
 		}
 
-		// Skip whitespace or comma separators
-		for rest != "" && (rest[0] == ' ' || rest[0] == '\t' || rest[0] == ',') {
+		// Skip whitespace separators (only support mac and linux so \r\n shouldn't be a thing)
+		for rest != "" && (rest[0] == ' ' || rest[0] == '\t' || rest[0] == '\n') {
 			rest = rest[1:]
 		}
 	}
