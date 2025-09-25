@@ -174,3 +174,121 @@ func TestBoundaryIntegration(t *testing.T) {
 	err = os.Remove("/tmp/boundary-test")
 	require.NoError(t, err, "Failed to remove /tmp/boundary-test")
 }
+
+func TestIptablesCleanup(t *testing.T) {
+	// Step 1: Capture initial iptables rules
+	t.Log("Step 1: Capturing initial iptables rules...")
+	initialCmd := exec.Command("sudo", "iptables", "-L", "-n", "-v")
+	initialOutput, err := initialCmd.Output()
+	require.NoError(t, err, "Failed to get initial iptables rules")
+	initialRules := string(initialOutput)
+	t.Logf("Initial iptables rules:\n%s", initialRules)
+
+	// Step 2: Create and start LinuxJail
+	t.Log("Step 2: Creating and starting LinuxJail...")
+	
+	// Import the jail package to create LinuxJail directly
+	// We'll need to create a minimal config
+	config := struct {
+		Logger        interface{}
+		HttpProxyPort int
+		ConfigDir     string
+		CACertPath    string
+		HomeDir       string
+		Username      string
+		Uid           int
+		Gid           int
+	}{
+		HttpProxyPort: 8080,
+		ConfigDir:     "/tmp/test-config",
+		CACertPath:    "/tmp/test-ca.pem",
+		HomeDir:       "/tmp/test-home",
+		Username:      "testuser",
+		Uid:           1000,
+		Gid:           1000,
+	}
+
+	// Create a temporary CA cert file for the test
+	err = os.MkdirAll(config.ConfigDir, 0755)
+	require.NoError(t, err, "Failed to create config directory")
+	
+	// Create a dummy CA cert file
+	err = os.WriteFile(config.CACertPath, []byte("dummy cert"), 0644)
+	require.NoError(t, err, "Failed to create dummy CA cert")
+
+	// We'll use the boundary binary approach since we can't easily import jail package
+	// Build the boundary binary
+	projectRoot := findProjectRoot(t)
+	buildCmd := exec.Command("go", "build", "-o", "/tmp/boundary-iptables-test", "./cmd/...")
+	buildCmd.Dir = projectRoot
+	err = buildCmd.Run()
+	require.NoError(t, err, "Failed to build boundary binary for iptables test")
+
+	// Create context for boundary process
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Start boundary process (this will create LinuxJail and setup iptables)
+	boundaryCmd := exec.CommandContext(ctx, "/tmp/boundary-iptables-test",
+		"--allow", "example.com",
+		"--log-level", "debug",
+		"--", "bash", "-c", "sleep 5 && echo 'Test completed'")
+
+	boundaryCmd.Stdout = os.Stdout
+	boundaryCmd.Stderr = os.Stderr
+
+	// Start the process
+	err = boundaryCmd.Start()
+	require.NoError(t, err, "Failed to start boundary process for iptables test")
+
+	// Give boundary time to start and setup iptables
+	time.Sleep(2 * time.Second)
+
+	// Step 3: Capture iptables rules after LinuxJail setup
+	t.Log("Step 3: Capturing iptables rules after LinuxJail setup...")
+	afterSetupCmd := exec.Command("sudo", "iptables", "-L", "-n", "-v")
+	afterSetupOutput, err := afterSetupCmd.Output()
+	require.NoError(t, err, "Failed to get iptables rules after setup")
+	afterSetupRules := string(afterSetupOutput)
+	t.Logf("Iptables rules after setup:\n%s", afterSetupRules)
+
+	// Verify that new rules were added
+	require.NotEqual(t, initialRules, afterSetupRules, "Iptables rules should have changed after LinuxJail setup")
+
+	// Step 4: Stop boundary process (this should trigger cleanup)
+	t.Log("Step 4: Stopping boundary process to trigger cleanup...")
+	cancel() // This will terminate the boundary process
+	err = boundaryCmd.Wait()
+	if err != nil {
+		t.Logf("Boundary process finished with error (expected): %v", err)
+	}
+
+	// Give cleanup time to complete
+	time.Sleep(2 * time.Second)
+
+	// Step 5: Capture iptables rules after cleanup
+	t.Log("Step 5: Capturing iptables rules after cleanup...")
+	afterCleanupCmd := exec.Command("sudo", "iptables", "-L", "-n", "-v")
+	afterCleanupOutput, err := afterCleanupCmd.Output()
+	require.NoError(t, err, "Failed to get iptables rules after cleanup")
+	afterCleanupRules := string(afterCleanupOutput)
+	t.Logf("Iptables rules after cleanup:\n%s", afterCleanupRules)
+
+	// Step 6: Verify rules are identical to initial state
+	t.Log("Step 6: Verifying iptables rules are cleaned up...")
+	require.Equal(t, initialRules, afterCleanupRules, 
+		"Iptables rules should be identical to initial state after cleanup.\n"+
+		"Initial rules:\n%s\n\nAfter cleanup:\n%s", initialRules, afterCleanupRules)
+
+	// Clean up
+	err = os.Remove("/tmp/boundary-iptables-test")
+	require.NoError(t, err, "Failed to remove test binary")
+	
+	err = os.RemoveAll(config.ConfigDir)
+	require.NoError(t, err, "Failed to remove config directory")
+	
+	err = os.Remove(config.CACertPath)
+	require.NoError(t, err, "Failed to remove dummy CA cert")
+
+	t.Log("✓ Iptables cleanup test completed successfully")
+}
