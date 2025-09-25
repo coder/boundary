@@ -178,15 +178,17 @@ func isHTTPTokenChar(c byte) bool {
 // Represents a valid host.
 // https://datatracker.ietf.org/doc/html/rfc952
 // https://datatracker.ietf.org/doc/html/rfc1123#page-13
-func parseHostPattern(input string) (host []labelPattern, rest string, err error) {
-	rest = input
-	var label labelPattern
+func parseHostPattern(input string) ([]labelPattern, string, error) {
+	rest := input
+	var host []labelPattern
+	var err error
 
 	if input == "" {
 		return nil, "", errors.New("expected host, got empty string")
 	}
 
 	// There should be at least one label.
+	var label labelPattern
 	label, rest, err = parseLabelPattern(rest)
 	if err != nil {
 		return nil, "", err
@@ -271,8 +273,9 @@ func parsePathPattern(input string) ([]segmentPattern, string, error) {
 		return nil, "", nil
 	}
 
-	var segments []segmentPattern
 	rest := input
+	var segments []segmentPattern
+	var err error
 
 	// If the path doesn't start with '/', it's not a valid absolute path
 	// But we'll be flexible and parse relative paths too
@@ -288,19 +291,19 @@ func parsePathPattern(input string) ([]segmentPattern, string, error) {
 		}
 
 		// Parse the next segment
-		seg, remaining, err := parsePathSegmentPattern(rest)
+		var segment segmentPattern
+		segment, rest, err = parsePathSegmentPattern(rest)
 		if err != nil {
 			return nil, "", err
 		}
 
 		// If we got an empty segment and there's still input,
 		// it means we hit an invalid character
-		if seg == "" && remaining != "" {
+		if segment == "" && rest != "" {
 			break
 		}
 
-		segments = append(segments, seg)
-		rest = remaining
+		segments = append(segments, segment)
 
 		// If there's no slash after the segment, we're done parsing the path
 		if rest == "" || rest[0] != '/' {
