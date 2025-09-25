@@ -6,27 +6,123 @@ import (
 	"strings"
 )
 
-// Rule represents an allow rule with optional HTTP method restrictions
+// Rule represents an allow rule passed to the cli with --allow or read from the config file.
+// Rules have a specific grammar that we need to parse carefully.
+// Example: --allow="method=GET,PATCH domain=wibble.wobble.com, path=/posts/*"
 type Rule struct {
 
-	// The path segments of the url
-	// nil means all paths allowed
-	// a path segment of `*` acts as a wild card.
-	// sub paths automatically match
+	// The path segments of the url.
+	// - nil means all paths allowed
+	// - a path segment of `*` acts as a wild card.
+	// - sub paths automatically match
 	PathPattern []segmentPattern
 
-	// The labels of the host, i.e. ["google", "com"]
-	// nil means all hosts allowed
-	// A label of `*` acts as a wild card.
-	// subdomains automatically match
+	// The labels of the host, i.e. ["google", "com"].
+	// - nil means all hosts allowed
+	// - A label of `*` acts as a wild card.
+	// - subdomains automatically match
 	HostPattern []labelPattern
 
-	// The allowed http methods
-	// nil means all methods allowed
+	// The allowed http methods.
+	// - nil means all methods allowed
 	MethodPatterns map[methodPattern]struct{}
 
 	// Raw rule string for logging
 	Raw string
+}
+
+// ParseAllowSpecs parses a slice of --allow specs into allow Rules.
+func ParseAllowSpecs(allowStrings []string) ([]Rule, error) {
+	var out []Rule
+	for _, s := range allowStrings {
+		r, err := parseAllowRule(s)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse allow '%s': %v", s, err)
+		}
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+// parseAllowRule takes an allow rule string and tries to parse it as a rule.
+func parseAllowRule(ruleStr string) (Rule, error) {
+	rule := Rule{
+		Raw: ruleStr,
+	}
+
+	// Functions called by this function used a really common pattern: recursive descent parsing.
+	// All the helper functions for parsing an allow rule will be called like `thing, rest, err := parseThing(rest)`.
+	// What's going on here is that we try to parse some expected text from the front of the string.
+	// If we succeed, we get back the thing we parsed and the remaining text. If we fail, we get back a non nil error.
+	rest := ruleStr
+	var key string
+	var err error
+
+	// Ann allow rule can have as many key=value pairs as needed, we go until there's no more text in the rule.
+	for rest != "" {
+		// Parse the key
+		key, rest, err = parseKey(rest)
+		if err != nil {
+			return Rule{}, fmt.Errorf("failed to parse key: %v", err)
+		}
+
+		// Parse the value based on the key type
+		switch key {
+		case "method":
+			// Initialize Methods map if needed
+			if rule.MethodPatterns == nil {
+				rule.MethodPatterns = make(map[methodPattern]struct{})
+			}
+
+			var method methodPattern
+			for {
+				method, rest, err = parseMethodPattern(rest)
+				if err != nil {
+					return Rule{}, fmt.Errorf("failed to parse method: %v", err)
+				}
+
+				rule.MethodPatterns[method] = struct{}{}
+
+				// Check if there's a comma for more methods
+				if rest != "" && rest[0] == ',' {
+					rest = rest[1:] // Skip the comma
+					continue
+				}
+
+				break
+			}
+
+		case "domain":
+			var host []labelPattern
+			host, rest, err = parseHostPattern(rest)
+			if err != nil {
+				return Rule{}, fmt.Errorf("failed to parse domain: %v", err)
+			}
+
+			// Convert labels to strings
+			rule.HostPattern = append(rule.HostPattern, host...)
+
+		case "path":
+			var segments []segmentPattern
+			segments, rest, err = parsePathPattern(rest)
+			if err != nil {
+				return Rule{}, fmt.Errorf("failed to parse path: %v", err)
+			}
+
+			// Convert segments to strings
+			rule.PathPattern = append(rule.PathPattern, segments...)
+
+		default:
+			return Rule{}, fmt.Errorf("unknown key: %s", key)
+		}
+
+		// Skip whitespace or comma separators
+		for rest != "" && (rest[0] == ' ' || rest[0] == '\t' || rest[0] == ',') {
+			rest = rest[1:]
+		}
+	}
+
+	return rule, nil
 }
 
 type methodPattern string
@@ -299,93 +395,4 @@ func parseKey(rule string) (string, string, error) {
 	}
 
 	return "", "", errors.New("expected key")
-}
-
-func parseAllowRule(ruleStr string) (Rule, error) {
-	rule := Rule{
-		Raw: ruleStr,
-	}
-
-	rest := ruleStr
-
-	for rest != "" {
-		// Parse the key
-		key, valueRest, err := parseKey(rest)
-		if err != nil {
-			return Rule{}, fmt.Errorf("failed to parse key: %v", err)
-		}
-
-		// Parse the value based on the key type
-		switch key {
-		case "method":
-			// Handle comma-separated methods
-			methodsRest := valueRest
-
-			// Initialize Methods map if needed
-			if rule.MethodPatterns == nil {
-				rule.MethodPatterns = make(map[methodPattern]struct{})
-			}
-
-			for {
-				token, remaining, err := parseMethodPattern(methodsRest)
-				if err != nil {
-					return Rule{}, fmt.Errorf("failed to parse method: %v", err)
-				}
-
-				rule.MethodPatterns[token] = struct{}{}
-
-				// Check if there's a comma for more methods
-				if remaining != "" && remaining[0] == ',' {
-					methodsRest = remaining[1:] // Skip the comma
-					continue
-				}
-
-				rest = remaining
-				break
-			}
-
-		case "domain":
-			hostLabels, remaining, err := parseHostPattern(valueRest)
-			if err != nil {
-				return Rule{}, fmt.Errorf("failed to parse domain: %v", err)
-			}
-
-			// Convert labels to strings
-			rule.HostPattern = append(rule.HostPattern, hostLabels...)
-			rest = remaining
-
-		case "path":
-			segments, remaining, err := parsePathPattern(valueRest)
-			if err != nil {
-				return Rule{}, fmt.Errorf("failed to parse path: %v", err)
-			}
-
-			// Convert segments to strings
-			rule.PathPattern = append(rule.PathPattern, segments...)
-			rest = remaining
-
-		default:
-			return Rule{}, fmt.Errorf("unknown key: %s", key)
-		}
-
-		// Skip whitespace or comma separators
-		for rest != "" && (rest[0] == ' ' || rest[0] == '\t' || rest[0] == ',') {
-			rest = rest[1:]
-		}
-	}
-
-	return rule, nil
-}
-
-// ParseAllowSpecs parses a slice of --allow specs into allow Rules.
-func ParseAllowSpecs(allowStrings []string) ([]Rule, error) {
-	var out []Rule
-	for _, s := range allowStrings {
-		r, err := parseAllowRule(s)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse allow '%s': %v", s, err)
-		}
-		out = append(out, r)
-	}
-	return out, nil
 }
