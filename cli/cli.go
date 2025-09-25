@@ -12,7 +12,7 @@ import (
 	"github.com/coder/boundary"
 	"github.com/coder/boundary/audit"
 	"github.com/coder/boundary/jail"
-	"github.com/coder/boundary/rules"
+	"github.com/coder/boundary/rulesengine"
 	"github.com/coder/boundary/tls"
 	"github.com/coder/boundary/util"
 	"github.com/coder/serpent"
@@ -101,14 +101,14 @@ func Run(ctx context.Context, config Config, args []string) error {
 	}
 
 	// Parse allow rules
-	allowRules, err := rules.ParseAllowSpecs(config.AllowStrings)
+	allowRules, err := rulesengine.ParseAllowSpecs(config.AllowStrings)
 	if err != nil {
 		logger.Error("Failed to parse allow rules", "error", err)
 		return fmt.Errorf("failed to parse allow rules: %v", err)
 	}
 
 	// Create rule engine
-	ruleEngine := rules.NewRuleEngine(allowRules, logger)
+	ruleEngine := rulesengine.NewRuleEngine(allowRules, logger)
 
 	// Create auditor
 	auditor := audit.NewLogAuditor(logger)

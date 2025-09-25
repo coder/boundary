@@ -15,12 +15,12 @@ import (
 	"sync/atomic"
 
 	"github.com/coder/boundary/audit"
-	"github.com/coder/boundary/rules"
+	"github.com/coder/boundary/rulesengine"
 )
 
 // Server handles HTTP and HTTPS requests with rule-based filtering
 type Server struct {
-	ruleEngine rules.Engine
+	ruleEngine rulesengine.Engine
 	auditor    audit.Auditor
 	logger     *slog.Logger
 	tlsConfig  *tls.Config
@@ -33,7 +33,7 @@ type Server struct {
 // Config holds configuration for the proxy server
 type Config struct {
 	HTTPPort   int
-	RuleEngine rules.Engine
+	RuleEngine rulesengine.Engine
 	Auditor    audit.Auditor
 	Logger     *slog.Logger
 	TLSConfig  *tls.Config
