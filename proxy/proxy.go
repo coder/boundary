@@ -20,7 +20,7 @@ import (
 
 // Server handles HTTP and HTTPS requests with rule-based filtering
 type Server struct {
-	ruleEngine rules.Evaluator
+	ruleEngine rules.Engine
 	auditor    audit.Auditor
 	logger     *slog.Logger
 	tlsConfig  *tls.Config
@@ -33,7 +33,7 @@ type Server struct {
 // Config holds configuration for the proxy server
 type Config struct {
 	HTTPPort   int
-	RuleEngine rules.Evaluator
+	RuleEngine rules.Engine
 	Auditor    audit.Auditor
 	Logger     *slog.Logger
 	TLSConfig  *tls.Config

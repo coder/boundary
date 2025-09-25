@@ -8,10 +8,6 @@ import (
 	"strings"
 )
 
-type Evaluator interface {
-	Evaluate(method, url string) Result
-}
-
 // Rule represents an allow rule with optional HTTP method restrictions
 type Rule struct {
 
@@ -403,8 +399,8 @@ type Engine struct {
 }
 
 // NewRuleEngine creates a new rule engine
-func NewRuleEngine(rules []Rule, logger *slog.Logger) *Engine {
-	return &Engine{
+func NewRuleEngine(rules []Rule, logger *slog.Logger) Engine {
+	return Engine{
 		rules:  rules,
 		logger: logger,
 	}

@@ -15,7 +15,7 @@ import (
 )
 
 type Config struct {
-	RuleEngine rules.Evaluator
+	RuleEngine rules.Engine
 	Auditor    audit.Auditor
 	TLSConfig  *tls.Config
 	Logger     *slog.Logger
