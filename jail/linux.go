@@ -43,6 +43,9 @@ func NewLinuxJail(config Config) (*LinuxJail, error) {
 func (l *LinuxJail) Start() error {
 	l.logger.Debug("Setup called")
 
+	e := getEnvs(l.configDir, l.caCertPath)
+	l.commandEnv = mergeEnvs(e, map[string]string{})
+
 	// Setup DNS configuration BEFORE creating namespace
 	// This ensures the namespace-specific resolv.conf is available when namespace is created
 	err := l.setupDNS()
@@ -75,10 +78,10 @@ func (l *LinuxJail) Start() error {
 func (l *LinuxJail) Command(command []string) *exec.Cmd {
 	l.logger.Debug("Creating command with namespace", "namespace", l.namespace)
 
-	cmdArgs := []string{"ip", "netns", "exec", l.namespace}
+	cmdArgs := []string{"netns", "exec", l.namespace}
 	cmdArgs = append(cmdArgs, command...)
 
-	cmd := exec.Command("sudo", cmdArgs...)
+	cmd := exec.Command("ip", cmdArgs...)
 	cmd.Env = l.commandEnv
 
 	return cmd
@@ -212,6 +215,19 @@ func (l *LinuxJail) setupIptables() error {
 	err = cmd.Run()
 	if err != nil {
 		return fmt.Errorf("failed to add comprehensive TCP redirect rule: %v", err)
+	}
+
+	// TODO: clean up this rules
+	cmd = exec.Command("iptables", "-A", "FORWARD", "-s", "192.168.100.0/24", "-j", "ACCEPT")
+	err = cmd.Run()
+	if err != nil {
+		return err
+	}
+
+	cmd = exec.Command("iptables", "-A", "FORWARD", "-d", "192.168.100.0/24", "-j", "ACCEPT")
+	err = cmd.Run()
+	if err != nil {
+		return err
 	}
 
 	l.logger.Debug("Comprehensive TCP boundarying enabled", "interface", l.vethHost, "proxy_port", l.httpProxyPort)
