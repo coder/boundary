@@ -11,6 +11,7 @@ type Jailer interface {
 	Start() error
 	Command(command []string) *exec.Cmd
 	Close() error
+	ConfigureChildProcess(pid int) error
 }
 
 type Config struct {

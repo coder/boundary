@@ -99,6 +99,10 @@ func (n *MacOSJail) Start() error {
 	return nil
 }
 
+func (l *MacOSJail) ConfigureChildProcess(pid int) error {
+	return nil
+}
+
 // Command runs the command with the network boundary group membership
 func (n *MacOSJail) Command(command []string) *exec.Cmd {
 	n.logger.Debug("Command called", "command", command)

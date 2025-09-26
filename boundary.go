@@ -78,6 +78,10 @@ func (b *Boundary) Command(command []string) *exec.Cmd {
 	return b.jailer.Command(command)
 }
 
+func (b *Boundary) ConfigureChildProcess(pid int) error {
+	return b.jailer.ConfigureChildProcess(pid)
+}
+
 func (b *Boundary) Close() error {
 	// Stop proxy server
 	if b.proxyServer != nil {

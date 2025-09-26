@@ -47,6 +47,10 @@ func (u *Unprivileged) Start() error {
 	return nil
 }
 
+func (l *Unprivileged) ConfigureChildProcess(pid int) error {
+	return nil
+}
+
 func (u *Unprivileged) Command(command []string) *exec.Cmd {
 	u.logger.Debug("Creating unprivileged command", "command", command)
 
