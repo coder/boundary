@@ -13,8 +13,7 @@ import (
 
 // LinuxJail implements Jailer using Linux network namespaces
 type LinuxJail struct {
-	logger *slog.Logger
-	//namespace     string
+	logger        *slog.Logger
 	vethHost      string // Host-side veth interface name for iptables rules
 	commandEnv    []string
 	httpProxyPort int
@@ -28,8 +27,7 @@ type LinuxJail struct {
 
 func NewLinuxJail(config Config) (*LinuxJail, error) {
 	return &LinuxJail{
-		logger: config.Logger,
-		//namespace:     newNamespaceName(),
+		logger:        config.Logger,
 		httpProxyPort: config.HttpProxyPort,
 		configDir:     config.ConfigDir,
 		caCertPath:    config.CACertPath,
@@ -58,12 +56,6 @@ func (l *LinuxJail) ConfigureChildProcess(pid int) error {
 	//	return fmt.Errorf("failed to setup DNS: %v", err)
 	//}
 
-	// Create namespace
-	//err = l.createNamespace()
-	//if err != nil {
-	//	return fmt.Errorf("failed to create namespace: %v", err)
-	//}
-
 	// Setup networking within namespace
 	err := l.setupNetworking(pid)
 	if err != nil {
@@ -82,13 +74,6 @@ func (l *LinuxJail) ConfigureChildProcess(pid int) error {
 // Command returns an exec.Cmd configured to run within the network namespace
 func (l *LinuxJail) Command(command []string) *exec.Cmd {
 	l.logger.Debug("Creating command with namespace")
-	//l.logger.Debug("Creating command with namespace", "namespace", l.namespace)
-
-	//cmdArgs := []string{"netns", "exec", l.namespace}
-	//cmdArgs = append(cmdArgs, command...)
-	//
-	//cmd := exec.Command("ip", cmdArgs...)
-	//cmd.Env = l.commandEnv
 
 	cmd := exec.Command(command[0], command[1:]...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -131,24 +116,8 @@ func (l *LinuxJail) Close() error {
 	//	// Continue with other cleanup
 	//}
 
-	// Remove network namespace
-	//err = l.removeNamespace()
-	//if err != nil {
-	//	return fmt.Errorf("failed to remove namespace: %v", err)
-	//}
-
 	return nil
 }
-
-// createNamespace creates a new network namespace
-//func (l *LinuxJail) createNamespace() error {
-//	cmd := exec.Command("ip", "netns", "add", l.namespace)
-//	err := cmd.Run()
-//	if err != nil {
-//		return fmt.Errorf("failed to create namespace: %v", err)
-//	}
-//	return nil
-//}
 
 // setupNetworking configures networking within the namespace
 func (l *LinuxJail) setupNetworking(pidInt int) error {
@@ -297,13 +266,3 @@ func (l *LinuxJail) cleanupNetworking() error {
 
 	return nil
 }
-
-// removeNamespace removes the network namespace
-//func (l *LinuxJail) removeNamespace() error {
-//	cmd := exec.Command("ip", "netns", "del", l.namespace)
-//	err := cmd.Run()
-//	if err != nil {
-//		return fmt.Errorf("failed to remove namespace: %v", err)
-//	}
-//	return nil
-//}
