@@ -188,20 +188,33 @@ func Run(ctx context.Context, config Config, args []string) error {
 		}
 	}()
 
+	var pid int
 	// Execute command in boundary
+	cmd := boundaryInstance.Command(args)
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	cmd.Stdin = os.Stdin
+
+	logger.Debug("Executing command in boundary", "command", strings.Join(args, " "))
+	err = cmd.Start()
+	if err != nil {
+		logger.Error("Command execution failed", "error", err)
+		return err
+	}
+
+	pid = cmd.Process.Pid
 	go func() {
 		defer cancel()
-		cmd := boundaryInstance.Command(args)
-		cmd.Stderr = os.Stderr
-		cmd.Stdout = os.Stdout
-		cmd.Stdin = os.Stdin
-
-		logger.Debug("Executing command in boundary", "command", strings.Join(args, " "))
-		err := cmd.Run()
-		if err != nil {
+		if err = cmd.Wait(); err != nil {
 			logger.Error("Command execution failed", "error", err)
+			return
 		}
 	}()
+
+	err = boundaryInstance.ConfigureChildProcess(pid)
+	if err != nil {
+		return err
+	}
 
 	// Wait for signal or context cancellation
 	select {
