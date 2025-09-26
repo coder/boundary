@@ -10,7 +10,7 @@ func TestParseHTTPToken(t *testing.T) {
 	tests := []struct {
 		name           string
 		input          string
-		expectedToken  methodPattern
+		expectedToken  string
 		expectedRemain string
 		expectError    bool
 	}{
@@ -138,7 +138,7 @@ func TestParseHost(t *testing.T) {
 	tests := []struct {
 		name         string
 		input        string
-		expectedHost []labelPattern
+		expectedHost []string
 		expectedRest string
 		expectError  bool
 	}{
@@ -152,56 +152,56 @@ func TestParseHost(t *testing.T) {
 		{
 			name:         "simple domain",
 			input:        "google.com",
-			expectedHost: []labelPattern{labelPattern("google"), labelPattern("com")},
+			expectedHost: []string{"google", "com"},
 			expectedRest: "",
 			expectError:  false,
 		},
 		{
 			name:         "subdomain",
 			input:        "api.google.com",
-			expectedHost: []labelPattern{labelPattern("api"), labelPattern("google"), labelPattern("com")},
+			expectedHost: []string{"api", "google", "com"},
 			expectedRest: "",
 			expectError:  false,
 		},
 		{
 			name:         "single label",
 			input:        "localhost",
-			expectedHost: []labelPattern{labelPattern("localhost")},
+			expectedHost: []string{"localhost"},
 			expectedRest: "",
 			expectError:  false,
 		},
 		{
 			name:         "domain with trailing content",
 			input:        "example.org/path",
-			expectedHost: []labelPattern{labelPattern("example"), labelPattern("org")},
+			expectedHost: []string{"example", "org"},
 			expectedRest: "/path",
 			expectError:  false,
 		},
 		{
 			name:         "domain with port",
 			input:        "localhost:8080",
-			expectedHost: []labelPattern{labelPattern("localhost")},
+			expectedHost: []string{"localhost"},
 			expectedRest: ":8080",
 			expectError:  false,
 		},
 		{
 			name:         "numeric labels",
 			input:        "192.168.1.1",
-			expectedHost: []labelPattern{labelPattern("192"), labelPattern("168"), labelPattern("1"), labelPattern("1")},
+			expectedHost: []string{"192", "168", "1", "1"},
 			expectedRest: "",
 			expectError:  false,
 		},
 		{
 			name:         "hyphenated domain",
 			input:        "my-site.example-domain.co.uk",
-			expectedHost: []labelPattern{labelPattern("my-site"), labelPattern("example-domain"), labelPattern("co"), labelPattern("uk")},
+			expectedHost: []string{"my-site", "example-domain", "co", "uk"},
 			expectedRest: "",
 			expectError:  false,
 		},
 		{
 			name:         "alphanumeric labels",
 			input:        "a1b2c3.test123.com",
-			expectedHost: []labelPattern{labelPattern("a1b2c3"), labelPattern("test123"), labelPattern("com")},
+			expectedHost: []string{"a1b2c3", "test123", "com"},
 			expectedRest: "",
 			expectError:  false,
 		},
@@ -229,7 +229,7 @@ func TestParseHost(t *testing.T) {
 		{
 			name:         "invalid character",
 			input:        "test@example.com",
-			expectedHost: []labelPattern{labelPattern("test")},
+			expectedHost: []string{"test"},
 			expectedRest: "@example.com",
 			expectError:  false,
 		},
@@ -250,21 +250,21 @@ func TestParseHost(t *testing.T) {
 		{
 			name:         "single character labels",
 			input:        "a.b.c",
-			expectedHost: []labelPattern{labelPattern("a"), labelPattern("b"), labelPattern("c")},
+			expectedHost: []string{"a", "b", "c"},
 			expectedRest: "",
 			expectError:  false,
 		},
 		{
 			name:         "mixed case",
 			input:        "Example.COM",
-			expectedHost: []labelPattern{labelPattern("Example"), labelPattern("COM")},
+			expectedHost: []string{"Example", "COM"},
 			expectedRest: "",
 			expectError:  false,
 		},
 		{
 			name:         "wildcard subdomain",
 			input:        "*.example.com",
-			expectedHost: []labelPattern{labelPattern("*"), labelPattern("example"), labelPattern("com")},
+			expectedHost: []string{"*", "example", "com"},
 			expectedRest: "",
 			expectError:  false,
 		},
@@ -278,14 +278,14 @@ func TestParseHost(t *testing.T) {
 		{
 			name:         "multiple wildcards",
 			input:        "*.*.com",
-			expectedHost: []labelPattern{labelPattern("*"), labelPattern("*"), labelPattern("com")},
+			expectedHost: []string{"*", "*", "com"},
 			expectedRest: "",
 			expectError:  false,
 		},
 		{
 			name:         "wildcard with trailing content",
 			input:        "*.example.com/path",
-			expectedHost: []labelPattern{labelPattern("*"), labelPattern("example"), labelPattern("com")},
+			expectedHost: []string{"*", "example", "com"},
 			expectedRest: "/path",
 			expectError:  false,
 		},
@@ -336,7 +336,7 @@ func TestParseLabel(t *testing.T) {
 	tests := []struct {
 		name          string
 		input         string
-		expectedLabel labelPattern
+		expectedLabel string
 		expectedRest  string
 		expectError   bool
 	}{
@@ -492,7 +492,7 @@ func TestParsePathSegment(t *testing.T) {
 	tests := []struct {
 		name            string
 		input           string
-		expectedSegment segmentPattern
+		expectedSegment string
 		expectedRest    string
 		expectError     bool
 	}{
@@ -676,7 +676,7 @@ func TestParsePath(t *testing.T) {
 	tests := []struct {
 		name             string
 		input            string
-		expectedSegments []segmentPattern
+		expectedSegments []string
 		expectedRest     string
 		expectError      bool
 	}{
@@ -690,56 +690,56 @@ func TestParsePath(t *testing.T) {
 		{
 			name:             "single segment",
 			input:            "/api",
-			expectedSegments: []segmentPattern{"api"},
+			expectedSegments: []string{"api"},
 			expectedRest:     "",
 			expectError:      false,
 		},
 		{
 			name:             "multiple segments",
 			input:            "/api/v1/users",
-			expectedSegments: []segmentPattern{"api", "v1", "users"},
+			expectedSegments: []string{"api", "v1", "users"},
 			expectedRest:     "",
 			expectError:      false,
 		},
 		{
 			name:             "relative path",
 			input:            "api/users",
-			expectedSegments: []segmentPattern{"api", "users"},
+			expectedSegments: []string{"api", "users"},
 			expectedRest:     "",
 			expectError:      false,
 		},
 		{
 			name:             "path with trailing slash",
 			input:            "/api/users/",
-			expectedSegments: []segmentPattern{"api", "users"},
+			expectedSegments: []string{"api", "users"},
 			expectedRest:     "",
 			expectError:      false,
 		},
 		{
 			name:             "path with query string",
 			input:            "/api/users?limit=10",
-			expectedSegments: []segmentPattern{"api", "users"},
+			expectedSegments: []string{"api", "users"},
 			expectedRest:     "?limit=10",
 			expectError:      false,
 		},
 		{
 			name:             "path with fragment",
 			input:            "/docs/api#authentication",
-			expectedSegments: []segmentPattern{"docs", "api"},
+			expectedSegments: []string{"docs", "api"},
 			expectedRest:     "#authentication",
 			expectError:      false,
 		},
 		{
 			name:             "path with encoded segments",
 			input:            "/api/hello%20world/test",
-			expectedSegments: []segmentPattern{"api", "hello%20world", "test"},
+			expectedSegments: []string{"api", "hello%20world", "test"},
 			expectedRest:     "",
 			expectError:      false,
 		},
 		{
 			name:             "path with special chars",
 			input:            "/api/filter='test'&sort=name/results",
-			expectedSegments: []segmentPattern{"api", "filter='test'&sort=name", "results"},
+			expectedSegments: []string{"api", "filter='test'&sort=name", "results"},
 			expectedRest:     "",
 			expectError:      false,
 		},
@@ -753,91 +753,91 @@ func TestParsePath(t *testing.T) {
 		{
 			name:             "empty segments",
 			input:            "/api//users",
-			expectedSegments: []segmentPattern{"api"},
+			expectedSegments: []string{"api"},
 			expectedRest:     "/users",
 			expectError:      false,
 		},
 		{
 			name:             "path with port-like segment",
 			input:            "/host:8080/status",
-			expectedSegments: []segmentPattern{"host:8080", "status"},
+			expectedSegments: []string{"host:8080", "status"},
 			expectedRest:     "",
 			expectError:      false,
 		},
 		{
 			name:             "path stops at space",
 			input:            "/api/test hello",
-			expectedSegments: []segmentPattern{"api", "test"},
+			expectedSegments: []string{"api", "test"},
 			expectedRest:     " hello",
 			expectError:      false,
 		},
 		{
 			name:             "path with hyphens and underscores",
 			input:            "/my-api/user_data/file-name.txt",
-			expectedSegments: []segmentPattern{"my-api", "user_data", "file-name.txt"},
+			expectedSegments: []string{"my-api", "user_data", "file-name.txt"},
 			expectedRest:     "",
 			expectError:      false,
 		},
 		{
 			name:             "path with tildes",
 			input:            "/api/~user/docs~backup",
-			expectedSegments: []segmentPattern{"api", "~user", "docs~backup"},
+			expectedSegments: []string{"api", "~user", "docs~backup"},
 			expectedRest:     "",
 			expectError:      false,
 		},
 		{
 			name:             "numeric segments",
 			input:            "/api/v2/users/12345",
-			expectedSegments: []segmentPattern{"api", "v2", "users", "12345"},
+			expectedSegments: []string{"api", "v2", "users", "12345"},
 			expectedRest:     "",
 			expectError:      false,
 		},
 		{
 			name:             "single character segments",
 			input:            "/a/b/c",
-			expectedSegments: []segmentPattern{"a", "b", "c"},
+			expectedSegments: []string{"a", "b", "c"},
 			expectedRest:     "",
 			expectError:      false,
 		},
 		{
 			name:             "path with at symbol",
 			input:            "/user@domain.com/profile",
-			expectedSegments: []segmentPattern{"user@domain.com", "profile"},
+			expectedSegments: []string{"user@domain.com", "profile"},
 			expectedRest:     "",
 			expectError:      false,
 		},
 		{
 			name:             "path with wildcard segment",
 			input:            "/api/*/users",
-			expectedSegments: []segmentPattern{"api", "*", "users"},
+			expectedSegments: []string{"api", "*", "users"},
 			expectedRest:     "",
 			expectError:      false,
 		},
 		{
 			name:             "path with multiple wildcards",
 			input:            "/*/v1/*/profile",
-			expectedSegments: []segmentPattern{"*", "v1", "*", "profile"},
+			expectedSegments: []string{"*", "v1", "*", "profile"},
 			expectedRest:     "",
 			expectError:      false,
 		},
 		{
 			name:             "path ending with wildcard",
 			input:            "/api/users/*",
-			expectedSegments: []segmentPattern{"api", "users", "*"},
+			expectedSegments: []string{"api", "users", "*"},
 			expectedRest:     "",
 			expectError:      false,
 		},
 		{
 			name:             "path starting with wildcard",
 			input:            "/*/users",
-			expectedSegments: []segmentPattern{"*", "users"},
+			expectedSegments: []string{"*", "users"},
 			expectedRest:     "",
 			expectError:      false,
 		},
 		{
 			name:             "path with wildcard and query",
 			input:            "/api/*/users?limit=10",
-			expectedSegments: []segmentPattern{"api", "*", "users"},
+			expectedSegments: []string{"api", "*", "users"},
 			expectedRest:     "?limit=10",
 			expectError:      false,
 		},
@@ -897,7 +897,7 @@ func TestParseAllowRule(t *testing.T) {
 			input: "method=GET",
 			expectedRule: Rule{
 				Raw:            "method=GET",
-				MethodPatterns: map[methodPattern]struct{}{methodPattern("GET"): {}},
+				MethodPatterns: map[string]struct{}{"GET": {}},
 			},
 			expectError: false,
 		},
@@ -906,7 +906,7 @@ func TestParseAllowRule(t *testing.T) {
 			input: "domain=google.com",
 			expectedRule: Rule{
 				Raw:         "domain=google.com",
-				HostPattern: []labelPattern{labelPattern("google"), labelPattern("com")},
+				HostPattern: []string{"google", "com"},
 			},
 			expectError: false,
 		},
@@ -915,7 +915,7 @@ func TestParseAllowRule(t *testing.T) {
 			input: "path=/api/v1",
 			expectedRule: Rule{
 				Raw:         "path=/api/v1",
-				PathPattern: []segmentPattern{segmentPattern("api"), segmentPattern("v1")},
+				PathPattern: []string{"api", "v1"},
 			},
 			expectError: false,
 		},
@@ -924,8 +924,8 @@ func TestParseAllowRule(t *testing.T) {
 			input: "method=POST domain=api.example.com",
 			expectedRule: Rule{
 				Raw:            "method=POST domain=api.example.com",
-				MethodPatterns: map[methodPattern]struct{}{methodPattern("POST"): {}},
-				HostPattern:    []labelPattern{labelPattern("api"), labelPattern("example"), labelPattern("com")},
+				MethodPatterns: map[string]struct{}{"POST": {}},
+				HostPattern:    []string{"api", "example", "com"},
 			},
 			expectError: false,
 		},
@@ -934,9 +934,9 @@ func TestParseAllowRule(t *testing.T) {
 			input: "method=DELETE domain=test.com path=/resources/456",
 			expectedRule: Rule{
 				Raw:            "method=DELETE domain=test.com path=/resources/456",
-				MethodPatterns: map[methodPattern]struct{}{methodPattern("DELETE"): {}},
-				HostPattern:    []labelPattern{labelPattern("test"), labelPattern("com")},
-				PathPattern:    []segmentPattern{segmentPattern("resources"), segmentPattern("456")},
+				MethodPatterns: map[string]struct{}{"DELETE": {}},
+				HostPattern:    []string{"test", "com"},
+				PathPattern:    []string{"resources", "456"},
 			},
 			expectError: false,
 		},
@@ -945,7 +945,7 @@ func TestParseAllowRule(t *testing.T) {
 			input: "domain=*.example.com",
 			expectedRule: Rule{
 				Raw:         "domain=*.example.com",
-				HostPattern: []labelPattern{labelPattern("*"), labelPattern("example"), labelPattern("com")},
+				HostPattern: []string{"*", "example", "com"},
 			},
 			expectError: false,
 		},
@@ -954,7 +954,7 @@ func TestParseAllowRule(t *testing.T) {
 			input: "path=/api/*/users",
 			expectedRule: Rule{
 				Raw:         "path=/api/*/users",
-				PathPattern: []segmentPattern{segmentPattern("api"), segmentPattern("*"), segmentPattern("users")},
+				PathPattern: []string{"api", "*", "users"},
 			},
 			expectError: false,
 		},
@@ -963,7 +963,7 @@ func TestParseAllowRule(t *testing.T) {
 			input: "method=*",
 			expectedRule: Rule{
 				Raw:            "method=*",
-				MethodPatterns: map[methodPattern]struct{}{methodPattern("*"): {}},
+				MethodPatterns: map[string]struct{}{"*": {}},
 			},
 			expectError: false,
 		},

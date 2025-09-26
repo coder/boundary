@@ -15,17 +15,17 @@ type Rule struct {
 	// - nil means all paths allowed
 	// - a path segment of `*` acts as a wild card.
 	// - sub paths automatically match
-	PathPattern []segmentPattern
+	PathPattern []string
 
 	// The labels of the host, i.e. ["google", "com"].
 	// - nil means all hosts allowed
 	// - A label of `*` acts as a wild card.
 	// - subdomains automatically match
-	HostPattern []labelPattern
+	HostPattern []string
 
 	// The allowed http methods.
 	// - nil means all methods allowed
-	MethodPatterns map[methodPattern]struct{}
+	MethodPatterns map[string]struct{}
 
 	// Raw rule string for logging
 	Raw string
@@ -71,10 +71,10 @@ func parseAllowRule(ruleStr string) (Rule, error) {
 		case "method":
 			// Initialize Methods map if needed
 			if rule.MethodPatterns == nil {
-				rule.MethodPatterns = make(map[methodPattern]struct{})
+				rule.MethodPatterns = make(map[string]struct{})
 			}
 
-			var method methodPattern
+			var method string
 			for {
 				method, rest, err = parseMethodPattern(rest)
 				if err != nil {
@@ -93,7 +93,7 @@ func parseAllowRule(ruleStr string) (Rule, error) {
 			}
 
 		case "domain":
-			var host []labelPattern
+			var host []string
 			host, rest, err = parseHostPattern(rest)
 			if err != nil {
 				return Rule{}, fmt.Errorf("failed to parse domain: %v", err)
@@ -103,7 +103,7 @@ func parseAllowRule(ruleStr string) (Rule, error) {
 			rule.HostPattern = append(rule.HostPattern, host...)
 
 		case "path":
-			var segments []segmentPattern
+			var segments []string
 			segments, rest, err = parsePathPattern(rest)
 			if err != nil {
 				return Rule{}, fmt.Errorf("failed to parse path: %v", err)
@@ -125,27 +125,25 @@ func parseAllowRule(ruleStr string) (Rule, error) {
 	return rule, nil
 }
 
-type methodPattern string
-
 // Beyond the 9 methods defined in HTTP 1.1, there actually are many more seldom used extension methods by
 // various systems.
 // https://datatracker.ietf.org/doc/html/rfc7230#section-3.2.6
-func parseMethodPattern(token string) (methodPattern, string, error) {
+func parseMethodPattern(token string) (string, string, error) {
 	if token == "" {
 		return "", "", errors.New("expected http token, got empty string")
 	}
 	return doParseMethodPattern(token, nil)
 }
 
-func doParseMethodPattern(token string, acc []byte) (methodPattern, string, error) {
+func doParseMethodPattern(token string, acc []byte) (string, string, error) {
 	// BASE CASE: if the token passed in is empty, we're done parsing
 	if token == "" {
-		return methodPattern(acc), "", nil
+		return string(acc), "", nil
 	}
 
 	// If the next byte in the string is not a valid http token character, we're done parsing.
 	if !isHTTPTokenChar(token[0]) {
-		return methodPattern(acc), token, nil
+		return string(acc), token, nil
 	}
 
 	// The next character is valid, so the http token continues
@@ -178,9 +176,9 @@ func isHTTPTokenChar(c byte) bool {
 // Represents a valid host.
 // https://datatracker.ietf.org/doc/html/rfc952
 // https://datatracker.ietf.org/doc/html/rfc1123#page-13
-func parseHostPattern(input string) ([]labelPattern, string, error) {
+func parseHostPattern(input string) ([]string, string, error) {
 	rest := input
-	var host []labelPattern
+	var host []string
 	var err error
 
 	if input == "" {
@@ -188,7 +186,7 @@ func parseHostPattern(input string) ([]labelPattern, string, error) {
 	}
 
 	// There should be at least one label.
-	var label labelPattern
+	var label string
 	label, rest, err = parseLabelPattern(rest)
 	if err != nil {
 		return nil, "", err
@@ -218,10 +216,7 @@ func parseHostPattern(input string) ([]labelPattern, string, error) {
 	return host, rest, nil
 }
 
-// Represents a valid label in a hostname. For example, wobble in `wib-ble.wobble.com`.
-type labelPattern string
-
-func parseLabelPattern(rest string) (labelPattern, string, error) {
+func parseLabelPattern(rest string) (string, string, error) {
 	if rest == "" {
 		return "", "", errors.New("expected label, got empty string")
 	}
@@ -246,7 +241,7 @@ func parseLabelPattern(rest string) (labelPattern, string, error) {
 		return "", "", fmt.Errorf("invalid label: %s", rest[:i])
 	}
 
-	return labelPattern(rest[:i]), rest[i:], nil
+	return rest[:i], rest[i:], nil
 }
 
 func isValidLabelChar(c byte) bool {
@@ -268,13 +263,13 @@ func isValidLabelChar(c byte) bool {
 	}
 }
 
-func parsePathPattern(input string) ([]segmentPattern, string, error) {
+func parsePathPattern(input string) ([]string, string, error) {
 	if input == "" {
 		return nil, "", nil
 	}
 
 	rest := input
-	var segments []segmentPattern
+	var segments []string
 	var err error
 
 	// If the path doesn't start with '/', it's not a valid absolute path
@@ -291,7 +286,7 @@ func parsePathPattern(input string) ([]segmentPattern, string, error) {
 		}
 
 		// Parse the next segment
-		var segment segmentPattern
+		var segment string
 		segment, rest, err = parsePathSegmentPattern(rest)
 		if err != nil {
 			return nil, "", err
@@ -314,10 +309,7 @@ func parsePathPattern(input string) ([]segmentPattern, string, error) {
 	return segments, rest, nil
 }
 
-// Represents a valid url path segmentPattern.
-type segmentPattern string
-
-func parsePathSegmentPattern(input string) (segmentPattern, string, error) {
+func parsePathSegmentPattern(input string) (string, string, error) {
 	if input == "" {
 		return "", "", nil
 	}
@@ -327,7 +319,7 @@ func parsePathSegmentPattern(input string) (segmentPattern, string, error) {
 			return "", "", fmt.Errorf("path segment wildcards must be for the entire segment, got: %s", input)
 		}
 
-		return segmentPattern(input[0]), input[1:], nil
+		return "*", input[1:], nil
 	}
 
 	var i int
@@ -349,7 +341,7 @@ func parsePathSegmentPattern(input string) (segmentPattern, string, error) {
 		}
 	}
 
-	return segmentPattern(input[:i]), input[i:], nil
+	return input[:i], input[i:], nil
 }
 
 // isUnreserved returns true if the character is unreserved per RFC 3986
