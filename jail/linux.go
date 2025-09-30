@@ -321,7 +321,7 @@ func (l *LinuxJail) configureIptables() error {
 	}
 	err = cmd.Run()
 	if err != nil {
-		return fmt.Errorf("forward -s error: %v, output: %v")
+		return fmt.Errorf("forward -s error: %v", err)
 	}
 
 	cmd = exec.Command("iptables", "-A", "FORWARD", "-d", "192.168.100.0/24", "-j", "ACCEPT")
