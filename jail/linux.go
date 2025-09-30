@@ -18,6 +18,7 @@ type LinuxJail struct {
 	logger        *slog.Logger
 	namespace     string
 	vethHost      string // Host-side veth interface name for iptables rules
+	vethNetJail   string // Host-side veth interface name for iptables rules
 	commandEnv    []string
 	httpProxyPort int
 	configDir     string
@@ -48,6 +49,48 @@ func (l *LinuxJail) Start() error {
 
 	e := getEnvs(l.configDir, l.caCertPath)
 	l.commandEnv = mergeEnvs(e, map[string]string{})
+
+	// Create veth pair with short names (Linux interface names limited to 15 chars)
+	// Generate unique ID to avoid conflicts
+	uniqueID := fmt.Sprintf("%d", time.Now().UnixNano()%10000000) // 7 digits max
+	vethHost := fmt.Sprintf("veth_h_%s", uniqueID)                // veth_h_1234567 = 14 chars
+	vethNetJail := fmt.Sprintf("veth_n_%s", uniqueID)             // veth_n_1234567 = 14 chars
+
+	// Store veth interface name for iptables rules
+	l.vethHost = vethHost
+	l.vethNetJail = vethNetJail
+
+	setupCmds := []struct {
+		description string
+		command     *exec.Cmd
+		ambientCaps []uintptr
+	}{
+		{
+			"create veth pair",
+			exec.Command("ip", "link", "add", vethHost, "type", "veth", "peer", "name", vethNetJail),
+			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		},
+		{
+			"configure host veth",
+			exec.Command("ip", "addr", "add", "192.168.100.1/24", "dev", vethHost),
+			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		},
+		{
+			"bring up host veth",
+			exec.Command("ip", "link", "set", vethHost, "up"),
+			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		},
+	}
+
+	for _, command := range setupCmds {
+		command.command.SysProcAttr = &syscall.SysProcAttr{
+			AmbientCaps: command.ambientCaps,
+		}
+
+		if err := command.command.Run(); err != nil {
+			return fmt.Errorf("failed to %s: %v", command.description, err)
+		}
+	}
 
 	return nil
 }
@@ -88,6 +131,12 @@ func (l *LinuxJail) ConfigureAfterRun(pidInt int) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "can't setup iptables: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+func (l *LinuxJail) GetNetworkConfiguration() NetworkConfiguration {
+	return NetworkConfiguration{
+		VethNetJail: l.vethNetJail,
 	}
 }
 
@@ -140,39 +189,14 @@ func (l *LinuxJail) createNamespace() error {
 func (l *LinuxJail) setupParentNetworking(pidInt int) error {
 	PID := fmt.Sprintf("%v", pidInt)
 
-	// Create veth pair with short names (Linux interface names limited to 15 chars)
-	// Generate unique ID to avoid conflicts
-	uniqueID := fmt.Sprintf("%d", time.Now().UnixNano()%10000000) // 7 digits max
-	uniqueID = "1111111"
-	vethHost := fmt.Sprintf("veth_h_%s", uniqueID)    // veth_h_1234567 = 14 chars
-	vethNetJail := fmt.Sprintf("veth_n_%s", uniqueID) // veth_n_1234567 = 14 chars
-
-	// Store veth interface name for iptables rules
-	l.vethHost = vethHost
-
 	setupCmds := []struct {
 		description string
 		command     *exec.Cmd
 		ambientCaps []uintptr
 	}{
 		{
-			"create veth pair",
-			exec.Command("ip", "link", "add", vethHost, "type", "veth", "peer", "name", vethNetJail),
-			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
-		},
-		{
 			"move veth to namespace",
-			exec.Command("ip", "link", "set", vethNetJail, "netns", PID),
-			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
-		},
-		{
-			"configure host veth",
-			exec.Command("ip", "addr", "add", "192.168.100.1/24", "dev", vethHost),
-			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
-		},
-		{
-			"bring up host veth",
-			exec.Command("ip", "link", "set", vethHost, "up"),
+			exec.Command("ip", "link", "set", l.vethNetJail, "netns", PID),
 			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
 		},
 	}

@@ -102,8 +102,8 @@ func Run(ctx context.Context, config Config, args []string) error {
 		//fmt.Printf("%v\n", os.Environ())
 		time.Sleep(time.Second * 3) // wait for parent to configure env
 
-		// TODO: uncomment
-		vethNetJail := "veth_n_1111111"
+		vethNetJail := os.Getenv("VETH_NET_JAIL")
+
 		err := jail.SetupChildNetworking(vethNetJail)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed setupChildNetworking: %v\n", err)
@@ -224,6 +224,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 		defer cancel()
 		cmd := boundaryInstance.Command(os.Args)
 		cmd.Env = append(cmd.Env, "CHILD=true")
+		cmd.Env = append(cmd.Env, fmt.Sprintf("VETH_NET_JAIL=%v", boundaryInstance.GetNetworkConfiguration().VethNetJail))
 		cmd.Stderr = os.Stderr
 		cmd.Stdout = os.Stdout
 		cmd.Stdin = os.Stdin

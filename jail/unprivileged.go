@@ -62,3 +62,7 @@ func (u *Unprivileged) Close() error {
 }
 
 func (u *Unprivileged) ConfigureAfterRun(processPID int) {}
+
+func (l *Unprivileged) GetNetworkConfiguration() NetworkConfiguration {
+	return NetworkConfiguration{}
+}

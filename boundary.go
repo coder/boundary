@@ -82,6 +82,10 @@ func (b *Boundary) ConfigureAfterRun(processPID int) {
 	b.jailer.ConfigureAfterRun(processPID)
 }
 
+func (b *Boundary) GetNetworkConfiguration() jail.NetworkConfiguration {
+	return b.jailer.GetNetworkConfiguration()
+}
+
 func (b *Boundary) Close() error {
 	// Stop proxy server
 	if b.proxyServer != nil {

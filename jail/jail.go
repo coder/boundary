@@ -12,6 +12,11 @@ type Jailer interface {
 	Command(command []string) *exec.Cmd
 	ConfigureAfterRun(processPID int)
 	Close() error
+	GetNetworkConfiguration() NetworkConfiguration
+}
+
+type NetworkConfiguration struct {
+	VethNetJail string
 }
 
 type Config struct {
