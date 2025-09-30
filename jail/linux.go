@@ -43,6 +43,90 @@ func (r *commandRunner) run() error {
 	return nil
 }
 
+func (l *LinuxJail) configureParentNetworkingStep1() error {
+	// Create veth pair with short names (Linux interface names limited to 15 chars)
+	// Generate unique ID to avoid conflicts
+	uniqueID := fmt.Sprintf("%d", time.Now().UnixNano()%10000000) // 7 digits max
+	vethHostName := fmt.Sprintf("veth_h_%s", uniqueID)            // veth_h_1234567 = 14 chars
+	vethJailName := fmt.Sprintf("veth_n_%s", uniqueID)            // veth_n_1234567 = 14 chars
+
+	// Store veth interface name for iptables rules
+	l.vethHostName = vethHostName
+	l.vethJailName = vethJailName
+
+	runner := newCommandRunner([]*command{
+		{
+			"create veth pair",
+			exec.Command("ip", "link", "add", vethHostName, "type", "veth", "peer", "name", vethJailName),
+			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		},
+		{
+			"configure host veth",
+			exec.Command("ip", "addr", "add", "192.168.100.1/24", "dev", vethHostName),
+			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		},
+		{
+			"bring up host veth",
+			exec.Command("ip", "link", "set", vethHostName, "up"),
+			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		},
+	})
+	if err := runner.run(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// setupNetworking configures networking within the namespace
+func (l *LinuxJail) configureParentNetworkingStep2(pidInt int) error {
+	PID := fmt.Sprintf("%v", pidInt)
+
+	runner := newCommandRunner([]*command{
+		{
+			"move veth to namespace",
+			exec.Command("ip", "link", "set", l.vethJailName, "netns", PID),
+			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		},
+	})
+	if err := runner.run(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// setupChildNetworking configures networking within the namespace
+func SetupChildNetworking(vethNetJail string) error {
+	runner := newCommandRunner([]*command{
+		{
+			"configure namespace veth",
+			exec.Command("ip", "addr", "add", "192.168.100.2/24", "dev", vethNetJail),
+			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		},
+		{
+			"bring up namespace veth",
+			exec.Command("ip", "link", "set", vethNetJail, "up"),
+			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		},
+		{
+			"bring up loopback",
+			exec.Command("ip", "link", "set", "lo", "up"),
+			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		},
+		{
+			"set default route in namespace",
+			exec.Command("ip", "route", "add", "default", "via", "192.168.100.1"),
+			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		},
+	})
+	if err := runner.run(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // LinuxJail implements Jailer using Linux network namespaces
 type LinuxJail struct {
 	logger        *slog.Logger
@@ -80,34 +164,7 @@ func (l *LinuxJail) ConfigureBeforeCommandExecution() error {
 	e := getEnvs(l.configDir, l.caCertPath)
 	l.commandEnv = mergeEnvs(e, map[string]string{})
 
-	// Create veth pair with short names (Linux interface names limited to 15 chars)
-	// Generate unique ID to avoid conflicts
-	uniqueID := fmt.Sprintf("%d", time.Now().UnixNano()%10000000) // 7 digits max
-	vethHostName := fmt.Sprintf("veth_h_%s", uniqueID)            // veth_h_1234567 = 14 chars
-	vethJailName := fmt.Sprintf("veth_n_%s", uniqueID)            // veth_n_1234567 = 14 chars
-
-	// Store veth interface name for iptables rules
-	l.vethHostName = vethHostName
-	l.vethJailName = vethJailName
-
-	runner := newCommandRunner([]*command{
-		{
-			"create veth pair",
-			exec.Command("ip", "link", "add", vethHostName, "type", "veth", "peer", "name", vethJailName),
-			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
-		},
-		{
-			"configure host veth",
-			exec.Command("ip", "addr", "add", "192.168.100.1/24", "dev", vethHostName),
-			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
-		},
-		{
-			"bring up host veth",
-			exec.Command("ip", "link", "set", vethHostName, "up"),
-			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
-		},
-	})
-	if err := runner.run(); err != nil {
+	if err := l.configureParentNetworkingStep1(); err != nil {
 		return err
 	}
 
@@ -136,13 +193,13 @@ func (l *LinuxJail) Command(command []string) *exec.Cmd {
 }
 
 func (l *LinuxJail) ConfigureAfterCommandExecution(pidInt int) {
-	err := l.setupParentNetworking(pidInt)
+	err := l.configureParentNetworkingStep2(pidInt)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed setupParentNetworking: %v\n", err)
 		os.Exit(1)
 	}
 
-	err = l.setupIptables()
+	err = l.configureIptables()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "can't setup iptables: %v\n", err)
 		os.Exit(1)
@@ -200,55 +257,6 @@ func (l *LinuxJail) createNamespace() error {
 	return nil
 }
 
-// setupNetworking configures networking within the namespace
-func (l *LinuxJail) setupParentNetworking(pidInt int) error {
-	PID := fmt.Sprintf("%v", pidInt)
-
-	runner := newCommandRunner([]*command{
-		{
-			"move veth to namespace",
-			exec.Command("ip", "link", "set", l.vethJailName, "netns", PID),
-			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
-		},
-	})
-	if err := runner.run(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// setupChildNetworking configures networking within the namespace
-func SetupChildNetworking(vethNetJail string) error {
-	runner := newCommandRunner([]*command{
-		{
-			"configure namespace veth",
-			exec.Command("ip", "addr", "add", "192.168.100.2/24", "dev", vethNetJail),
-			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
-		},
-		{
-			"bring up namespace veth",
-			exec.Command("ip", "link", "set", vethNetJail, "up"),
-			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
-		},
-		{
-			"bring up loopback",
-			exec.Command("ip", "link", "set", "lo", "up"),
-			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
-		},
-		{
-			"set default route in namespace",
-			exec.Command("ip", "route", "add", "default", "via", "192.168.100.1"),
-			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
-		},
-	})
-	if err := runner.run(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 // setupDNS configures DNS resolution for the namespace
 // This ensures reliable DNS resolution by using public DNS servers
 // instead of relying on the host's potentially complex DNS configuration
@@ -280,7 +288,7 @@ options timeout:2 attempts:2
 }
 
 // setupIptables configures iptables rules for comprehensive TCP traffic interception
-func (l *LinuxJail) setupIptables() error {
+func (l *LinuxJail) configureIptables() error {
 	// Enable IP forwarding
 	cmd := exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1")
 	_ = cmd.Run() // Ignore error
