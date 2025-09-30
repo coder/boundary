@@ -10,13 +10,13 @@ import (
 type Jailer interface {
 	ConfigureBeforeCommandExecution() error
 	Command(command []string) *exec.Cmd
-	ConfigureAfterCommandExecution(processPID int)
+	ConfigureAfterCommandExecution(processPID int) error
 	Close() error
 	GetNetworkConfiguration() NetworkConfiguration
 }
 
 type NetworkConfiguration struct {
-	VethNetJail string
+	VethJailName string
 }
 
 type Config struct {

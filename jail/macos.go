@@ -341,7 +341,9 @@ func (n *MacOSJail) cleanupTempFiles() {
 	}
 }
 
-func (u *MacOSJail) ConfigureAfterCommandExecution(processPID int) {}
+func (u *MacOSJail) ConfigureAfterCommandExecution(processPID int) error {
+	return nil
+}
 
 func (l *MacOSJail) GetNetworkConfiguration() NetworkConfiguration {
 	return NetworkConfiguration{}

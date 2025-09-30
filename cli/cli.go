@@ -102,7 +102,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 		//fmt.Printf("%v\n", os.Environ())
 		time.Sleep(time.Second * 3) // wait for parent to configure env
 
-		vethNetJail := os.Getenv("VETH_NET_JAIL")
+		vethNetJail := os.Getenv("VETH_JAIL_NAME")
 
 		err := jail.SetupChildNetworking(vethNetJail)
 		if err != nil {
@@ -224,7 +224,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 		defer cancel()
 		cmd := boundaryInstance.Command(os.Args)
 		cmd.Env = append(cmd.Env, "CHILD=true")
-		cmd.Env = append(cmd.Env, fmt.Sprintf("VETH_NET_JAIL=%v", boundaryInstance.GetNetworkConfiguration().VethNetJail))
+		cmd.Env = append(cmd.Env, fmt.Sprintf("VETH_JAIL_NAME=%v", boundaryInstance.GetNetworkConfiguration().VethJailName))
 		cmd.Stderr = os.Stderr
 		cmd.Stdout = os.Stdout
 		cmd.Stdin = os.Stdin

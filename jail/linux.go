@@ -192,23 +192,23 @@ func (l *LinuxJail) Command(command []string) *exec.Cmd {
 	return cmd
 }
 
-func (l *LinuxJail) ConfigureAfterCommandExecution(pidInt int) {
+func (l *LinuxJail) ConfigureAfterCommandExecution(pidInt int) error {
 	err := l.configureParentNetworkingStep2(pidInt)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed setupParentNetworking: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to configure parent networking: %v", err)
 	}
 
 	err = l.configureIptables()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "can't setup iptables: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to configure iptables: %v", err)
 	}
+
+	return nil
 }
 
 func (l *LinuxJail) GetNetworkConfiguration() NetworkConfiguration {
 	return NetworkConfiguration{
-		VethNetJail: l.vethJailName,
+		VethJailName: l.vethJailName,
 	}
 }
 
