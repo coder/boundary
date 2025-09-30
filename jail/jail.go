@@ -10,6 +10,7 @@ import (
 type Jailer interface {
 	Start() error
 	Command(command []string) *exec.Cmd
+	ConfigureAfterRun(processPID int)
 	Close() error
 }
 

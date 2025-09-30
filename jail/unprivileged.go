@@ -60,3 +60,5 @@ func (u *Unprivileged) Close() error {
 	u.logger.Debug("Closing unprivileged jail")
 	return nil
 }
+
+func (u *Unprivileged) ConfigureAfterRun(processPID int) {}

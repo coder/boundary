@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"log"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -94,6 +95,36 @@ func BaseCommand() *serpent.Command {
 
 // Run executes the boundary command with the given configuration and arguments
 func Run(ctx context.Context, config Config, args []string) error {
+	isChild := os.Getenv("CHILD") == "true"
+	if isChild {
+		fmt.Printf("CHILD is started\n")
+		fmt.Printf("%v ||| %v\n", args[0], args[1:])
+		//fmt.Printf("%v\n", os.Environ())
+		time.Sleep(time.Second * 3) // wait for parent to configure env
+
+		// TODO: uncomment
+		vethNetJail := "veth_n_1111111"
+		err := jail.SetupChildNetworking(vethNetJail)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed setupChildNetworking: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Program to run
+		bin := args[0]
+		args = args[1:]
+		env := os.Environ()
+		// syscall.Exec replaces the current process image
+		// with the new program, so nothing after this call runs.
+		if err := syscall.Exec(bin, args, env); err != nil {
+			log.Fatalf("exec failed: %v", err)
+		}
+
+		// This line is never reached if Exec succeeds.
+		log.Println("done")
+		return nil
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -191,13 +222,21 @@ func Run(ctx context.Context, config Config, args []string) error {
 	// Execute command in boundary
 	go func() {
 		defer cancel()
-		cmd := boundaryInstance.Command(args)
+		cmd := boundaryInstance.Command(os.Args)
+		cmd.Env = append(cmd.Env, "CHILD=true")
 		cmd.Stderr = os.Stderr
 		cmd.Stdout = os.Stdout
 		cmd.Stdin = os.Stdin
 
-		logger.Debug("Executing command in boundary", "command", strings.Join(args, " "))
-		err := cmd.Run()
+		logger.Debug("Executing command in boundary", "command", strings.Join(os.Args, " "))
+		err := cmd.Start()
+		if err != nil {
+			logger.Error("Command execution failed", "error", err)
+		}
+
+		boundaryInstance.ConfigureAfterRun(cmd.Process.Pid)
+
+		err = cmd.Wait()
 		if err != nil {
 			logger.Error("Command execution failed", "error", err)
 		}

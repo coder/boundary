@@ -340,3 +340,5 @@ func (n *MacOSJail) cleanupTempFiles() {
 		}
 	}
 }
+
+func (u *MacOSJail) ConfigureAfterRun(processPID int) {}
