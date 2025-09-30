@@ -55,7 +55,7 @@ func NewMacOSJail(config Config) (*MacOSJail, error) {
 }
 
 // Setup creates the network boundary group and configures PF rules
-func (n *MacOSJail) Start() error {
+func (n *MacOSJail) ConfigureBeforeCommandExecution() error {
 	n.logger.Debug("Setup called")
 
 	// Create or get network boundary group
@@ -341,7 +341,7 @@ func (n *MacOSJail) cleanupTempFiles() {
 	}
 }
 
-func (u *MacOSJail) ConfigureAfterRun(processPID int) {}
+func (u *MacOSJail) ConfigureAfterCommandExecution(processPID int) {}
 
 func (l *MacOSJail) GetNetworkConfiguration() NetworkConfiguration {
 	return NetworkConfiguration{}

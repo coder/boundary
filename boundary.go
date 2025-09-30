@@ -56,7 +56,7 @@ func New(ctx context.Context, config Config) (*Boundary, error) {
 
 func (b *Boundary) Start() error {
 	// Start the jailer (network isolation)
-	err := b.jailer.Start()
+	err := b.jailer.ConfigureBeforeCommandExecution()
 	if err != nil {
 		return fmt.Errorf("failed to start jailer: %v", err)
 	}
@@ -78,8 +78,8 @@ func (b *Boundary) Command(command []string) *exec.Cmd {
 	return b.jailer.Command(command)
 }
 
-func (b *Boundary) ConfigureAfterRun(processPID int) {
-	b.jailer.ConfigureAfterRun(processPID)
+func (b *Boundary) ConfigureAfterCommandExecution(processPID int) {
+	b.jailer.ConfigureAfterCommandExecution(processPID)
 }
 
 func (b *Boundary) GetNetworkConfiguration() jail.NetworkConfiguration {

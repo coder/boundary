@@ -13,12 +13,42 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+type command struct {
+	description string
+	cmd         *exec.Cmd
+	ambientCaps []uintptr
+}
+
+type commandRunner struct {
+	commands []*command
+}
+
+func newCommandRunner(commands []*command) *commandRunner {
+	return &commandRunner{
+		commands: commands,
+	}
+}
+
+func (r *commandRunner) run() error {
+	for _, command := range r.commands {
+		command.cmd.SysProcAttr = &syscall.SysProcAttr{
+			AmbientCaps: command.ambientCaps,
+		}
+
+		if err := command.cmd.Run(); err != nil {
+			return fmt.Errorf("failed to %s: %v", command.description, err)
+		}
+	}
+
+	return nil
+}
+
 // LinuxJail implements Jailer using Linux network namespaces
 type LinuxJail struct {
 	logger        *slog.Logger
 	namespace     string
-	vethHost      string // Host-side veth interface name for iptables rules
-	vethNetJail   string // Host-side veth interface name for iptables rules
+	vethHostName  string // Host-side veth interface name for iptables rules
+	vethJailName  string // Jail-side veth interface name for iptables rules
 	commandEnv    []string
 	httpProxyPort int
 	configDir     string
@@ -44,7 +74,7 @@ func NewLinuxJail(config Config) (*LinuxJail, error) {
 }
 
 // Start creates network namespace and configures iptables rules
-func (l *LinuxJail) Start() error {
+func (l *LinuxJail) ConfigureBeforeCommandExecution() error {
 	l.logger.Debug("Setup called")
 
 	e := getEnvs(l.configDir, l.caCertPath)
@@ -53,43 +83,32 @@ func (l *LinuxJail) Start() error {
 	// Create veth pair with short names (Linux interface names limited to 15 chars)
 	// Generate unique ID to avoid conflicts
 	uniqueID := fmt.Sprintf("%d", time.Now().UnixNano()%10000000) // 7 digits max
-	vethHost := fmt.Sprintf("veth_h_%s", uniqueID)                // veth_h_1234567 = 14 chars
-	vethNetJail := fmt.Sprintf("veth_n_%s", uniqueID)             // veth_n_1234567 = 14 chars
+	vethHostName := fmt.Sprintf("veth_h_%s", uniqueID)            // veth_h_1234567 = 14 chars
+	vethJailName := fmt.Sprintf("veth_n_%s", uniqueID)            // veth_n_1234567 = 14 chars
 
 	// Store veth interface name for iptables rules
-	l.vethHost = vethHost
-	l.vethNetJail = vethNetJail
+	l.vethHostName = vethHostName
+	l.vethJailName = vethJailName
 
-	setupCmds := []struct {
-		description string
-		command     *exec.Cmd
-		ambientCaps []uintptr
-	}{
+	runner := newCommandRunner([]*command{
 		{
 			"create veth pair",
-			exec.Command("ip", "link", "add", vethHost, "type", "veth", "peer", "name", vethNetJail),
+			exec.Command("ip", "link", "add", vethHostName, "type", "veth", "peer", "name", vethJailName),
 			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
 		},
 		{
 			"configure host veth",
-			exec.Command("ip", "addr", "add", "192.168.100.1/24", "dev", vethHost),
+			exec.Command("ip", "addr", "add", "192.168.100.1/24", "dev", vethHostName),
 			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
 		},
 		{
 			"bring up host veth",
-			exec.Command("ip", "link", "set", vethHost, "up"),
+			exec.Command("ip", "link", "set", vethHostName, "up"),
 			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
 		},
-	}
-
-	for _, command := range setupCmds {
-		command.command.SysProcAttr = &syscall.SysProcAttr{
-			AmbientCaps: command.ambientCaps,
-		}
-
-		if err := command.command.Run(); err != nil {
-			return fmt.Errorf("failed to %s: %v", command.description, err)
-		}
+	})
+	if err := runner.run(); err != nil {
+		return err
 	}
 
 	return nil
@@ -99,10 +118,6 @@ func (l *LinuxJail) Start() error {
 func (l *LinuxJail) Command(command []string) *exec.Cmd {
 	l.logger.Debug("Creating command with namespace", "namespace", l.namespace)
 
-	//cmdArgs := []string{"netns", "exec", l.namespace}
-	//cmdArgs = append(cmdArgs, command...)
-	//
-	//cmd := exec.Command("ip", cmdArgs...)
 	cmd := exec.Command(command[0], command[1:]...)
 	cmd.Env = l.commandEnv
 	cmd.Env = append(cmd.Env, "CHILD=true")
@@ -120,7 +135,7 @@ func (l *LinuxJail) Command(command []string) *exec.Cmd {
 	return cmd
 }
 
-func (l *LinuxJail) ConfigureAfterRun(pidInt int) {
+func (l *LinuxJail) ConfigureAfterCommandExecution(pidInt int) {
 	err := l.setupParentNetworking(pidInt)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed setupParentNetworking: %v\n", err)
@@ -136,7 +151,7 @@ func (l *LinuxJail) ConfigureAfterRun(pidInt int) {
 
 func (l *LinuxJail) GetNetworkConfiguration() NetworkConfiguration {
 	return NetworkConfiguration{
-		VethNetJail: l.vethNetJail,
+		VethNetJail: l.vethJailName,
 	}
 }
 
@@ -189,26 +204,15 @@ func (l *LinuxJail) createNamespace() error {
 func (l *LinuxJail) setupParentNetworking(pidInt int) error {
 	PID := fmt.Sprintf("%v", pidInt)
 
-	setupCmds := []struct {
-		description string
-		command     *exec.Cmd
-		ambientCaps []uintptr
-	}{
+	runner := newCommandRunner([]*command{
 		{
 			"move veth to namespace",
-			exec.Command("ip", "link", "set", l.vethNetJail, "netns", PID),
+			exec.Command("ip", "link", "set", l.vethJailName, "netns", PID),
 			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
 		},
-	}
-
-	for _, command := range setupCmds {
-		command.command.SysProcAttr = &syscall.SysProcAttr{
-			AmbientCaps: command.ambientCaps,
-		}
-
-		if err := command.command.Run(); err != nil {
-			return fmt.Errorf("failed to %s: %v", command.description, err)
-		}
+	})
+	if err := runner.run(); err != nil {
+		return err
 	}
 
 	return nil
@@ -216,11 +220,7 @@ func (l *LinuxJail) setupParentNetworking(pidInt int) error {
 
 // setupChildNetworking configures networking within the namespace
 func SetupChildNetworking(vethNetJail string) error {
-	setupCmds := []struct {
-		description string
-		command     *exec.Cmd
-		ambientCaps []uintptr
-	}{
+	runner := newCommandRunner([]*command{
 		{
 			"configure namespace veth",
 			exec.Command("ip", "addr", "add", "192.168.100.2/24", "dev", vethNetJail),
@@ -241,16 +241,9 @@ func SetupChildNetworking(vethNetJail string) error {
 			exec.Command("ip", "route", "add", "default", "via", "192.168.100.1"),
 			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
 		},
-	}
-
-	for _, command := range setupCmds {
-		command.command.SysProcAttr = &syscall.SysProcAttr{
-			AmbientCaps: command.ambientCaps,
-		}
-
-		if output, err := command.command.CombinedOutput(); err != nil {
-			return fmt.Errorf("failed to %s: %v, output: %s, args: %v", command.description, err, output, command.command.Args)
-		}
+	})
+	if err := runner.run(); err != nil {
+		return err
 	}
 
 	return nil
@@ -304,7 +297,7 @@ func (l *LinuxJail) setupIptables() error {
 
 	// COMPREHENSIVE APPROACH: Route ALL TCP traffic to HTTP proxy
 	// The HTTP proxy will intelligently handle both HTTP and TLS traffic
-	cmd = exec.Command("iptables", "-t", "nat", "-A", "PREROUTING", "-i", l.vethHost, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.httpProxyPort))
+	cmd = exec.Command("iptables", "-t", "nat", "-A", "PREROUTING", "-i", l.vethHostName, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.httpProxyPort))
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		AmbientCaps: []uintptr{uintptr(unix.CAP_NET_ADMIN)},
 	}
@@ -332,14 +325,14 @@ func (l *LinuxJail) setupIptables() error {
 		return fmt.Errorf("forward -r error: %v", err)
 	}
 
-	l.logger.Debug("Comprehensive TCP boundarying enabled", "interface", l.vethHost, "proxy_port", l.httpProxyPort)
+	l.logger.Debug("Comprehensive TCP boundarying enabled", "interface", l.vethHostName, "proxy_port", l.httpProxyPort)
 	return nil
 }
 
 // cleanupIptables removes iptables rules
 func (l *LinuxJail) cleanupIptables() error {
 	// Remove comprehensive TCP redirect rule
-	cmd := exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-i", l.vethHost, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.httpProxyPort))
+	cmd := exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-i", l.vethHostName, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.httpProxyPort))
 	err := cmd.Run()
 	if err != nil {
 		l.logger.Error("Failed to remove TCP redirect rule", "error", err)

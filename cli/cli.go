@@ -235,7 +235,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 			logger.Error("Command execution failed", "error", err)
 		}
 
-		boundaryInstance.ConfigureAfterRun(cmd.Process.Pid)
+		boundaryInstance.ConfigureAfterCommandExecution(cmd.Process.Pid)
 
 		err = cmd.Wait()
 		if err != nil {

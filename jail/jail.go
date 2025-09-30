@@ -8,9 +8,9 @@ import (
 )
 
 type Jailer interface {
-	Start() error
+	ConfigureBeforeCommandExecution() error
 	Command(command []string) *exec.Cmd
-	ConfigureAfterRun(processPID int)
+	ConfigureAfterCommandExecution(processPID int)
 	Close() error
 	GetNetworkConfiguration() NetworkConfiguration
 }
