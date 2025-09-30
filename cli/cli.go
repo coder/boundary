@@ -97,11 +97,6 @@ func BaseCommand() *serpent.Command {
 func Run(ctx context.Context, config Config, args []string) error {
 	isChild := os.Getenv("CHILD") == "true"
 	if isChild {
-		fmt.Printf("CHILD is started\n")
-		fmt.Printf("%v ||| %v\n", args[0], args[1:])
-		//fmt.Printf("%v\n", os.Environ())
-		time.Sleep(time.Second * 3) // wait for parent to configure env
-
 		vethNetJail := os.Getenv("VETH_JAIL_NAME")
 
 		err := jail.SetupChildNetworking(vethNetJail)
