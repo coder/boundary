@@ -62,7 +62,7 @@ e2e-test:
 		echo "E2E tests require Linux platform. Current platform: $$(uname)"; \
 		exit 1; \
 	fi
-	sudo $(shell which go) test -v -race ./e2e_tests
+	sudo $(shell which go) test -v -race ./e2e_tests -count=1
 	@echo "✓ E2E tests passed!"
 
 # Run tests with coverage (needs sudo for E2E tests)

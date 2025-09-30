@@ -73,6 +73,36 @@ jobs:
     - name: Download and verify dependencies
       run: make deps
 
+      # Before (default):
+      #  - /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf
+      #  - stub-resolv.conf points to 127.0.0.53 (systemd-resolved stub listener)
+      #  - systemd-resolved forwards to the real upstream file:
+      #      /run/systemd/resolve/resolv.conf
+      #  Flow: /etc/resolv.conf -> stub-resolv.conf (127.0.0.53) -> systemd-resolved -> /run/systemd/resolve/resolv.conf
+      #
+      # After (bind-mount):
+      #  - /etc/resolv.conf is bind-mounted to /run/systemd/resolve/resolv.conf
+      #  - processes read upstream nameservers directly from /run/systemd/resolve/resolv.conf
+      #  Flow: /etc/resolv.conf -> /run/systemd/resolve/resolv.conf
+      #
+      # This makes processes talk directly to the upstream DNS servers and
+      # bypasses the systemd-resolved *stub listener* (127.0.0.53).
+      #
+      # Important nuance: systemd-resolved itself is NOT stopped; it still runs and updates
+      # /run/systemd/resolve/resolv.conf. Because this is a bind (not a copy), updates to the
+      # upstream list are visible. Trade-off: we lose the stub’s features (caching,
+      # split-DNS/VPN per-interface behavior, DNSSEC/DoT/DoH mediation, mDNS/LLMNR).
+      #
+      # Reason: network namespaces have their own network stack (interfaces, routes and loopback).
+      # A process inside a network namespace resolves 127.0.0.53 against that namespace’s loopback, not the host’s,
+      # and systemd-resolved usually listens on the host loopback. As a result the stub at 127.0.0.53 is often
+      # unreachable from an isolated namespace and DNS lookups fail.
+      # Bind-mounting /run/systemd/resolve/resolv.conf over /etc/resolv.conf forces processes to use the upstream
+      # nameservers directly, avoiding that failure.
+    - name: Change DNS configuration
+      if: runner.os == 'Linux'
+      run: sudo mount --bind /run/systemd/resolve/resolv.conf /etc/resolv.conf
+
     - name: Run unit tests
       run: make unit-test
 

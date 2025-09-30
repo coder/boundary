@@ -3,8 +3,10 @@ package cli
 import (
 	"context"
 	"fmt"
+	"log"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -92,8 +94,39 @@ func BaseCommand() *serpent.Command {
 	}
 }
 
+func isChild() bool {
+	return os.Getenv("CHILD") == "true"
+}
+
 // Run executes the boundary command with the given configuration and arguments
 func Run(ctx context.Context, config Config, args []string) error {
+	if isChild() {
+		log.Printf("boundary CHILD process is started")
+
+		vethNetJail := os.Getenv("VETH_JAIL_NAME")
+		err := jail.SetupChildNetworking(vethNetJail)
+		if err != nil {
+			return fmt.Errorf("failed to setup child networking: %v", err)
+		}
+		log.Printf("child networking is successfully configured")
+
+		// Program to run
+		bin := args[0]
+		args = args[1:]
+
+		cmd := exec.Command(bin, args...)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		err = cmd.Run()
+		if err != nil {
+			log.Printf("failed to run %s: %v", bin, err)
+			return err
+		}
+
+		return nil
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -191,15 +224,26 @@ func Run(ctx context.Context, config Config, args []string) error {
 	// Execute command in boundary
 	go func() {
 		defer cancel()
-		cmd := boundaryInstance.Command(args)
-		cmd.Stderr = os.Stderr
-		cmd.Stdout = os.Stdout
-		cmd.Stdin = os.Stdin
+		cmd := boundaryInstance.Command(os.Args)
 
-		logger.Debug("Executing command in boundary", "command", strings.Join(args, " "))
-		err := cmd.Run()
+		logger.Debug("Executing command in boundary", "command", strings.Join(os.Args, " "))
+		err := cmd.Start()
+		if err != nil {
+			logger.Error("Command failed to start", "error", err)
+			return
+		}
+
+		err = boundaryInstance.ConfigureAfterCommandExecution(cmd.Process.Pid)
+		if err != nil {
+			logger.Error("configuration after command execution failed", "error", err)
+			return
+		}
+
+		logger.Debug("waiting on a child process to finish")
+		err = cmd.Wait()
 		if err != nil {
 			logger.Error("Command execution failed", "error", err)
+			return
 		}
 	}()
 

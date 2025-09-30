@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -37,29 +38,15 @@ func findProjectRoot(t *testing.T) string {
 	}
 }
 
-// getNamespaceName gets the single network namespace name
-// Fails if there are 0 or multiple namespaces
-func getNamespaceName(t *testing.T) string {
-	cmd := exec.Command("ip", "netns", "list")
+func getChildProcessPID(t *testing.T) int {
+	cmd := exec.Command("pgrep", "-f", "boundary-test", "-n")
 	output, err := cmd.Output()
-	require.NoError(t, err, "Failed to list network namespaces")
+	require.NoError(t, err)
 
-	lines := strings.Split(string(output), "\n")
-	var namespaces []string
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			// Extract namespace name (first field)
-			parts := strings.Fields(line)
-			if len(parts) > 0 {
-				namespaces = append(namespaces, parts[0])
-			}
-		}
-	}
-
-	require.Len(t, namespaces, 1, "Expected exactly one network namespace, found %d: %v", len(namespaces), namespaces)
-	return namespaces[0]
+	pidStr := strings.TrimSpace(string(output))
+	pid, err := strconv.Atoi(pidStr)
+	require.NoError(t, err)
+	return pid
 }
 
 func TestBoundaryIntegration(t *testing.T) {
@@ -73,7 +60,7 @@ func TestBoundaryIntegration(t *testing.T) {
 	require.NoError(t, err, "Failed to build boundary binary")
 
 	// Create context for boundary process
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	// Start boundary process with sudo
@@ -81,10 +68,10 @@ func TestBoundaryIntegration(t *testing.T) {
 		"--allow", "dev.coder.com",
 		"--allow", "jsonplaceholder.typicode.com",
 		"--log-level", "debug",
-		"--", "bash", "-c", "sleep 10 && echo 'Test completed'")
+		"--", "/bin/bash", "-c", "/usr/bin/sleep 10 && /usr/bin/echo 'Test completed'")
 
-	// Suppress output to prevent terminal corruption
-	boundaryCmd.Stdout = os.Stdout // Let it go to /dev/null
+	boundaryCmd.Stdin = os.Stdin
+	boundaryCmd.Stdout = os.Stdout
 	boundaryCmd.Stderr = os.Stderr
 
 	// Start the process
@@ -94,13 +81,13 @@ func TestBoundaryIntegration(t *testing.T) {
 	// Give boundary time to start
 	time.Sleep(2 * time.Second)
 
-	// Get the namespace name that boundary created
-	namespaceName := getNamespaceName(t)
+	pidInt := getChildProcessPID(t)
+	pid := fmt.Sprintf("%v", pidInt)
 
 	// Test HTTP request through boundary (from inside the jail)
 	t.Run("HTTPRequestThroughBoundary", func(t *testing.T) {
 		// Run curl directly in the namespace using ip netns exec
-		curlCmd := exec.Command("sudo", "ip", "netns", "exec", namespaceName,
+		curlCmd := exec.Command("sudo", "nsenter", "-t", pid, "-n", "--",
 			"curl", "http://jsonplaceholder.typicode.com/todos/1")
 
 		// Capture stderr separately
@@ -128,7 +115,7 @@ func TestBoundaryIntegration(t *testing.T) {
 		certPath := fmt.Sprintf("%v/ca-cert.pem", configDir)
 
 		// Run curl directly in the namespace using ip netns exec
-		curlCmd := exec.Command("sudo", "ip", "netns", "exec", namespaceName,
+		curlCmd := exec.Command("sudo", "sudo", "nsenter", "-t", pid, "-n", "--",
 			"env", fmt.Sprintf("SSL_CERT_FILE=%v", certPath), "curl", "-s", "https://dev.coder.com/api/v2")
 
 		// Capture stderr separately
@@ -149,7 +136,7 @@ func TestBoundaryIntegration(t *testing.T) {
 	// Test blocked domain (from inside the jail)
 	t.Run("BlockedDomainTest", func(t *testing.T) {
 		// Run curl directly in the namespace using ip netns exec
-		curlCmd := exec.Command("sudo", "ip", "netns", "exec", namespaceName,
+		curlCmd := exec.Command("sudo", "sudo", "nsenter", "-t", pid, "-n", "--",
 			"curl", "-s", "http://example.com")
 
 		// Capture stderr separately
