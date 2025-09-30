@@ -78,8 +78,8 @@ func (b *Boundary) Command(command []string) *exec.Cmd {
 	return b.jailer.Command(command)
 }
 
-func (b *Boundary) ConfigureAfterCommandExecution(processPID int) {
-	b.jailer.ConfigureAfterCommandExecution(processPID)
+func (b *Boundary) ConfigureAfterCommandExecution(processPID int) error {
+	return b.jailer.ConfigureAfterCommandExecution(processPID)
 }
 
 func (b *Boundary) GetNetworkConfiguration() jail.NetworkConfiguration {
