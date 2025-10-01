@@ -122,6 +122,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 			return err
 		}
 		log.Printf("successfully run %s: %s", bin, "output")
+		
 		return nil
 
 		//log.Printf("bin: %v, args: %v\n", bin, args)
