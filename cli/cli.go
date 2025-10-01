@@ -6,6 +6,7 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -110,8 +111,21 @@ func Run(ctx context.Context, config Config, args []string) error {
 		bin := args[0]
 		args = args[1:]
 		env := os.Environ()
-		log.Printf("bin: %v, args: %v\n", bin, args)
-		log.Printf("env: %v\n", os.Environ())
+
+		cmd := exec.Command(bin, args...)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		err = cmd.Run()
+		if err != nil {
+			log.Printf("failed to run %s: %v, output: %s", bin, err, "output")
+			return err
+		}
+		log.Printf("successfully run %s: %s", bin, "output")
+		return nil
+
+		//log.Printf("bin: %v, args: %v\n", bin, args)
+		//log.Printf("env: %v\n", os.Environ())
 		// syscall.Exec replaces the current process image
 		// with the new program, so nothing after this call runs.
 		if err := syscall.Exec(bin, args, env); err != nil {
@@ -239,6 +253,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 			logger.Error("configuration failed", "error", err)
 		}
 
+		logger.Debug("waiting on a child process to finish")
 		err = cmd.Wait()
 		if err != nil {
 			logger.Error("Command execution failed(Wait)", "error", err)

@@ -63,19 +63,54 @@ func getNamespaceName(t *testing.T) string {
 	return namespaces[0]
 }
 
+//func getChildProcessPID(t *testing.T) int {
+//	// Option 1: Look for processes with CHILD=true
+//	cmd := exec.Command("pgrep", "-f", "CHILD=true")
+//	output, err := cmd.CombinedOutput()
+//	require.NoError(t, err, "output: %v", output)
+//
+//	pidStr := strings.TrimSpace(string(output))
+//	pid, err := strconv.Atoi(pidStr)
+//	require.NoError(t, err)
+//	return pid
+//
+//	// Option 2: Use the boundary process's child PID
+//	// This would require modifying boundary to expose the child PID
+//}
+
+//func getBoundaryProcessPID(t *testing.T) int {
+//	cmd := exec.Command("pgrep", "-f", "boundary-test")
+//	output, err := cmd.Output()
+//	require.NoError(t, err)
+//
+//	pidStr := strings.TrimSpace(string(output))
+//	pid, err := strconv.Atoi(pidStr)
+//	require.NoError(t, err)
+//	return pid
+//}
+//
+//func getChildProcessPID(t *testing.T) int {
+//	boundaryPID := getBoundaryProcessPID(t)
+//
+//	cmd := exec.Command("pgrep", "-P", fmt.Sprintf("%d", boundaryPID))
+//	output, err := cmd.Output()
+//	require.NoError(t, err)
+//
+//	pidStr := strings.TrimSpace(string(output))
+//	pid, err := strconv.Atoi(pidStr)
+//	require.NoError(t, err)
+//	return pid
+//}
+
 func getChildProcessPID(t *testing.T) int {
-	// Option 1: Look for processes with CHILD=true
-	cmd := exec.Command("pgrep", "-f", "CHILD=true")
-	output, err := cmd.CombinedOutput()
-	require.NoError(t, err, "output: %v", output)
+	cmd := exec.Command("pgrep", "-f", "boundary-test", "-n")
+	output, err := cmd.Output()
+	require.NoError(t, err)
 
 	pidStr := strings.TrimSpace(string(output))
 	pid, err := strconv.Atoi(pidStr)
 	require.NoError(t, err)
 	return pid
-
-	// Option 2: Use the boundary process's child PID
-	// This would require modifying boundary to expose the child PID
 }
 
 func TestBoundaryIntegration(t *testing.T) {
@@ -89,7 +124,7 @@ func TestBoundaryIntegration(t *testing.T) {
 	require.NoError(t, err, "Failed to build boundary binary")
 
 	// Create context for boundary process
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Second)
 	defer cancel()
 
 	// Start boundary process with sudo
@@ -97,11 +132,11 @@ func TestBoundaryIntegration(t *testing.T) {
 		"--allow", "dev.coder.com",
 		"--allow", "jsonplaceholder.typicode.com",
 		"--log-level", "debug",
-		"--", "/bin/bash")
-	//"--", "/bin/bash", "-c", "/usr/bin/sleep 10 && /usr/bin/echo 'Test completed'")
+		//"--", "/bin/bash")
+		"--", "/bin/bash", "-c", "/usr/bin/sleep 45 && /usr/bin/echo 'Test completed'")
 
-	// Suppress output to prevent terminal corruption
-	boundaryCmd.Stdout = os.Stdout // Let it go to /dev/null
+	boundaryCmd.Stdin = os.Stdin
+	boundaryCmd.Stdout = os.Stdout
 	boundaryCmd.Stderr = os.Stderr
 
 	// Start the process
@@ -109,13 +144,16 @@ func TestBoundaryIntegration(t *testing.T) {
 	require.NoError(t, err, "Failed to start boundary process")
 
 	// Give boundary time to start
-	time.Sleep(200 * time.Second)
+	time.Sleep(2 * time.Second)
 
 	// Get the namespace name that boundary created
 	//namespaceName := getNamespaceName(t)
 
 	pidInt := getChildProcessPID(t)
 	pid := fmt.Sprintf("%v", pidInt)
+
+	fmt.Printf("pidInt: %v\n", pidInt)
+	//time.Sleep(200 * time.Second)
 
 	// Test HTTP request through boundary (from inside the jail)
 	t.Run("HTTPRequestThroughBoundary", func(t *testing.T) {
