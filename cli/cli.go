@@ -97,22 +97,26 @@ func BaseCommand() *serpent.Command {
 func Run(ctx context.Context, config Config, args []string) error {
 	isChild := os.Getenv("CHILD") == "true"
 	if isChild {
+		log.Printf("CHILD process is started")
 		vethNetJail := os.Getenv("VETH_JAIL_NAME")
 
 		err := jail.SetupChildNetworking(vethNetJail)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "failed setupChildNetworking: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("failed to run SetupChildNetworking: %v", err)
 		}
+		log.Printf("child networking is configured")
 
 		// Program to run
 		bin := args[0]
 		args = args[1:]
 		env := os.Environ()
+		log.Printf("bin: %v, args: %v\n", bin, args)
+		log.Printf("env: %v\n", os.Environ())
 		// syscall.Exec replaces the current process image
 		// with the new program, so nothing after this call runs.
 		if err := syscall.Exec(bin, args, env); err != nil {
-			log.Fatalf("exec failed: %v", err)
+			log.Printf("failed to exec child process: %v", err)
+			return fmt.Errorf("failed to exec child process: %v", err)
 		}
 
 		// This line is never reached if Exec succeeds.
@@ -227,7 +231,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 		logger.Debug("Executing command in boundary", "command", strings.Join(os.Args, " "))
 		err := cmd.Start()
 		if err != nil {
-			logger.Error("Command execution failed", "error", err)
+			logger.Error("Command execution failed(Start)", "error", err)
 		}
 
 		err = boundaryInstance.ConfigureAfterCommandExecution(cmd.Process.Pid)
@@ -237,7 +241,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 
 		err = cmd.Wait()
 		if err != nil {
-			logger.Error("Command execution failed", "error", err)
+			logger.Error("Command execution failed(Wait)", "error", err)
 		}
 	}()
 

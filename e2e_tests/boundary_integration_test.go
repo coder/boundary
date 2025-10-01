@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -62,6 +63,21 @@ func getNamespaceName(t *testing.T) string {
 	return namespaces[0]
 }
 
+func getChildProcessPID(t *testing.T) int {
+	// Option 1: Look for processes with CHILD=true
+	cmd := exec.Command("pgrep", "-f", "CHILD=true")
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, "output: %v", output)
+
+	pidStr := strings.TrimSpace(string(output))
+	pid, err := strconv.Atoi(pidStr)
+	require.NoError(t, err)
+	return pid
+
+	// Option 2: Use the boundary process's child PID
+	// This would require modifying boundary to expose the child PID
+}
+
 func TestBoundaryIntegration(t *testing.T) {
 	// Find project root by looking for go.mod file
 	projectRoot := findProjectRoot(t)
@@ -81,7 +97,8 @@ func TestBoundaryIntegration(t *testing.T) {
 		"--allow", "dev.coder.com",
 		"--allow", "jsonplaceholder.typicode.com",
 		"--log-level", "debug",
-		"--", "bash", "-c", "sleep 10 && echo 'Test completed'")
+		"--", "/bin/bash")
+	//"--", "/bin/bash", "-c", "/usr/bin/sleep 10 && /usr/bin/echo 'Test completed'")
 
 	// Suppress output to prevent terminal corruption
 	boundaryCmd.Stdout = os.Stdout // Let it go to /dev/null
@@ -92,15 +109,18 @@ func TestBoundaryIntegration(t *testing.T) {
 	require.NoError(t, err, "Failed to start boundary process")
 
 	// Give boundary time to start
-	time.Sleep(2 * time.Second)
+	time.Sleep(200 * time.Second)
 
 	// Get the namespace name that boundary created
-	namespaceName := getNamespaceName(t)
+	//namespaceName := getNamespaceName(t)
+
+	pidInt := getChildProcessPID(t)
+	pid := fmt.Sprintf("%v", pidInt)
 
 	// Test HTTP request through boundary (from inside the jail)
 	t.Run("HTTPRequestThroughBoundary", func(t *testing.T) {
 		// Run curl directly in the namespace using ip netns exec
-		curlCmd := exec.Command("sudo", "ip", "netns", "exec", namespaceName,
+		curlCmd := exec.Command("sudo", "nsenter", "-t", pid, "-n", "--",
 			"curl", "http://jsonplaceholder.typicode.com/todos/1")
 
 		// Capture stderr separately
@@ -128,7 +148,7 @@ func TestBoundaryIntegration(t *testing.T) {
 		certPath := fmt.Sprintf("%v/ca-cert.pem", configDir)
 
 		// Run curl directly in the namespace using ip netns exec
-		curlCmd := exec.Command("sudo", "ip", "netns", "exec", namespaceName,
+		curlCmd := exec.Command("sudo", "sudo", "nsenter", "-t", pid, "-n", "--",
 			"env", fmt.Sprintf("SSL_CERT_FILE=%v", certPath), "curl", "-s", "https://dev.coder.com/api/v2")
 
 		// Capture stderr separately
@@ -149,7 +169,7 @@ func TestBoundaryIntegration(t *testing.T) {
 	// Test blocked domain (from inside the jail)
 	t.Run("BlockedDomainTest", func(t *testing.T) {
 		// Run curl directly in the namespace using ip netns exec
-		curlCmd := exec.Command("sudo", "ip", "netns", "exec", namespaceName,
+		curlCmd := exec.Command("sudo", "sudo", "nsenter", "-t", pid, "-n", "--",
 			"curl", "-s", "http://example.com")
 
 		// Capture stderr separately
