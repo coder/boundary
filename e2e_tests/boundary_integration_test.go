@@ -133,7 +133,7 @@ func TestBoundaryIntegration(t *testing.T) {
 		"--allow", "jsonplaceholder.typicode.com",
 		"--log-level", "debug",
 		//"--", "/bin/bash")
-		"--", "/bin/bash", "-c", "/usr/bin/sleep 20 && /usr/bin/echo 'Test completed'")
+		"--", "/bin/bash", "-c", "/usr/bin/sleep 21 && /usr/bin/echo 'Test completed'")
 
 	boundaryCmd.Stdin = os.Stdin
 	boundaryCmd.Stdout = os.Stdout

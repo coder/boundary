@@ -35,8 +35,9 @@ func (r *commandRunner) run() error {
 			AmbientCaps: command.ambientCaps,
 		}
 
-		if err := command.cmd.Run(); err != nil {
-			return fmt.Errorf("failed to %s: %v", command.description, err)
+		output, err := command.cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("failed to %s: %v, output: %s", command.description, err, output)
 		}
 	}
 
