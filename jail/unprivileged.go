@@ -31,7 +31,7 @@ func NewUnprivileged(config Config) (*Unprivileged, error) {
 	}, nil
 }
 
-func (u *Unprivileged) Start() error {
+func (u *Unprivileged) ConfigureBeforeCommandExecution() error {
 	u.logger.Debug("Starting in unprivileged mode")
 	e := getEnvs(u.configDir, u.caCertPath)
 	p := fmt.Sprintf("http://localhost:%d", u.httpProxyPort)
@@ -59,4 +59,12 @@ func (u *Unprivileged) Command(command []string) *exec.Cmd {
 func (u *Unprivileged) Close() error {
 	u.logger.Debug("Closing unprivileged jail")
 	return nil
+}
+
+func (u *Unprivileged) ConfigureAfterCommandExecution(processPID int) error {
+	return nil
+}
+
+func (l *Unprivileged) GetNetworkConfiguration() NetworkConfiguration {
+	return NetworkConfiguration{}
 }
