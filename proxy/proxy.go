@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bufio"
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -13,9 +14,11 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/coder/boundary/audit"
 	"github.com/coder/boundary/rules"
+	"golang.org/x/sync/errgroup"
 )
 
 // Server handles HTTP and HTTPS requests with rule-based filtering
@@ -658,6 +661,11 @@ func (p *Server) streamRequestToTarget(clientConn *tls.Conn, bufReader *bufio.Re
 		}
 	}()
 
+	// Set connection deadlines to prevent indefinite blocking
+	deadline := time.Now().Add(5 * time.Minute)
+	_ = clientConn.SetDeadline(deadline)
+	_ = targetConn.SetDeadline(deadline)
+
 	// Send HTTP request headers to target
 	reqLine := fmt.Sprintf("%s %s %s\r\n", req.Method, req.URL.RequestURI(), req.Proto)
 	_, err = targetConn.Write([]byte(reqLine))
@@ -680,20 +688,40 @@ func (p *Server) streamRequestToTarget(clientConn *tls.Conn, bufReader *bufio.Re
 		return fmt.Errorf("failed to write headers to target: %v", err)
 	}
 
-	// Stream request body and response bidirectionally
-	go func() {
-		// Stream request body: client -> target
+	// Use errgroup to manage bidirectional streaming and ensure cleanup
+	g, ctx := errgroup.WithContext(context.Background())
+
+	// Stream request body: client -> target
+	g.Go(func() error {
 		_, err := io.Copy(targetConn, bufReader)
-		if err != nil {
-			p.logger.Error("Error copying request body to target", "error", err)
+		if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
+			p.logger.Debug("Error copying request body to target", "error", err)
 		}
-	}()
+		// Close write side to signal EOF to target
+		_ = targetConn.CloseWrite()
+		return nil
+	})
 
 	// Stream response: target -> client
-	_, err = io.Copy(clientConn, targetConn)
-	if err != nil {
-		p.logger.Error("Error copying response from target to client", "error", err)
-	}
+	g.Go(func() error {
+		_, err := io.Copy(clientConn, targetConn)
+		if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
+			p.logger.Debug("Error copying response from target to client", "error", err)
+		}
+		return nil
+	})
+
+	// Monitor context cancellation to ensure both goroutines exit
+	g.Go(func() error {
+		<-ctx.Done()
+		// Force close connections to unblock any hanging io.Copy
+		_ = clientConn.Close()
+		_ = targetConn.Close()
+		return nil
+	})
+
+	// Wait for all goroutines to complete
+	_ = g.Wait()
 
 	return nil
 }
@@ -729,16 +757,46 @@ func (p *Server) handleConnectStreaming(tlsConn *tls.Conn, req *http.Request, ho
 	}
 	defer func() { _ = targetConn.Close() }()
 
-	// Bidirectional copy
-	go func() {
+	// Set connection deadlines to prevent indefinite blocking
+	deadline := time.Now().Add(5 * time.Minute)
+	_ = tlsConn.SetDeadline(deadline)
+	_ = targetConn.SetDeadline(deadline)
+
+	// Use errgroup for bidirectional copy with proper cleanup
+	g, ctx := errgroup.WithContext(context.Background())
+
+	// Client to target
+	g.Go(func() error {
 		_, err := io.Copy(targetConn, tlsConn)
-		if err != nil {
-			p.logger.Error("Error copying from client to target", "error", err)
+		if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
+			p.logger.Debug("Error copying from client to target", "error", err)
 		}
-	}()
-	_, err = io.Copy(tlsConn, targetConn)
-	if err != nil {
-		p.logger.Error("Error copying from target to client", "error", err)
-	}
+		// Close write side to signal EOF
+		if tc, ok := targetConn.(*net.TCPConn); ok {
+			_ = tc.CloseWrite()
+		}
+		return nil
+	})
+
+	// Target to client
+	g.Go(func() error {
+		_, err := io.Copy(tlsConn, targetConn)
+		if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
+			p.logger.Debug("Error copying from target to client", "error", err)
+		}
+		return nil
+	})
+
+	// Monitor context cancellation to ensure cleanup
+	g.Go(func() error {
+		<-ctx.Done()
+		// Force close connections to unblock any hanging io.Copy
+		_ = tlsConn.Close()
+		_ = targetConn.Close()
+		return nil
+	})
+
+	// Wait for all goroutines to complete
+	_ = g.Wait()
 	p.logger.Debug("CONNECT tunnel closed", "hostname", hostname)
 }
