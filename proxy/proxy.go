@@ -14,7 +14,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/coder/boundary/audit"
 	"github.com/coder/boundary/rules"
@@ -661,11 +660,6 @@ func (p *Server) streamRequestToTarget(clientConn *tls.Conn, bufReader *bufio.Re
 		}
 	}()
 
-	// Set connection deadlines to prevent indefinite blocking
-	deadline := time.Now().Add(5 * time.Minute)
-	_ = clientConn.SetDeadline(deadline)
-	_ = targetConn.SetDeadline(deadline)
-
 	// Send HTTP request headers to target
 	reqLine := fmt.Sprintf("%s %s %s\r\n", req.Method, req.URL.RequestURI(), req.Proto)
 	_, err = targetConn.Write([]byte(reqLine))
@@ -756,11 +750,6 @@ func (p *Server) handleConnectStreaming(tlsConn *tls.Conn, req *http.Request, ho
 		return
 	}
 	defer func() { _ = targetConn.Close() }()
-
-	// Set connection deadlines to prevent indefinite blocking
-	deadline := time.Now().Add(5 * time.Minute)
-	_ = tlsConn.SetDeadline(deadline)
-	_ = targetConn.SetDeadline(deadline)
 
 	// Use errgroup for bidirectional copy with proper cleanup
 	g, ctx := errgroup.WithContext(context.Background())
