@@ -17,7 +17,6 @@ import (
 // LinuxJail implements Jailer using Linux network namespaces
 type LinuxJail struct {
 	logger        *slog.Logger
-	namespace     string
 	vethHostName  string // Host-side veth interface name for iptables rules
 	vethJailName  string // Jail-side veth interface name for iptables rules
 	commandEnv    []string
@@ -33,7 +32,6 @@ type LinuxJail struct {
 func NewLinuxJail(config Config) (*LinuxJail, error) {
 	return &LinuxJail{
 		logger:        config.Logger,
-		namespace:     newNamespaceName(),
 		httpProxyPort: config.HttpProxyPort,
 		configDir:     config.ConfigDir,
 		caCertPath:    config.CACertPath,
@@ -63,7 +61,7 @@ func (l *LinuxJail) ConfigureBeforeCommandExecution() error {
 
 // Command returns an exec.Cmd configured to run within the network namespace.
 func (l *LinuxJail) Command(command []string) *exec.Cmd {
-	l.logger.Debug("Creating command with namespace", "namespace", l.namespace)
+	l.logger.Debug("Creating command with namespace")
 
 	cmd := exec.Command(command[0], command[1:]...)
 	cmd.Env = l.commandEnv
@@ -114,30 +112,6 @@ func (l *LinuxJail) Close() error {
 		// Continue with other cleanup even if this fails
 	}
 
-	// Clean up namespace-specific DNS config directory
-	netnsEtc := fmt.Sprintf("/etc/netns/%s", l.namespace)
-	err = os.RemoveAll(netnsEtc)
-	if err != nil {
-		l.logger.Warn("Failed to remove namespace DNS config", "dir", netnsEtc, "error", err)
-		// Continue with other cleanup
-	}
-
-	// Remove network namespace
-	err = l.removeNamespace()
-	if err != nil {
-		return fmt.Errorf("failed to remove namespace: %v", err)
-	}
-
-	return nil
-}
-
-// removeNamespace removes the network namespace
-func (l *LinuxJail) removeNamespace() error {
-	cmd := exec.Command("ip", "netns", "del", l.namespace)
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("failed to remove namespace: %v", err)
-	}
 	return nil
 }
 
