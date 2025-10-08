@@ -13,6 +13,14 @@ import (
 )
 
 const (
+	prefix = "coder_boundary"
+)
+
+func newNamespaceName() string {
+	return fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano()%10000000)
+}
+
+const (
 	pfAnchorName = "coder_boundary"
 	groupName    = "coder_boundary"
 )
