@@ -295,25 +295,15 @@ func (l *LinuxJail) configureIptables() error {
 
 // cleanupNetworking removes networking configuration
 func (l *LinuxJail) cleanupNetworking() error {
-	// Generate unique ID to match veth pair
-	uniqueID := fmt.Sprintf("%d", time.Now().UnixNano()%10000000) // 7 digits max
-	vethHost := fmt.Sprintf("veth_h_%s", uniqueID)                // veth_h_1234567 = 14 chars
-
-	// Clean up networking
-	cleanupCmds := []struct {
-		description string
-		command     *exec.Cmd
-	}{
+	runner := newCommandRunner([]*command{
 		{
 			"delete veth pair",
-			exec.Command("ip", "link", "del", vethHost),
+			exec.Command("ip", "link", "del", l.vethHostName),
+			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
 		},
-	}
-
-	for _, command := range cleanupCmds {
-		if err := command.command.Run(); err != nil {
-			l.logger.Error("failed to execute command", "command", command.description, "error", err)
-		}
+	})
+	if err := runner.runIgnoreErrors(); err != nil {
+		return err
 	}
 
 	return nil
