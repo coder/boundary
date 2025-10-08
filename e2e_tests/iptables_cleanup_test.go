@@ -2,6 +2,7 @@ package e2e_tests
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"testing"
@@ -10,13 +11,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	filterTable = "filter"
+	natTable    = "nat"
+)
+
+func getIptablesRules(tableName string) (string, error) {
+	cmd := exec.Command("sudo", "iptables", "-L", "-n", "-t", tableName)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get iptables rules: %v", err)
+	}
+	rules := string(output)
+
+	return rules, nil
+}
+
 func TestIPTablesCleanup(t *testing.T) {
 	// Step 1: Capture initial iptables rules
-	initialCmd := exec.Command("sudo", "iptables", "-L", "-n")
-	initialOutput, err := initialCmd.Output()
-	require.NoError(t, err, "Failed to get initial iptables rules")
-	initialRules := string(initialOutput)
-	//fmt.Printf("Initial iptables rules:\n%s", initialRules)
+	initialFilterRules, err := getIptablesRules(filterTable)
+	require.NoError(t, err)
+	initialNatRules, err := getIptablesRules(natTable)
+	require.NoError(t, err)
 
 	// Step 2: Run Boundary
 	// Find project root by looking for go.mod file
@@ -67,10 +83,11 @@ func TestIPTablesCleanup(t *testing.T) {
 	require.NoError(t, err, "Failed to remove /tmp/boundary-test")
 
 	// Step 4: Capture iptables rules after boundary has executed
-	iptablesCmd := exec.Command("sudo", "iptables", "-L", "-n")
-	iptablesOutput, err := iptablesCmd.Output()
-	require.NoError(t, err, "Failed to get iptables rules")
-	iptablesRules := string(iptablesOutput)
+	filterRules, err := getIptablesRules(filterTable)
+	require.NoError(t, err)
+	natRules, err := getIptablesRules(natTable)
+	require.NoError(t, err)
 
-	require.Equal(t, initialRules, iptablesRules)
+	require.Equal(t, initialFilterRules, filterRules)
+	require.Equal(t, initialNatRules, natRules)
 }
