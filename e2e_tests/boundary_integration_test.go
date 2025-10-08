@@ -150,6 +150,11 @@ func TestBoundaryIntegration(t *testing.T) {
 		require.Contains(t, string(output), "Request Blocked by Boundary")
 	})
 
+	// Gracefully close process, call cleanup methods
+	err = boundaryCmd.Process.Signal(os.Interrupt)
+	require.NoError(t, err, "Failed to interrupt boundary process")
+	time.Sleep(time.Second * 1)
+
 	// Clean up
 	cancel()                 // This will terminate the boundary process
 	err = boundaryCmd.Wait() // Wait for process to finish

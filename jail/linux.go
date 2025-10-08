@@ -4,6 +4,7 @@ package jail
 
 import (
 	"fmt"
+	"log"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -171,6 +172,22 @@ func (r *commandRunner) run() error {
 	return nil
 }
 
+func (r *commandRunner) runIgnoreErrors() error {
+	for _, command := range r.commands {
+		command.cmd.SysProcAttr = &syscall.SysProcAttr{
+			AmbientCaps: command.ambientCaps,
+		}
+
+		output, err := command.cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("failed to %s: %v, output: %s", command.description, err, output)
+			continue
+		}
+	}
+
+	return nil
+}
+
 // configureHostNetworkBeforeCmdExec prepares host-side networking before the target
 // process is started. At this point the target process is not running, so its PID and network
 // namespace ID are not yet known.
@@ -283,7 +300,6 @@ func (l *LinuxJail) configureIptables() error {
 			exec.Command("iptables", "-t", "nat", "-A", "PREROUTING", "-i", l.vethHostName, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.httpProxyPort)),
 			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
 		},
-		// TODO: clean up this rules
 		{
 			"iptables FORWARD -s",
 			exec.Command("iptables", "-A", "FORWARD", "-s", "192.168.100.0/24", "-j", "ACCEPT"),
@@ -314,12 +330,15 @@ func (l *LinuxJail) cleanupNetworking() error {
 		description string
 		command     *exec.Cmd
 	}{
-		{"delete veth pair", exec.Command("ip", "link", "del", vethHost)},
+		{
+			"delete veth pair",
+			exec.Command("ip", "link", "del", vethHost),
+		},
 	}
 
 	for _, command := range cleanupCmds {
 		if err := command.command.Run(); err != nil {
-			return fmt.Errorf("failed to %s: %v", command.description, err)
+			l.logger.Error("failed to execute command", "command", command.description, "error", err)
 		}
 	}
 
@@ -328,20 +347,30 @@ func (l *LinuxJail) cleanupNetworking() error {
 
 // cleanupIptables removes iptables rules
 func (l *LinuxJail) cleanupIptables() error {
-	// Remove comprehensive TCP redirect rule
-	cmd := exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-i", l.vethHostName, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.httpProxyPort))
-	err := cmd.Run()
-	if err != nil {
-		l.logger.Error("Failed to remove TCP redirect rule", "error", err)
-		// Continue with other cleanup even if this fails
-	}
-
-	// Remove NAT rule
-	cmd = exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING", "-s", "192.168.100.0/24", "-j", "MASQUERADE")
-	err = cmd.Run()
-	if err != nil {
-		l.logger.Error("Failed to remove NAT rule", "error", err)
-		// Continue with other cleanup even if this fails
+	runner := newCommandRunner([]*command{
+		{
+			"Remove comprehensive TCP redirect rule",
+			exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-i", l.vethHostName, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.httpProxyPort)),
+			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		},
+		{
+			"Remove NAT rule",
+			exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING", "-s", "192.168.100.0/24", "-j", "MASQUERADE"),
+			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		},
+		{
+			"Remove iptables FORWARD -s",
+			exec.Command("iptables", "-D", "FORWARD", "-s", "192.168.100.0/24", "-j", "ACCEPT"),
+			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		},
+		{
+			"Remove iptables FORWARD -d",
+			exec.Command("iptables", "-D", "FORWARD", "-d", "192.168.100.0/24", "-j", "ACCEPT"),
+			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		},
+	})
+	if err := runner.runIgnoreErrors(); err != nil {
+		return err
 	}
 
 	return nil
