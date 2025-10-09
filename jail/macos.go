@@ -10,7 +10,16 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
+
+const (
+	prefix = "coder_boundary"
+)
+
+func newNamespaceName() string {
+	return fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano()%10000000)
+}
 
 const (
 	pfAnchorName = "coder_boundary"
@@ -54,8 +63,12 @@ func NewMacOSJail(config Config) (*MacOSJail, error) {
 	}, nil
 }
 
+func SetupChildNetworking(vethNetJail string) error {
+	return nil
+}
+
 // Setup creates the network boundary group and configures PF rules
-func (n *MacOSJail) Start() error {
+func (n *MacOSJail) ConfigureBeforeCommandExecution() error {
 	n.logger.Debug("Setup called")
 
 	// Create or get network boundary group
@@ -339,4 +352,8 @@ func (n *MacOSJail) cleanupTempFiles() {
 			n.logger.Error("Failed to remove temporary main PF rules file", "file", n.mainRulesPath, "error", err)
 		}
 	}
+}
+
+func (u *MacOSJail) ConfigureAfterCommandExecution(processPID int) error {
+	return nil
 }
