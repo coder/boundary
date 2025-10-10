@@ -5,10 +5,12 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"sync/atomic"
 
 	"github.com/coder/boundary/audit"
@@ -163,6 +165,22 @@ func (p *Server) handleHTTPConnection(conn net.Conn) {
 	log.Printf("   Host: %s", req.Host)
 	log.Printf("   User-Agent: %s", req.Header.Get("User-Agent"))
 
+	// Check if request should be allowed
+	result := p.ruleEngine.Evaluate(req.Method, req.Host)
+
+	// Audit the request
+	//p.auditor.AuditRequest(audit.Request{
+	//	Method:  req.Method,
+	//	URL:     req.URL.String(),
+	//	Allowed: result.Allowed,
+	//	Rule:    result.Rule,
+	//})
+
+	if !result.Allowed {
+		p.writeBlockedResponse(conn, req)
+		return
+	}
+
 	// Forward HTTP request to destination
 	p.forwardHTTPRequest(conn, req)
 }
@@ -264,6 +282,48 @@ func (p *Server) forwardHTTPSRequest(conn net.Conn, req *http.Request) {
 	log.Printf("🔒 HTTPS Response: %d %s", resp.StatusCode, resp.Status)
 
 	// Copy response back to client
+	resp.Write(conn)
+}
+
+func (p *Server) writeBlockedResponse(conn net.Conn, req *http.Request) {
+	// Create a response object
+	resp := &http.Response{
+		Status:        "403 Forbidden",
+		StatusCode:    http.StatusForbidden,
+		Proto:         "HTTP/1.1",
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Header:        make(http.Header),
+		Body:          nil,
+		ContentLength: 0,
+	}
+
+	// Set headers
+	resp.Header.Set("Content-Type", "text/plain")
+
+	// Create the response body
+	host := req.URL.Host
+	if host == "" {
+		host = req.Host
+	}
+
+	body := fmt.Sprintf(`🚫 Request Blocked by Boundary
+
+Request: %s %s
+Host: %s
+
+To allow this request, restart boundary with:
+  --allow "%s"                    # Allow all methods to this host
+  --allow "%s %s"          # Allow only %s requests to this host
+
+For more help: https://github.com/coder/boundary
+`,
+		req.Method, req.URL.Path, host, host, req.Method, host, req.Method)
+
+	resp.Body = io.NopCloser(strings.NewReader(body))
+	resp.ContentLength = int64(len(body))
+
+	// Write to connection
 	resp.Write(conn)
 }
 
