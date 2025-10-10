@@ -169,10 +169,7 @@ func (p *Server) handleHTTPConnection(conn net.Conn) {
 
 func (p *Server) handleTLSConnection(conn net.Conn) {
 	// Create TLS connection
-	tlsConn := tls.Server(conn, &tls.Config{
-		InsecureSkipVerify: true, // For demo purposes
-		// In production, you'd need proper certificates
-	})
+	tlsConn := tls.Server(conn, p.tlsConfig)
 
 	// Perform TLS handshake
 	if err := tlsConn.Handshake(); err != nil {
@@ -183,7 +180,7 @@ func (p *Server) handleTLSConnection(conn net.Conn) {
 	log.Println("✅ TLS handshake successful")
 
 	// Read HTTP request over TLS
-	req, err := http.ReadRequest(bufio.NewReader(conn))
+	req, err := http.ReadRequest(bufio.NewReader(tlsConn))
 	if err != nil {
 		log.Printf("Failed to read HTTPS request: %v", err)
 		return
@@ -199,7 +196,11 @@ func (p *Server) handleTLSConnection(conn net.Conn) {
 
 func (p *Server) forwardHTTPRequest(conn net.Conn, req *http.Request) {
 	// Create HTTP client
-	client := &http.Client{}
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse // Don't follow redirects
+		},
+	}
 
 	req.RequestURI = ""
 
@@ -234,6 +235,9 @@ func (p *Server) forwardHTTPSRequest(conn net.Conn, req *http.Request) {
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: true, // For demo purposes
 			},
+		},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse // Don't follow redirects
 		},
 	}
 
