@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -10,8 +11,11 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/coder/boundary/audit"
 	"github.com/coder/boundary/rules"
@@ -115,7 +119,18 @@ func (p *Server) isStopped() bool {
 }
 
 func (p *Server) handleConnectionWithTLSDetection(conn net.Conn) {
-	defer conn.Close()
+	//defer func() {
+	//	time.Sleep(time.Millisecond * 500)
+	//	_ = time.Sleep
+	//
+	//	err := conn.Close()
+	//	if err != nil {
+	//		p.logger.Error("Failed to close connection", "error", err)
+	//	}
+	//
+	//	p.logger.Debug("Successfully closed connection")
+	//}()
+	_ = time.Sleep
 
 	// Detect protocol using TLS handshake detection
 	conn, isTLS := p.isTLSConnection(conn)
@@ -182,7 +197,7 @@ func (p *Server) handleHTTPConnection(conn net.Conn) {
 	}
 
 	// Forward HTTP request to destination
-	p.forwardHTTPRequest(conn, req)
+	p.forwardRequest(conn, req, false)
 }
 
 func (p *Server) handleTLSConnection(conn net.Conn) {
@@ -208,81 +223,90 @@ func (p *Server) handleTLSConnection(conn net.Conn) {
 	log.Printf("   Host: %s", req.Host)
 	log.Printf("   User-Agent: %s", req.Header.Get("User-Agent"))
 
-	// Forward HTTPS request to destination
-	p.forwardHTTPSRequest(tlsConn, req)
-}
+	// Check if request should be allowed
+	result := p.ruleEngine.Evaluate(req.Method, req.Host)
 
-func (p *Server) forwardHTTPRequest(conn net.Conn, req *http.Request) {
-	// Create HTTP client
-	client := &http.Client{
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse // Don't follow redirects
-		},
-	}
+	// Audit the request
+	//p.auditor.AuditRequest(audit.Request{
+	//	Method:  req.Method,
+	//	URL:     req.URL.String(),
+	//	Allowed: result.Allowed,
+	//	Rule:    result.Rule,
+	//})
 
-	req.RequestURI = ""
-
-	// Set the scheme if it's missing
-	if req.URL.Scheme == "" {
-		req.URL.Scheme = "http"
-	}
-
-	// Set the host if it's missing
-	if req.URL.Host == "" {
-		req.URL.Host = req.Host
-	}
-
-	// Make request to destination
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Printf("Failed to forward HTTP request: %v", err)
+	if !result.Allowed {
+		p.writeBlockedResponse(tlsConn, req)
 		return
 	}
-	defer resp.Body.Close()
 
-	log.Printf("🌐 HTTP Response: %d %s", resp.StatusCode, resp.Status)
-
-	// Copy response back to client
-	resp.Write(conn)
+	// Forward HTTPS request to destination
+	p.forwardRequest(tlsConn, req, true)
 }
 
-func (p *Server) forwardHTTPSRequest(conn net.Conn, req *http.Request) {
+func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 	// Create HTTP client
 	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true, // For demo purposes
-			},
-		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse // Don't follow redirects
 		},
 	}
 
-	req.RequestURI = ""
-
-	// Set the scheme if it's missing
-	if req.URL.Scheme == "" {
-		req.URL.Scheme = "https"
+	scheme := "http"
+	if https {
+		scheme = "https"
 	}
 
-	// Set the host if it's missing
-	if req.URL.Host == "" {
-		req.URL.Host = req.Host
+	// Create a new request to the target server
+	targetURL := &url.URL{
+		Scheme:   scheme,
+		Host:     req.Host,
+		Path:     req.URL.Path,
+		RawQuery: req.URL.RawQuery,
+	}
+	newReq, err := http.NewRequest(req.Method, targetURL.String(), nil)
+	if err != nil {
+		panic(err)
+	}
+
+	// Copy headers
+	for name, values := range req.Header {
+		// Skip connection-specific headers
+		if strings.ToLower(name) == "connection" || strings.ToLower(name) == "proxy-connection" {
+			continue
+		}
+		for _, value := range values {
+			newReq.Header.Add(name, value)
+		}
 	}
 
 	// Make request to destination
-	resp, err := client.Do(req)
+	resp, err := client.Do(newReq)
 	if err != nil {
 		log.Printf("Failed to forward HTTPS request: %v", err)
 		return
 	}
-	defer resp.Body.Close()
 
 	log.Printf("🔒 HTTPS Response: %d %s", resp.StatusCode, resp.Status)
 
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		panic(err)
+	}
+	resp.Header.Add("Content-Length", strconv.Itoa(len(bodyBytes)))
+	resp.ContentLength = int64(len(bodyBytes))
+	err = resp.Body.Close()
+	if err != nil {
+		log.Printf("Failed to close HTTP response body: %v", err)
+	}
+	resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
 	// Copy response back to client
-	resp.Write(conn)
+	err = resp.Write(conn)
+	if err != nil {
+		log.Printf("Failed to forward HTTPS request: %v", err)
+	}
+
+	log.Printf("Successfuly wrote to connection")
 }
 
 func (p *Server) writeBlockedResponse(conn net.Conn, req *http.Request) {
