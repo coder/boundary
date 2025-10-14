@@ -187,7 +187,8 @@ func TestBoundaryIntegration(t *testing.T) {
 	require.NoError(t, err, "Failed to remove /tmp/boundary-test")
 }
 
-func TestBoundaryIntegration2(t *testing.T) {
+// TestContentLengthHeader tests that ContentLength header is properly set, otherwise it fails.
+func TestContentLengthHeader(t *testing.T) {
 	// Find project root by looking for go.mod file
 	projectRoot := findProjectRoot(t)
 
