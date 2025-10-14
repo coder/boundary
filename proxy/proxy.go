@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -121,10 +120,10 @@ func (p *Server) handleConnectionWithTLSDetection(conn net.Conn) {
 	// Detect protocol using TLS handshake detection
 	conn, isTLS := p.isTLSConnection(conn)
 	if isTLS {
-		log.Println("🔒 Detected TLS connection - handling as HTTPS")
+		p.logger.Info("🔒 Detected TLS connection - handling as HTTPS")
 		p.handleTLSConnection(conn)
 	} else {
-		log.Println("🌐 Detected HTTP connection")
+		p.logger.Info("🌐 Detected HTTP connection")
 		p.handleHTTPConnection(conn)
 	}
 }
@@ -148,7 +147,7 @@ func (p *Server) isTLSConnection(conn net.Conn) (net.Conn, bool) {
 	isTLS := buf[0] == 0x16 || buf[0] == 0x17 || buf[0] == 0x14 || buf[0] == 0x15
 
 	if isTLS {
-		log.Printf("TLS detected: first byte = 0x%02x", buf[0])
+		p.logger.Info("TLS detected: first byte = 0x%02x", buf[0])
 	}
 
 	return connWrapper, isTLS
@@ -165,13 +164,13 @@ func (p *Server) handleHTTPConnection(conn net.Conn) {
 	// Read HTTP request
 	req, err := http.ReadRequest(bufio.NewReader(conn))
 	if err != nil {
-		log.Printf("Failed to read HTTP request: %v", err)
+		p.logger.Error("Failed to read HTTP request", "error", err)
 		return
 	}
 
-	log.Printf("🌐 HTTP Request: %s %s", req.Method, req.URL.String())
-	log.Printf("   Host: %s", req.Host)
-	log.Printf("   User-Agent: %s", req.Header.Get("User-Agent"))
+	p.logger.Info("🌐 HTTP Request: %s %s", req.Method, req.URL.String())
+	p.logger.Info("   Host: %s", req.Host)
+	p.logger.Info("   User-Agent: %s", req.Header.Get("User-Agent"))
 
 	// Check if request should be allowed
 	result := p.ruleEngine.Evaluate(req.Method, req.Host)
@@ -206,22 +205,22 @@ func (p *Server) handleTLSConnection(conn net.Conn) {
 
 	// Perform TLS handshake
 	if err := tlsConn.Handshake(); err != nil {
-		log.Printf("TLS handshake failed: %v", err)
+		p.logger.Error("TLS handshake failed", "error", err)
 		return
 	}
 
-	log.Println("✅ TLS handshake successful")
+	p.logger.Info("✅ TLS handshake successful")
 
 	// Read HTTP request over TLS
 	req, err := http.ReadRequest(bufio.NewReader(tlsConn))
 	if err != nil {
-		log.Printf("Failed to read HTTPS request: %v", err)
+		p.logger.Error("Failed to read HTTPS request", "error", err)
 		return
 	}
 
-	log.Printf("🔒 HTTPS Request: %s %s", req.Method, req.URL.String())
-	log.Printf("   Host: %s", req.Host)
-	log.Printf("   User-Agent: %s", req.Header.Get("User-Agent"))
+	p.logger.Info("🔒 HTTPS Request", "method", req.Method, "url", req.URL.String())
+	p.logger.Info("   Host", "host", req.Host)
+	p.logger.Info("   User-Agent", "user-agent", req.Header.Get("User-Agent"))
 
 	// Check if request should be allowed
 	result := p.ruleEngine.Evaluate(req.Method, req.Host)
@@ -265,7 +264,8 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 	}
 	newReq, err := http.NewRequest(req.Method, targetURL.String(), nil)
 	if err != nil {
-		panic(err)
+		p.logger.Error("can't create http request", "error", err)
+		return
 	}
 
 	// Copy headers
@@ -282,31 +282,34 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 	// Make request to destination
 	resp, err := client.Do(newReq)
 	if err != nil {
-		log.Printf("Failed to forward HTTPS request: %v", err)
+		p.logger.Error("Failed to forward HTTPS request", "error", err)
 		return
 	}
 
-	log.Printf("🔒 HTTPS Response: %d %s", resp.StatusCode, resp.Status)
+	p.logger.Info("🔒 HTTPS Response", "status code", resp.StatusCode, "status", resp.Status)
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		panic(err)
+		p.logger.Error("can't read response body", "error", err)
+		return
 	}
 	resp.Header.Add("Content-Length", strconv.Itoa(len(bodyBytes)))
 	resp.ContentLength = int64(len(bodyBytes))
 	err = resp.Body.Close()
 	if err != nil {
-		log.Printf("Failed to close HTTP response body: %v", err)
+		p.logger.Error("Failed to close HTTP response body", "error", err)
+		return
 	}
 	resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
 	// Copy response back to client
 	err = resp.Write(conn)
 	if err != nil {
-		log.Printf("Failed to forward HTTPS request: %v", err)
+		p.logger.Error("Failed to forward HTTPS request", "error", err)
+		return
 	}
 
-	log.Printf("Successfuly wrote to connection")
+	p.logger.Info("Successfully wrote to connection")
 }
 
 func (p *Server) writeBlockedResponse(conn net.Conn, req *http.Request) {
