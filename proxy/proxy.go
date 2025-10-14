@@ -270,7 +270,11 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 		Path:     req.URL.Path,
 		RawQuery: req.URL.RawQuery,
 	}
-	newReq, err := http.NewRequest(req.Method, targetURL.String(), nil)
+	var body io.ReadCloser = req.Body
+	if req.Method == http.MethodGet || req.Method == http.MethodHead {
+		body = nil
+	}
+	newReq, err := http.NewRequest(req.Method, targetURL.String(), body)
 	if err != nil {
 		p.logger.Error("can't create http request", "error", err)
 		return
