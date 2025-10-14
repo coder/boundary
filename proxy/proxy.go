@@ -15,7 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	"github.com/coder/boundary/audit"
 	"github.com/coder/boundary/rules"
@@ -119,19 +118,6 @@ func (p *Server) isStopped() bool {
 }
 
 func (p *Server) handleConnectionWithTLSDetection(conn net.Conn) {
-	//defer func() {
-	//	time.Sleep(time.Millisecond * 500)
-	//	_ = time.Sleep
-	//
-	//	err := conn.Close()
-	//	if err != nil {
-	//		p.logger.Error("Failed to close connection", "error", err)
-	//	}
-	//
-	//	p.logger.Debug("Successfully closed connection")
-	//}()
-	_ = time.Sleep
-
 	// Detect protocol using TLS handshake detection
 	conn, isTLS := p.isTLSConnection(conn)
 	if isTLS {
@@ -169,6 +155,13 @@ func (p *Server) isTLSConnection(conn net.Conn) (net.Conn, bool) {
 }
 
 func (p *Server) handleHTTPConnection(conn net.Conn) {
+	defer func() {
+		err := conn.Close()
+		if err != nil {
+			p.logger.Error("Failed to close connection", "error", err)
+		}
+	}()
+
 	// Read HTTP request
 	req, err := http.ReadRequest(bufio.NewReader(conn))
 	if err != nil {
@@ -203,6 +196,13 @@ func (p *Server) handleHTTPConnection(conn net.Conn) {
 func (p *Server) handleTLSConnection(conn net.Conn) {
 	// Create TLS connection
 	tlsConn := tls.Server(conn, p.tlsConfig)
+
+	defer func() {
+		err := tlsConn.Close()
+		if err != nil {
+			p.logger.Error("Failed to close TLS connection", "error", err)
+		}
+	}()
 
 	// Perform TLS handshake
 	if err := tlsConn.Handshake(); err != nil {
