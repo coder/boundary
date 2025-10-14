@@ -147,7 +147,7 @@ func (p *Server) isTLSConnection(conn net.Conn) (net.Conn, bool) {
 	isTLS := buf[0] == 0x16 || buf[0] == 0x17 || buf[0] == 0x14 || buf[0] == 0x15
 
 	if isTLS {
-		p.logger.Info("TLS detected: first byte = 0x%02x", buf[0])
+		p.logger.Info("TLS detected", "first byte", buf[0])
 	}
 
 	return connWrapper, isTLS
@@ -169,8 +169,8 @@ func (p *Server) handleHTTPConnection(conn net.Conn) {
 	}
 
 	p.logger.Info("🌐 HTTP Request: %s %s", req.Method, req.URL.String())
-	p.logger.Info("   Host: %s", req.Host)
-	p.logger.Info("   User-Agent: %s", req.Header.Get("User-Agent"))
+	p.logger.Info("   Host", "host", req.Host)
+	p.logger.Info("   User-Agent", "user-agent", req.Header.Get("User-Agent"))
 
 	// Check if request should be allowed
 	result := p.ruleEngine.Evaluate(req.Method, req.Host)
