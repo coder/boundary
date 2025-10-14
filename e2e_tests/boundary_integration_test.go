@@ -197,6 +197,9 @@ func TestBoundaryIntegration(t *testing.T) {
 // It makes sure you can access this domain with curl tool (using both HTTP and HTTPS protocols).
 // It indirectly tests that ContentLength header is properly set, otherwise it fails.
 func TestContentLengthHeader(t *testing.T) {
+	expectedResponse := `<!doctype html><html lang="en"><head><title>Example Domain</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{background:#eee;width:60vw;margin:15vh auto;font-family:system-ui,sans-serif}h1{font-size:1.5em}div{opacity:0.8}a:link,a:visited{color:#348}</style><body><div><h1>Example Domain</h1><p>This domain is for use in documentation examples without needing permission. Avoid use in operations.<p><a href="https://iana.org/domains/example">Learn more</a></div></body></html>
+`
+
 	// Find project root by looking for go.mod file
 	projectRoot := findProjectRoot(t)
 
@@ -246,8 +249,6 @@ func TestContentLengthHeader(t *testing.T) {
 		}
 
 		// Verify response contains expected content
-		expectedResponse := `<!doctype html><html lang="en"><head><title>Example Domain</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{background:#eee;width:60vw;margin:15vh auto;font-family:system-ui,sans-serif}h1{font-size:1.5em}div{opacity:0.8}a:link,a:visited{color:#348}</style><body><div><h1>Example Domain</h1><p>This domain is for use in documentation examples without needing permission. Avoid use in operations.<p><a href="https://iana.org/domains/example">Learn more</a></div></body></html>
-`
 		require.Equal(t, expectedResponse, string(output))
 	})
 
@@ -270,8 +271,6 @@ func TestContentLengthHeader(t *testing.T) {
 		}
 
 		// Verify response contains expected content
-		expectedResponse := `<!doctype html><html lang="en"><head><title>Example Domain</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{background:#eee;width:60vw;margin:15vh auto;font-family:system-ui,sans-serif}h1{font-size:1.5em}div{opacity:0.8}a:link,a:visited{color:#348}</style><body><div><h1>Example Domain</h1><p>This domain is for use in documentation examples without needing permission. Avoid use in operations.<p><a href="https://iana.org/domains/example">Learn more</a></div></body></html>
-`
 		require.Equal(t, expectedResponse, string(output))
 	})
 
