@@ -2,10 +2,23 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/coder/boundary/cli"
 )
+
+import (
+	"net/http"
+	_ "net/http/pprof"
+)
+
+func init() {
+	go func() {
+		log.Println("pprof listening on :6060")
+		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
+	}()
+}
 
 // Version information injected at build time
 var (
