@@ -49,6 +49,11 @@ func getChildProcessPID(t *testing.T) int {
 	return pid
 }
 
+// This test runs boundary process with such allowed domains:
+// - dev.coder.com
+// - jsonplaceholder.typicode.com
+// It makes sure you can access these domains with curl tool (using both HTTP and HTTPS protocols).
+// Then it makes sure you can NOT access example.com domain which is not allowed (using both HTTP and HTTPS protocols).
 func TestBoundaryIntegration(t *testing.T) {
 	// Find project root by looking for go.mod file
 	projectRoot := findProjectRoot(t)
@@ -187,7 +192,10 @@ func TestBoundaryIntegration(t *testing.T) {
 	require.NoError(t, err, "Failed to remove /tmp/boundary-test")
 }
 
-// TestContentLengthHeader tests that ContentLength header is properly set, otherwise it fails.
+// This test runs boundary process with such allowed domains:
+// - example.com
+// It makes sure you can access this domain with curl tool (using both HTTP and HTTPS protocols).
+// It indirectly tests that ContentLength header is properly set, otherwise it fails.
 func TestContentLengthHeader(t *testing.T) {
 	// Find project root by looking for go.mod file
 	projectRoot := findProjectRoot(t)
