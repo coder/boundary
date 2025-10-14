@@ -118,23 +118,27 @@ func (p *Server) isStopped() bool {
 
 func (p *Server) handleConnectionWithTLSDetection(conn net.Conn) {
 	// Detect protocol using TLS handshake detection
-	conn, isTLS := p.isTLSConnection(conn)
+	wrappedConn, isTLS, err := p.isTLSConnection(conn)
+	if err != nil {
+		p.logger.Error("Failed to check connection type", "error", err)
+		conn.Close()
+		return
+	}
 	if isTLS {
-		p.logger.Info("🔒 Detected TLS connection - handling as HTTPS")
-		p.handleTLSConnection(conn)
+		p.logger.Debug("🔒 Detected TLS connection - handling as HTTPS")
+		p.handleTLSConnection(wrappedConn)
 	} else {
-		p.logger.Info("🌐 Detected HTTP connection")
-		p.handleHTTPConnection(conn)
+		p.logger.Debug("🌐 Detected HTTP connection")
+		p.handleHTTPConnection(wrappedConn)
 	}
 }
 
-func (p *Server) isTLSConnection(conn net.Conn) (net.Conn, bool) {
+func (p *Server) isTLSConnection(conn net.Conn) (net.Conn, bool, error) {
 	// Read first byte to detect TLS
 	buf := make([]byte, 1)
 	n, err := conn.Read(buf)
 	if err != nil || n == 0 {
-		// TODO: return error?
-		return nil, false
+		return nil, false, fmt.Errorf("failed to read first byte from connection: %v, read %v bytes", err, n)
 	}
 
 	connWrapper := &connectionWrapper{conn, buf, false}
@@ -147,10 +151,10 @@ func (p *Server) isTLSConnection(conn net.Conn) (net.Conn, bool) {
 	isTLS := buf[0] == 0x16 || buf[0] == 0x17 || buf[0] == 0x14 || buf[0] == 0x15
 
 	if isTLS {
-		p.logger.Info("TLS detected", "first byte", buf[0])
+		p.logger.Debug("TLS detected", "first byte", buf[0])
 	}
 
-	return connWrapper, isTLS
+	return connWrapper, isTLS, nil
 }
 
 func (p *Server) handleHTTPConnection(conn net.Conn) {
@@ -168,9 +172,9 @@ func (p *Server) handleHTTPConnection(conn net.Conn) {
 		return
 	}
 
-	p.logger.Info("🌐 HTTP Request: %s %s", req.Method, req.URL.String())
-	p.logger.Info("   Host", "host", req.Host)
-	p.logger.Info("   User-Agent", "user-agent", req.Header.Get("User-Agent"))
+	p.logger.Debug("🌐 HTTP Request: %s %s", req.Method, req.URL.String())
+	p.logger.Debug("   Host", "host", req.Host)
+	p.logger.Debug("   User-Agent", "user-agent", req.Header.Get("User-Agent"))
 
 	// Check if request should be allowed
 	result := p.ruleEngine.Evaluate(req.Method, req.Host)
@@ -209,7 +213,7 @@ func (p *Server) handleTLSConnection(conn net.Conn) {
 		return
 	}
 
-	p.logger.Info("✅ TLS handshake successful")
+	p.logger.Debug("✅ TLS handshake successful")
 
 	// Read HTTP request over TLS
 	req, err := http.ReadRequest(bufio.NewReader(tlsConn))
@@ -218,9 +222,9 @@ func (p *Server) handleTLSConnection(conn net.Conn) {
 		return
 	}
 
-	p.logger.Info("🔒 HTTPS Request", "method", req.Method, "url", req.URL.String())
-	p.logger.Info("   Host", "host", req.Host)
-	p.logger.Info("   User-Agent", "user-agent", req.Header.Get("User-Agent"))
+	p.logger.Debug("🔒 HTTPS Request", "method", req.Method, "url", req.URL.String())
+	p.logger.Debug("   Host", "host", req.Host)
+	p.logger.Debug("   User-Agent", "user-agent", req.Header.Get("User-Agent"))
 
 	// Check if request should be allowed
 	result := p.ruleEngine.Evaluate(req.Method, req.Host)
@@ -286,7 +290,7 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 		return
 	}
 
-	p.logger.Info("🔒 HTTPS Response", "status code", resp.StatusCode, "status", resp.Status)
+	p.logger.Debug("🔒 HTTPS Response", "status code", resp.StatusCode, "status", resp.Status)
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -309,7 +313,7 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 		return
 	}
 
-	p.logger.Info("Successfully wrote to connection")
+	p.logger.Debug("Successfully wrote to connection")
 }
 
 func (p *Server) writeBlockedResponse(conn net.Conn, req *http.Request) {
