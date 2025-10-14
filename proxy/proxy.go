@@ -177,12 +177,12 @@ func (p *Server) handleHTTPConnection(conn net.Conn) {
 	result := p.ruleEngine.Evaluate(req.Method, req.Host)
 
 	// Audit the request
-	//p.auditor.AuditRequest(audit.Request{
-	//	Method:  req.Method,
-	//	URL:     req.URL.String(),
-	//	Allowed: result.Allowed,
-	//	Rule:    result.Rule,
-	//})
+	p.auditor.AuditRequest(audit.Request{
+		Method:  req.Method,
+		URL:     req.URL.String(),
+		Allowed: result.Allowed,
+		Rule:    result.Rule,
+	})
 
 	if !result.Allowed {
 		p.writeBlockedResponse(conn, req)
@@ -227,12 +227,12 @@ func (p *Server) handleTLSConnection(conn net.Conn) {
 	result := p.ruleEngine.Evaluate(req.Method, req.Host)
 
 	// Audit the request
-	//p.auditor.AuditRequest(audit.Request{
-	//	Method:  req.Method,
-	//	URL:     req.URL.String(),
-	//	Allowed: result.Allowed,
-	//	Rule:    result.Rule,
-	//})
+	p.auditor.AuditRequest(audit.Request{
+		Method:  req.Method,
+		URL:     req.URL.String(),
+		Allowed: result.Allowed,
+		Rule:    result.Rule,
+	})
 
 	if !result.Allowed {
 		p.writeBlockedResponse(tlsConn, req)
