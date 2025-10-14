@@ -121,7 +121,11 @@ func (p *Server) handleConnectionWithTLSDetection(conn net.Conn) {
 	wrappedConn, isTLS, err := p.isTLSConnection(conn)
 	if err != nil {
 		p.logger.Error("Failed to check connection type", "error", err)
-		conn.Close()
+
+		err := conn.Close()
+		if err != nil {
+			p.logger.Error("Failed to close connection", "error", err)
+		}
 		return
 	}
 	if isTLS {
