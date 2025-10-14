@@ -270,7 +270,7 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 		Path:     req.URL.Path,
 		RawQuery: req.URL.RawQuery,
 	}
-	var body io.ReadCloser = req.Body
+	var body = req.Body
 	if req.Method == http.MethodGet || req.Method == http.MethodHead {
 		body = nil
 	}
