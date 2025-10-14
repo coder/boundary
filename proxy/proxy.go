@@ -309,7 +309,7 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 	// Copy response back to client
 	err = resp.Write(conn)
 	if err != nil {
-		p.logger.Error("Failed to forward HTTPS request", "error", err)
+		p.logger.Error("Failed to forward HTTP request", "error", err)
 		return
 	}
 
@@ -354,8 +354,14 @@ For more help: https://github.com/coder/boundary
 	resp.Body = io.NopCloser(strings.NewReader(body))
 	resp.ContentLength = int64(len(body))
 
-	// Write to connection
-	resp.Write(conn)
+	// Copy response back to client
+	err := resp.Write(conn)
+	if err != nil {
+		p.logger.Error("Failed to write blocker response", "error", err)
+		return
+	}
+
+	p.logger.Debug("Successfully wrote to connection")
 }
 
 // connectionWrapper lets us "unread" the peeked byte
