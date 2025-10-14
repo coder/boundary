@@ -25,12 +25,12 @@ curl -fsSL https://raw.githubusercontent.com/coder/boundary/main/install.sh | ba
 
 ```bash
 # Allow only requests to github.com
-boundary --allow "github.com" -- curl https://github.com
+boundary --allow "domain=github.com" -- curl https://github.com
 
 # Allow full access to GitHub issues API, but only GET/HEAD elsewhere on GitHub
 boundary \
-  --allow "github.com/api/issues/*" \
-  --allow "GET,HEAD github.com" \
+  --allow "domain=github.com path=/api/issues/*" \
+  --allow "method=GET,HEAD domain=github.com" \
   -- npm install
 
 # Default deny-all: everything is blocked unless explicitly allowed
@@ -41,16 +41,20 @@ boundary -- curl https://example.com
 
 ### Format
 ```text
---allow "pattern"                    # All HTTP methods allowed
---allow "METHOD[,METHOD] pattern"    # Specific methods only
+--allow "key=value [key=value ...]"
 ```
+
+**Keys:**
+- `method` - HTTP method(s), comma-separated (GET, POST, etc.)
+- `domain` - Domain/hostname pattern
+- `path` - URL path pattern
 
 ### Examples
 ```bash
-boundary --allow "github.com" -- git pull
-boundary --allow "*.github.com" -- npm install           # GitHub subdomains
-boundary --allow "api.*" -- ./app                        # Any API domain
-boundary --allow "GET,HEAD api.github.com" -- curl https://api.github.com
+boundary --allow "domain=github.com" -- git pull
+boundary --allow "domain=*.github.com" -- npm install           # GitHub subdomains
+boundary --allow "method=GET,HEAD domain=api.github.com" -- curl https://api.github.com
+boundary --allow "method=POST domain=api.example.com path=/users" -- ./app
 ```
 
 Wildcards: `*` matches any characters. All traffic is denied unless explicitly allowed.
@@ -58,8 +62,8 @@ Wildcards: `*` matches any characters. All traffic is denied unless explicitly a
 ## Logging
 
 ```bash
-boundary --log-level info --allow "*" -- npm install     # Show all requests
-boundary --log-level debug --allow "github.com" -- git pull  # Debug info
+boundary --log-level info --allow "method=*" -- npm install     # Show all requests
+boundary --log-level debug --allow "domain=github.com" -- git pull  # Debug info
 ```
 
 **Log Levels:** `error`, `warn` (default), `info`, `debug`
@@ -70,10 +74,10 @@ When you can't or don't want to run with sudo privileges, use `--unprivileged`:
 
 ```bash
 # Run without network isolation (uses HTTP_PROXY/HTTPS_PROXY environment variables)
-boundary --unprivileged --allow "github.com" -- npm install
+boundary --unprivileged --allow "domain=github.com" -- npm install
 
 # Useful in containers or restricted environments
-boundary --unprivileged --allow "*.npmjs.org" --allow "registry.npmjs.org" -- npm install
+boundary --unprivileged --allow "domain=*.npmjs.org" --allow "domain=registry.npmjs.org" -- npm install
 ```
 
 **Unprivileged Mode:**
