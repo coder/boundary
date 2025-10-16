@@ -187,6 +187,7 @@ func (p *Server) handleHTTPConnection(conn net.Conn) {
 	p.auditor.AuditRequest(audit.Request{
 		Method:  req.Method,
 		URL:     req.URL.String(),
+		Host:    req.Host,
 		Allowed: result.Allowed,
 		Rule:    result.Rule,
 	})
@@ -237,6 +238,7 @@ func (p *Server) handleTLSConnection(conn net.Conn) {
 	p.auditor.AuditRequest(audit.Request{
 		Method:  req.Method,
 		URL:     req.URL.String(),
+		Host:    req.Host,
 		Allowed: result.Allowed,
 		Rule:    result.Rule,
 	})
