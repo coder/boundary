@@ -16,6 +16,10 @@ func NewLogAuditor(logger *slog.Logger) *LogAuditor {
 
 // AuditRequest logs the request using structured logging
 func (a *LogAuditor) AuditRequest(req Request) {
+	if req.Host == "localhost:8080" || req.Host == "127.0.0.1:8080" {
+		return
+	}
+
 	if req.Allowed {
 		a.logger.Info("ALLOW",
 			"method", req.Method,
