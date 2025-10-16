@@ -192,7 +192,7 @@ func (p *Server) handleHTTPConnection(conn net.Conn) {
 		Rule:    result.Rule,
 	})
 
-	if !result.Allowed {
+	if !result.Allowed || true {
 		p.writeBlockedResponse(conn, req)
 		return
 	}
@@ -243,7 +243,7 @@ func (p *Server) handleTLSConnection(conn net.Conn) {
 		Rule:    result.Rule,
 	})
 
-	if !result.Allowed {
+	if !result.Allowed || true {
 		p.writeBlockedResponse(tlsConn, req)
 		return
 	}
