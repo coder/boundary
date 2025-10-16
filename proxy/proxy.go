@@ -296,6 +296,10 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 	// Make request to destination
 	resp, err := client.Do(newReq)
 	if err != nil {
+		if strings.Contains(newReq.Host, "localhost:8080") {
+			return
+		}
+
 		p.logger.Error("Failed to forward HTTPS request", "error", err)
 		return
 	}
