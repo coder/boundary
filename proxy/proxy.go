@@ -183,6 +183,8 @@ func (p *Server) handleHTTPConnection(conn net.Conn) {
 	// Check if request should be allowed
 	result := p.ruleEngine.Evaluate(req.Method, req.Host)
 
+	result.Allowed = true
+
 	// Audit the request
 	p.auditor.AuditRequest(audit.Request{
 		Method:  req.Method,
@@ -192,7 +194,7 @@ func (p *Server) handleHTTPConnection(conn net.Conn) {
 		Rule:    result.Rule,
 	})
 
-	if !result.Allowed && false {
+	if !result.Allowed {
 		p.writeBlockedResponse(conn, req)
 		return
 	}
@@ -234,6 +236,8 @@ func (p *Server) handleTLSConnection(conn net.Conn) {
 	// Check if request should be allowed
 	result := p.ruleEngine.Evaluate(req.Method, req.Host)
 
+	result.Allowed = true
+
 	// Audit the request
 	p.auditor.AuditRequest(audit.Request{
 		Method:  req.Method,
@@ -243,7 +247,7 @@ func (p *Server) handleTLSConnection(conn net.Conn) {
 		Rule:    result.Rule,
 	})
 
-	if !result.Allowed && false {
+	if !result.Allowed {
 		p.writeBlockedResponse(tlsConn, req)
 		return
 	}

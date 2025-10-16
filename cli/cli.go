@@ -180,7 +180,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 	// Create jailer with cert path from TLS setup
 	jailer, err := createJailer(jail.Config{
 		Logger:        logger,
-		HttpProxyPort: 8080,
+		HttpProxyPort: 8087,
 		Username:      username,
 		Uid:           uid,
 		Gid:           gid,

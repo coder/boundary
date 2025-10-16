@@ -34,7 +34,7 @@ type Boundary struct {
 func New(ctx context.Context, config Config) (*Boundary, error) {
 	// Create proxy server
 	proxyServer := proxy.NewProxyServer(proxy.Config{
-		HTTPPort:   8080,
+		HTTPPort:   8087,
 		RuleEngine: config.RuleEngine,
 		Auditor:    config.Auditor,
 		Logger:     config.Logger,
