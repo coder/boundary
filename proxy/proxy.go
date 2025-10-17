@@ -331,7 +331,11 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 		"method", newReq.Method,
 		"host", newReq.Host,
 		"requestBodyBytes", string(requestBodyBytes),
+		"URL", newReq.URL,
 	)
+	for hKey, hVal := range newReq.Header {
+		p.logger.Debug("Forwarded Request Header", hKey, hVal)
+	}
 
 	// Read the body and explicitly set Content-Length header, otherwise client can hung up on the request.
 	bodyBytes, err := io.ReadAll(resp.Body)
