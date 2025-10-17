@@ -101,14 +101,16 @@ func isChild() bool {
 // Run executes the boundary command with the given configuration and arguments
 func Run(ctx context.Context, config Config, args []string) error {
 	if isChild() {
-		log.Printf("boundary CHILD process is started")
+		// TODO: use logger
+		//log.Printf("boundary CHILD process is started")
 
 		vethNetJail := os.Getenv("VETH_JAIL_NAME")
 		err := jail.SetupChildNetworking(vethNetJail)
 		if err != nil {
 			return fmt.Errorf("failed to setup child networking: %v", err)
 		}
-		log.Printf("child networking is successfully configured")
+		// TODO: use logger
+		//log.Printf("child networking is successfully configured")
 
 		// Program to run
 		bin := args[0]
