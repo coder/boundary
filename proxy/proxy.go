@@ -183,7 +183,7 @@ func (p *Server) handleHTTPConnection(conn net.Conn) {
 	// Check if request should be allowed
 	result := p.ruleEngine.Evaluate(req.Method, req.Host)
 
-	result.Allowed = true
+	//result.Allowed = true
 
 	// Audit the request
 	p.auditor.AuditRequest(audit.Request{
@@ -236,7 +236,7 @@ func (p *Server) handleTLSConnection(conn net.Conn) {
 	// Check if request should be allowed
 	result := p.ruleEngine.Evaluate(req.Method, req.Host)
 
-	result.Allowed = true
+	//result.Allowed = true
 
 	// Audit the request
 	p.auditor.AuditRequest(audit.Request{
