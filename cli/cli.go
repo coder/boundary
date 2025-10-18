@@ -28,6 +28,7 @@ type Config struct {
 	LogLevel     string
 	LogDir       string
 	Unprivileged bool
+	ProxyPort    int64
 }
 
 // NewCommand creates and returns the root serpent command
@@ -86,6 +87,13 @@ func BaseCommand() *serpent.Command {
 				Description: "Run in unprivileged mode (no network isolation, uses proxy environment variables).",
 				Value:       serpent.BoolOf(&config.Unprivileged),
 			},
+			{
+				Flag:        "proxy-port",
+				Env:         "PROXY_PORT",
+				Description: "Set a port for HTTP proxy.",
+				Default:     "8080",
+				Value:       serpent.Int64Of(&config.ProxyPort),
+			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
 			args := inv.Args
@@ -100,15 +108,20 @@ func isChild() bool {
 
 // Run executes the boundary command with the given configuration and arguments
 func Run(ctx context.Context, config Config, args []string) error {
+	logger, err := setupLogging(config)
+	if err != nil {
+		return fmt.Errorf("could not set up logging: %v", err)
+	}
+
 	if isChild() {
-		log.Printf("boundary CHILD process is started")
+		logger.Info("boundary CHILD process is started")
 
 		vethNetJail := os.Getenv("VETH_JAIL_NAME")
 		err := jail.SetupChildNetworking(vethNetJail)
 		if err != nil {
 			return fmt.Errorf("failed to setup child networking: %v", err)
 		}
-		log.Printf("child networking is successfully configured")
+		logger.Info("child networking is successfully configured")
 
 		// Program to run
 		bin := args[0]
@@ -130,10 +143,6 @@ func Run(ctx context.Context, config Config, args []string) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	logger, err := setupLogging(config)
-	if err != nil {
-		return fmt.Errorf("could not set up logging: %v", err)
-	}
 	username, uid, gid, homeDir, configDir := util.GetUserInfo()
 
 	// Get command arguments
@@ -180,7 +189,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 	// Create jailer with cert path from TLS setup
 	jailer, err := createJailer(jail.Config{
 		Logger:        logger,
-		HttpProxyPort: 8080,
+		HttpProxyPort: int(config.ProxyPort),
 		Username:      username,
 		Uid:           uid,
 		Gid:           gid,
@@ -199,6 +208,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 		TLSConfig:  tlsConfig,
 		Logger:     logger,
 		Jailer:     jailer,
+		ProxyPort:  int(config.ProxyPort),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create boundary instance: %v", err)
