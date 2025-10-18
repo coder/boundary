@@ -20,6 +20,7 @@ type Config struct {
 	TLSConfig  *tls.Config
 	Logger     *slog.Logger
 	Jailer     jail.Jailer
+	ProxyPort  int
 }
 
 type Boundary struct {
@@ -34,7 +35,7 @@ type Boundary struct {
 func New(ctx context.Context, config Config) (*Boundary, error) {
 	// Create proxy server
 	proxyServer := proxy.NewProxyServer(proxy.Config{
-		HTTPPort:   8087,
+		HTTPPort:   config.ProxyPort,
 		RuleEngine: config.RuleEngine,
 		Auditor:    config.Auditor,
 		Logger:     config.Logger,

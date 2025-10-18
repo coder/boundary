@@ -28,6 +28,7 @@ type Config struct {
 	LogLevel     string
 	LogDir       string
 	Unprivileged bool
+	ProxyPort    int64
 }
 
 // NewCommand creates and returns the root serpent command
@@ -85,6 +86,13 @@ func BaseCommand() *serpent.Command {
 				Env:         "BOUNDARY_UNPRIVILEGED",
 				Description: "Run in unprivileged mode (no network isolation, uses proxy environment variables).",
 				Value:       serpent.BoolOf(&config.Unprivileged),
+			},
+			{
+				Flag:        "proxy-port",
+				Env:         "PROXY_PORT",
+				Description: "Set a port for HTTP proxy.",
+				Default:     "8080",
+				Value:       serpent.Int64Of(&config.ProxyPort),
 			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
@@ -181,7 +189,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 	// Create jailer with cert path from TLS setup
 	jailer, err := createJailer(jail.Config{
 		Logger:        logger,
-		HttpProxyPort: 8087,
+		HttpProxyPort: int(config.ProxyPort),
 		Username:      username,
 		Uid:           uid,
 		Gid:           gid,
@@ -200,6 +208,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 		TLSConfig:  tlsConfig,
 		Logger:     logger,
 		Jailer:     jailer,
+		ProxyPort:  int(config.ProxyPort),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create boundary instance: %v", err)
