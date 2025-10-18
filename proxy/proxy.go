@@ -276,7 +276,6 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 	var requestBodyBytes []byte
 	{
 		var err error
-		// Read the body and explicitly set Content-Length header, otherwise client can hung up on the request.
 		requestBodyBytes, err = io.ReadAll(req.Body)
 		if err != nil {
 			p.logger.Error("can't read response body", "error", err)
