@@ -183,8 +183,6 @@ func (p *Server) handleHTTPConnection(conn net.Conn) {
 	// Check if request should be allowed
 	result := p.ruleEngine.Evaluate(req.Method, req.Host)
 
-	//result.Allowed = true
-
 	// Audit the request
 	p.auditor.AuditRequest(audit.Request{
 		Method:  req.Method,
@@ -235,8 +233,6 @@ func (p *Server) handleTLSConnection(conn net.Conn) {
 
 	// Check if request should be allowed
 	result := p.ruleEngine.Evaluate(req.Method, req.Host)
-
-	//result.Allowed = true
 
 	// Audit the request
 	p.auditor.AuditRequest(audit.Request{
@@ -318,15 +314,12 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 	// Make request to destination
 	resp, err := client.Do(newReq)
 	if err != nil {
-		if strings.Contains(newReq.Host, "localhost:8080") {
-			return
-		}
-
 		p.logger.Error("Failed to forward HTTPS request", "error", err)
 		return
 	}
 
 	p.logger.Debug("🔒 HTTPS Response", "status code", resp.StatusCode, "status", resp.Status)
+
 	p.logger.Debug("Forwarded Request",
 		"method", newReq.Method,
 		"host", newReq.Host,
