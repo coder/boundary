@@ -324,6 +324,9 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 		"host", newReq.Host,
 		"requestBodyBytes", string(requestBodyBytes),
 		"URL", newReq.URL,
+		"proto", req.Proto,
+		"proto_major", req.ProtoMajor,
+		"proto_minor", req.ProtoMinor,
 	)
 	for hKey, hVal := range newReq.Header {
 		p.logger.Debug("Forwarded Request Header", hKey, hVal)
