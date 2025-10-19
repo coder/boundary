@@ -367,6 +367,10 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 	}
 	resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
+	resp.Proto = "HTTP/1.1"
+	resp.ProtoMajor = 1
+	resp.ProtoMinor = 1
+
 	// Copy response back to client
 	// Copy response back to client
 	var buf bytes.Buffer
