@@ -344,6 +344,17 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 	}
 	resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
+	// The downstream client (Claude) always communicates over HTTP/1.1.
+	// However, Go's default HTTP client may negotiate an HTTP/2 connection
+	// with the upstream server via ALPN during TLS handshake.
+	// This can cause the response's Proto field to be set to "HTTP/2.0",
+	// which would produce an invalid response for an HTTP/1.1 client.
+	// To prevent this mismatch, we explicitly normalize the response
+	// to HTTP/1.1 before writing it back to the client.
+	resp.Proto = "HTTP/1.1"
+	resp.ProtoMajor = 1
+	resp.ProtoMinor = 1
+
 	// Copy response back to client
 	err = resp.Write(conn)
 	if err != nil {
