@@ -364,7 +364,24 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 	resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
 	// Copy response back to client
-	err = resp.Write(conn)
+	// Copy response back to client
+	var buf bytes.Buffer
+	err = resp.Write(&buf)
+	if err != nil {
+		p.logger.Error("Failed to write response to buffer",
+			"error", err,
+			"host", req.Host,
+			"method", req.Method,
+			"bodyBytes", string(bodyBytes),
+		)
+		return
+	}
+
+	// Print the buffer contents
+	p.logger.Debug("Response buffer contents", "response", buf.String())
+
+	// Write buffer to connection
+	_, err = conn.Write(buf.Bytes())
 	if err != nil {
 		p.logger.Error("Failed to forward back HTTP response",
 			"error", err,
