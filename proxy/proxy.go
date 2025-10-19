@@ -253,6 +253,22 @@ func (p *Server) handleTLSConnection(conn net.Conn) {
 }
 
 func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
+	{
+		p.logger.Debug("\n\n#########################")
+		p.logger.Debug("Initial Request",
+			"method", req.Method,
+			"host", req.Host,
+			"URL", req.URL,
+			"proto", req.Proto,
+			"proto_major", req.ProtoMajor,
+			"proto_minor", req.ProtoMinor,
+		)
+		for hKey, hVal := range req.Header {
+			p.logger.Debug("Initial Request Header", hKey, hVal)
+		}
+		p.logger.Debug("#########################\n\n")
+	}
+
 	// Create HTTP client
 	client := &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
