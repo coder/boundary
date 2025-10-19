@@ -343,6 +343,10 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 		"proto", req.Proto,
 		"proto_major", req.ProtoMajor,
 		"proto_minor", req.ProtoMinor,
+
+		"new_proto", newReq.Proto,
+		"new_proto_major", newReq.ProtoMajor,
+		"new_proto_minor", newReq.ProtoMinor,
 	)
 	for hKey, hVal := range newReq.Header {
 		p.logger.Debug("Forwarded Request Header", hKey, hVal)
@@ -373,6 +377,7 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 			"host", req.Host,
 			"method", req.Method,
 			"bodyBytes", string(bodyBytes),
+			"resp.Proto", resp.Proto,
 		)
 		return
 	}
