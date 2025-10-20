@@ -187,6 +187,7 @@ func (p *Server) handleHTTPConnection(conn net.Conn) {
 	p.auditor.AuditRequest(audit.Request{
 		Method:  req.Method,
 		URL:     req.URL.String(),
+		Host:    req.Host,
 		Allowed: result.Allowed,
 		Rule:    result.Rule,
 	})
@@ -237,6 +238,7 @@ func (p *Server) handleTLSConnection(conn net.Conn) {
 	p.auditor.AuditRequest(audit.Request{
 		Method:  req.Method,
 		URL:     req.URL.String(),
+		Host:    req.Host,
 		Allowed: result.Allowed,
 		Rule:    result.Rule,
 	})
@@ -270,6 +272,23 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 		Path:     req.URL.Path,
 		RawQuery: req.URL.RawQuery,
 	}
+
+	//var requestBodyBytes []byte
+	//{
+	//	var err error
+	//	requestBodyBytes, err = io.ReadAll(req.Body)
+	//	if err != nil {
+	//		p.logger.Error("can't read response body", "error", err)
+	//		return
+	//	}
+	//	err = req.Body.Close()
+	//	if err != nil {
+	//		p.logger.Error("Failed to close HTTP response body", "error", err)
+	//		return
+	//	}
+	//	req.Body = io.NopCloser(bytes.NewBuffer(requestBodyBytes))
+	//}
+
 	var body = req.Body
 	if req.Method == http.MethodGet || req.Method == http.MethodHead {
 		body = nil
@@ -300,6 +319,16 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 
 	p.logger.Debug("🔒 HTTPS Response", "status code", resp.StatusCode, "status", resp.Status)
 
+	p.logger.Debug("Forwarded Request",
+		"method", newReq.Method,
+		"host", newReq.Host,
+		//"requestBodyBytes", string(requestBodyBytes),
+		"URL", newReq.URL,
+	)
+	//for hKey, hVal := range newReq.Header {
+	//	p.logger.Debug("Forwarded Request Header", hKey, hVal)
+	//}
+
 	// Read the body and explicitly set Content-Length header, otherwise client can hung up on the request.
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -315,10 +344,26 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 	}
 	resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
+	// The downstream client (Claude) always communicates over HTTP/1.1.
+	// However, Go's default HTTP client may negotiate an HTTP/2 connection
+	// with the upstream server via ALPN during TLS handshake.
+	// This can cause the response's Proto field to be set to "HTTP/2.0",
+	// which would produce an invalid response for an HTTP/1.1 client.
+	// To prevent this mismatch, we explicitly normalize the response
+	// to HTTP/1.1 before writing it back to the client.
+	resp.Proto = "HTTP/1.1"
+	resp.ProtoMajor = 1
+	resp.ProtoMinor = 1
+
 	// Copy response back to client
 	err = resp.Write(conn)
 	if err != nil {
-		p.logger.Error("Failed to forward HTTP request", "error", err)
+		p.logger.Error("Failed to forward back HTTP response",
+			"error", err,
+			"host", req.Host,
+			"method", req.Method,
+			//"bodyBytes", string(bodyBytes),
+		)
 		return
 	}
 
