@@ -3,6 +3,7 @@ package proxy
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -10,10 +11,12 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/coder/boundary/audit"
 	"github.com/coder/boundary/rules"
@@ -29,6 +32,7 @@ type Server struct {
 	started    atomic.Bool
 
 	listener net.Listener
+	pprofServer *http.Server
 }
 
 // Config holds configuration for the proxy server
@@ -58,6 +62,23 @@ func (p *Server) Start() error {
 	}
 
 	p.logger.Info("Starting HTTP proxy with TLS termination", "port", p.httpPort)
+	
+	// Start pprof server on a different port
+	go func() {
+		pprofMux := http.NewServeMux()
+		pprofMux.HandleFunc("/debug/pprof/", http.DefaultServeMux.ServeHTTP)
+		
+		p.pprofServer = &http.Server{
+			Addr:    ":6060",  // pprof port
+			Handler: pprofMux,
+		}
+		
+		p.logger.Info("Starting pprof server", "port", 6060)
+		if err := p.pprofServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			p.logger.Error("pprof server error", "error", err)
+		}
+	}()
+	
 	var err error
 	p.listener, err = net.Listen("tcp", fmt.Sprintf(":%d", p.httpPort))
 	if err != nil {
@@ -103,6 +124,15 @@ func (p *Server) Stop() error {
 	if err != nil {
 		p.logger.Error("Failed to close listener", "error", err)
 		return err
+	}
+
+	// Close pprof server
+	if p.pprofServer != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := p.pprofServer.Shutdown(ctx); err != nil {
+			p.logger.Error("Failed to shutdown pprof server", "error", err)
+		}
 	}
 
 	return nil
