@@ -31,7 +31,7 @@ type Server struct {
 	httpPort   int
 	started    atomic.Bool
 
-	listener net.Listener
+	listener    net.Listener
 	pprofServer *http.Server
 }
 
@@ -62,23 +62,20 @@ func (p *Server) Start() error {
 	}
 
 	p.logger.Info("Starting HTTP proxy with TLS termination", "port", p.httpPort)
-	
+
 	// Start pprof server on a different port
 	go func() {
-		pprofMux := http.NewServeMux()
-		pprofMux.HandleFunc("/debug/pprof/", http.DefaultServeMux.ServeHTTP)
-		
 		p.pprofServer = &http.Server{
-			Addr:    ":6060",  // pprof port
-			Handler: pprofMux,
+			Addr:    ":6060", // pprof port
+			Handler: http.DefaultServeMux,
 		}
-		
+
 		p.logger.Info("Starting pprof server", "port", 6060)
-		if err := p.pprofServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := p.pprofServer.ListenAndServe(); err != nil && errors.Is(err, http.ErrServerClosed) {
 			p.logger.Error("pprof server error", "error", err)
 		}
 	}()
-	
+
 	var err error
 	p.listener, err = net.Listen("tcp", fmt.Sprintf(":%d", p.httpPort))
 	if err != nil {
