@@ -31,8 +31,8 @@ type Server struct {
 	httpPort   int
 	started    atomic.Bool
 
-	listener    net.Listener
-	pprofServer *http.Server
+	listener     net.Listener
+	pprofServer  *http.Server
 	pprofEnabled bool
 	pprofPort    int
 }
@@ -51,11 +51,11 @@ type Config struct {
 // NewProxyServer creates a new proxy server instance
 func NewProxyServer(config Config) *Server {
 	return &Server{
-		ruleEngine: config.RuleEngine,
-		auditor:    config.Auditor,
-		logger:     config.Logger,
-		tlsConfig:  config.TLSConfig,
-		httpPort:   config.HTTPPort,
+		ruleEngine:   config.RuleEngine,
+		auditor:      config.Auditor,
+		logger:       config.Logger,
+		tlsConfig:    config.TLSConfig,
+		httpPort:     config.HTTPPort,
 		pprofEnabled: config.PprofEnabled,
 		pprofPort:    config.PprofPort,
 	}
@@ -76,12 +76,19 @@ func (p *Server) Start() error {
 			Handler: http.DefaultServeMux,
 		}
 
+		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", p.pprofPort))
+		if err != nil {
+			p.logger.Error("failed to listen on port for pprof server", "port", p.pprofPort, "error", err)
+			return fmt.Errorf("failed to listen on port %v for pprof server: %v", p.pprofPort, err)
+		}
+
 		go func() {
-			p.logger.Info("Starting pprof server", "port", p.pprofPort)
-			if err := p.pprofServer.ListenAndServe(); err != nil && errors.Is(err, http.ErrServerClosed) {
+			p.logger.Info("Serving pprof on existing listener", "port", p.pprofPort)
+			if err := p.pprofServer.Serve(ln); err != nil && errors.Is(err, http.ErrServerClosed) {
 				p.logger.Error("pprof server error", "error", err)
 			}
 		}()
+
 	}
 
 	var err error
