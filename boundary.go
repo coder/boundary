@@ -21,6 +21,8 @@ type Config struct {
 	Logger     *slog.Logger
 	Jailer     jail.Jailer
 	ProxyPort  int
+	PprofEnabled bool
+	PprofPort    int
 }
 
 type Boundary struct {
@@ -35,11 +37,13 @@ type Boundary struct {
 func New(ctx context.Context, config Config) (*Boundary, error) {
 	// Create proxy server
 	proxyServer := proxy.NewProxyServer(proxy.Config{
-		HTTPPort:   config.ProxyPort,
-		RuleEngine: config.RuleEngine,
-		Auditor:    config.Auditor,
-		Logger:     config.Logger,
-		TLSConfig:  config.TLSConfig,
+		HTTPPort:     config.ProxyPort,
+		RuleEngine:   config.RuleEngine,
+		Auditor:      config.Auditor,
+		Logger:       config.Logger,
+		TLSConfig:    config.TLSConfig,
+		PprofEnabled: config.PprofEnabled,
+		PprofPort:    config.PprofPort,
 	})
 
 	// Create cancellable context for boundary

@@ -33,15 +33,19 @@ type Server struct {
 
 	listener    net.Listener
 	pprofServer *http.Server
+	pprofEnabled bool
+	pprofPort    int
 }
 
 // Config holds configuration for the proxy server
 type Config struct {
-	HTTPPort   int
-	RuleEngine rules.Evaluator
-	Auditor    audit.Auditor
-	Logger     *slog.Logger
-	TLSConfig  *tls.Config
+	HTTPPort     int
+	RuleEngine   rules.Evaluator
+	Auditor      audit.Auditor
+	Logger       *slog.Logger
+	TLSConfig    *tls.Config
+	PprofEnabled bool
+	PprofPort    int
 }
 
 // NewProxyServer creates a new proxy server instance
@@ -52,6 +56,8 @@ func NewProxyServer(config Config) *Server {
 		logger:     config.Logger,
 		tlsConfig:  config.TLSConfig,
 		httpPort:   config.HTTPPort,
+		pprofEnabled: config.PprofEnabled,
+		pprofPort:    config.PprofPort,
 	}
 }
 
@@ -63,19 +69,20 @@ func (p *Server) Start() error {
 
 	p.logger.Info("Starting HTTP proxy with TLS termination", "port", p.httpPort)
 
-	p.pprofServer = &http.Server{
-		Addr:    ":6060", // pprof port
-		Handler: http.DefaultServeMux,
-	}
-
-	// Start pprof server on a different port
-	go func() {
-		p.logger.Info("Starting pprof server", "port", 6060)
-
-		if err := p.pprofServer.ListenAndServe(); err != nil && errors.Is(err, http.ErrServerClosed) {
-			p.logger.Error("pprof server error", "error", err)
+	// Start pprof server if enabled
+	if p.pprofEnabled {
+		p.pprofServer = &http.Server{
+			Addr:    fmt.Sprintf(":%d", p.pprofPort),
+			Handler: http.DefaultServeMux,
 		}
-	}()
+
+		go func() {
+			p.logger.Info("Starting pprof server", "port", p.pprofPort)
+			if err := p.pprofServer.ListenAndServe(); err != nil && errors.Is(err, http.ErrServerClosed) {
+				p.logger.Error("pprof server error", "error", err)
+			}
+		}()
+	}
 
 	var err error
 	p.listener, err = net.Listen("tcp", fmt.Sprintf(":%d", p.httpPort))
