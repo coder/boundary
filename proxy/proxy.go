@@ -63,14 +63,15 @@ func (p *Server) Start() error {
 
 	p.logger.Info("Starting HTTP proxy with TLS termination", "port", p.httpPort)
 
+	p.pprofServer = &http.Server{
+		Addr:    ":6060", // pprof port
+		Handler: http.DefaultServeMux,
+	}
+
 	// Start pprof server on a different port
 	go func() {
-		p.pprofServer = &http.Server{
-			Addr:    ":6060", // pprof port
-			Handler: http.DefaultServeMux,
-		}
-
 		p.logger.Info("Starting pprof server", "port", 6060)
+
 		if err := p.pprofServer.ListenAndServe(); err != nil && errors.Is(err, http.ErrServerClosed) {
 			p.logger.Error("pprof server error", "error", err)
 		}
