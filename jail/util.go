@@ -1,19 +1,9 @@
 package jail
 
 import (
-	"fmt"
 	"os"
 	"strings"
-	"time"
 )
-
-const (
-	prefix = "coder_boundary"
-)
-
-func newNamespaceName() string {
-	return fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano()%10000000)
-}
 
 func getEnvs(configDir string, caCertPath string) []string {
 	e := os.Environ()

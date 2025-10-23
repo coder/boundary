@@ -8,8 +8,9 @@ import (
 )
 
 type Jailer interface {
-	Start() error
+	ConfigureBeforeCommandExecution() error
 	Command(command []string) *exec.Cmd
+	ConfigureAfterCommandExecution(processPID int) error
 	Close() error
 }
 

@@ -3,11 +3,15 @@ package cli
 import (
 	"context"
 	"fmt"
+	"log"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/coder/boundary"
 	"github.com/coder/boundary/audit"
@@ -22,7 +26,11 @@ import (
 type Config struct {
 	AllowStrings []string
 	LogLevel     string
+	LogDir       string
 	Unprivileged bool
+	ProxyPort    int64
+	PprofEnabled bool
+	PprofPort    int64
 }
 
 // NewCommand creates and returns the root serpent command
@@ -56,24 +64,50 @@ func BaseCommand() *serpent.Command {
 		Short: "Network isolation tool for monitoring and restricting HTTP/HTTPS requests",
 		Long:  `boundary creates an isolated network environment for target processes, intercepting HTTP/HTTPS traffic through a transparent proxy that enforces user-defined allow rules.`,
 		Options: []serpent.Option{
-			serpent.Option{
+			{
 				Flag:        "allow",
 				Env:         "BOUNDARY_ALLOW",
 				Description: "Allow rule (repeatable). Format: \"pattern\" or \"METHOD[,METHOD] pattern\".",
 				Value:       serpent.StringArrayOf(&config.AllowStrings),
 			},
-			serpent.Option{
+			{
 				Flag:        "log-level",
 				Env:         "BOUNDARY_LOG_LEVEL",
 				Description: "Set log level (error, warn, info, debug).",
 				Default:     "warn",
 				Value:       serpent.StringOf(&config.LogLevel),
 			},
-			serpent.Option{
+			{
+				Flag:        "log-dir",
+				Env:         "BOUNDARY_LOG_DIR",
+				Description: "Set a directory to write logs to rather than stderr.",
+				Value:       serpent.StringOf(&config.LogDir),
+			},
+			{
 				Flag:        "unprivileged",
 				Env:         "BOUNDARY_UNPRIVILEGED",
 				Description: "Run in unprivileged mode (no network isolation, uses proxy environment variables).",
 				Value:       serpent.BoolOf(&config.Unprivileged),
+			},
+			{
+				Flag:        "proxy-port",
+				Env:         "PROXY_PORT",
+				Description: "Set a port for HTTP proxy.",
+				Default:     "8080",
+				Value:       serpent.Int64Of(&config.ProxyPort),
+			},
+			{
+				Flag:        "pprof",
+				Env:         "BOUNDARY_PPROF",
+				Description: "Enable pprof profiling server.",
+				Value:       serpent.BoolOf(&config.PprofEnabled),
+			},
+			{
+				Flag:        "pprof-port",
+				Env:         "BOUNDARY_PPROF_PORT",
+				Description: "Set port for pprof profiling server.",
+				Default:     "6060",
+				Value:       serpent.Int64Of(&config.PprofPort),
 			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
@@ -83,11 +117,47 @@ func BaseCommand() *serpent.Command {
 	}
 }
 
+func isChild() bool {
+	return os.Getenv("CHILD") == "true"
+}
+
 // Run executes the boundary command with the given configuration and arguments
 func Run(ctx context.Context, config Config, args []string) error {
+	logger, err := setupLogging(config)
+	if err != nil {
+		return fmt.Errorf("could not set up logging: %v", err)
+	}
+
+	if isChild() {
+		logger.Info("boundary CHILD process is started")
+
+		vethNetJail := os.Getenv("VETH_JAIL_NAME")
+		err := jail.SetupChildNetworking(vethNetJail)
+		if err != nil {
+			return fmt.Errorf("failed to setup child networking: %v", err)
+		}
+		logger.Info("child networking is successfully configured")
+
+		// Program to run
+		bin := args[0]
+		args = args[1:]
+
+		cmd := exec.Command(bin, args...)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		err = cmd.Run()
+		if err != nil {
+			log.Printf("failed to run %s: %v", bin, err)
+			return err
+		}
+
+		return nil
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	logger := setupLogging(config.LogLevel)
+
 	username, uid, gid, homeDir, configDir := util.GetUserInfo()
 
 	// Get command arguments
@@ -134,7 +204,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 	// Create jailer with cert path from TLS setup
 	jailer, err := createJailer(jail.Config{
 		Logger:        logger,
-		HttpProxyPort: 8080,
+		HttpProxyPort: int(config.ProxyPort),
 		Username:      username,
 		Uid:           uid,
 		Gid:           gid,
@@ -148,11 +218,14 @@ func Run(ctx context.Context, config Config, args []string) error {
 
 	// Create boundary instance
 	boundaryInstance, err := boundary.New(ctx, boundary.Config{
-		RuleEngine: ruleEngine,
-		Auditor:    auditor,
-		TLSConfig:  tlsConfig,
-		Logger:     logger,
-		Jailer:     jailer,
+		RuleEngine:   ruleEngine,
+		Auditor:      auditor,
+		TLSConfig:    tlsConfig,
+		Logger:       logger,
+		Jailer:       jailer,
+		ProxyPort:    int(config.ProxyPort),
+		PprofEnabled: config.PprofEnabled,
+		PprofPort:    int(config.PprofPort),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create boundary instance: %v", err)
@@ -178,15 +251,26 @@ func Run(ctx context.Context, config Config, args []string) error {
 	// Execute command in boundary
 	go func() {
 		defer cancel()
-		cmd := boundaryInstance.Command(args)
-		cmd.Stderr = os.Stderr
-		cmd.Stdout = os.Stdout
-		cmd.Stdin = os.Stdin
+		cmd := boundaryInstance.Command(os.Args)
 
-		logger.Debug("Executing command in boundary", "command", strings.Join(args, " "))
-		err := cmd.Run()
+		logger.Debug("Executing command in boundary", "command", strings.Join(os.Args, " "))
+		err := cmd.Start()
+		if err != nil {
+			logger.Error("Command failed to start", "error", err)
+			return
+		}
+
+		err = boundaryInstance.ConfigureAfterCommandExecution(cmd.Process.Pid)
+		if err != nil {
+			logger.Error("configuration after command execution failed", "error", err)
+			return
+		}
+
+		logger.Debug("waiting on a child process to finish")
+		err = cmd.Wait()
 		if err != nil {
 			logger.Error("Command execution failed", "error", err)
+			return
 		}
 	}()
 
@@ -204,9 +288,9 @@ func Run(ctx context.Context, config Config, args []string) error {
 }
 
 // setupLogging creates a slog logger with the specified level
-func setupLogging(logLevel string) *slog.Logger {
+func setupLogging(config Config) (*slog.Logger, error) {
 	var level slog.Level
-	switch strings.ToLower(logLevel) {
+	switch strings.ToLower(config.LogLevel) {
 	case "error":
 		level = slog.LevelError
 	case "warn":
@@ -219,12 +303,34 @@ func setupLogging(logLevel string) *slog.Logger {
 		level = slog.LevelWarn // Default to warn if invalid level
 	}
 
+	logTarget := os.Stderr
+
+	if config.LogDir != "" {
+		// Set up the logging directory if it doesn't exist yet
+		if err := os.MkdirAll(config.LogDir, 0755); err != nil {
+			return nil, fmt.Errorf("could not set up log dir %s: %v", config.LogDir, err)
+		}
+
+		// Create a logfile (timestamp and pid to avoid race conditions with multiple boundary calls running)
+		logFilePath := fmt.Sprintf("boundary-%s-%d.log",
+			time.Now().Format("2006-01-02_15-04-05"),
+			os.Getpid())
+
+		logFile, err := os.Create(filepath.Join(config.LogDir, logFilePath))
+		if err != nil {
+			return nil, fmt.Errorf("could not create log file %s: %v", logFilePath, err)
+		}
+
+		// Set the log target to the file rather than stderr.
+		logTarget = logFile
+	}
+
 	// Create a standard slog logger with the appropriate level
-	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+	handler := slog.NewTextHandler(logTarget, &slog.HandlerOptions{
 		Level: level,
 	})
 
-	return slog.New(handler)
+	return slog.New(handler), nil
 }
 
 // createJailer creates a new jail instance for the current platform

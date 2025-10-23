@@ -20,10 +20,13 @@ func (a *LogAuditor) AuditRequest(req Request) {
 		a.logger.Info("ALLOW",
 			"method", req.Method,
 			"url", req.URL,
+			"host", req.Host,
 			"rule", req.Rule)
 	} else {
 		a.logger.Warn("DENY",
 			"method", req.Method,
-			"url", req.URL)
+			"url", req.URL,
+			"host", req.Host,
+		)
 	}
 }
