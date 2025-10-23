@@ -3,6 +3,7 @@ package proxy
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -10,10 +11,12 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/coder/boundary/audit"
 	"github.com/coder/boundary/rules"
@@ -28,26 +31,33 @@ type Server struct {
 	httpPort   int
 	started    atomic.Bool
 
-	listener net.Listener
+	listener     net.Listener
+	pprofServer  *http.Server
+	pprofEnabled bool
+	pprofPort    int
 }
 
 // Config holds configuration for the proxy server
 type Config struct {
-	HTTPPort   int
-	RuleEngine rules.Evaluator
-	Auditor    audit.Auditor
-	Logger     *slog.Logger
-	TLSConfig  *tls.Config
+	HTTPPort     int
+	RuleEngine   rules.Evaluator
+	Auditor      audit.Auditor
+	Logger       *slog.Logger
+	TLSConfig    *tls.Config
+	PprofEnabled bool
+	PprofPort    int
 }
 
 // NewProxyServer creates a new proxy server instance
 func NewProxyServer(config Config) *Server {
 	return &Server{
-		ruleEngine: config.RuleEngine,
-		auditor:    config.Auditor,
-		logger:     config.Logger,
-		tlsConfig:  config.TLSConfig,
-		httpPort:   config.HTTPPort,
+		ruleEngine:   config.RuleEngine,
+		auditor:      config.Auditor,
+		logger:       config.Logger,
+		tlsConfig:    config.TLSConfig,
+		httpPort:     config.HTTPPort,
+		pprofEnabled: config.PprofEnabled,
+		pprofPort:    config.PprofPort,
 	}
 }
 
@@ -58,6 +68,29 @@ func (p *Server) Start() error {
 	}
 
 	p.logger.Info("Starting HTTP proxy with TLS termination", "port", p.httpPort)
+
+	// Start pprof server if enabled
+	if p.pprofEnabled {
+		p.pprofServer = &http.Server{
+			Addr:    fmt.Sprintf(":%d", p.pprofPort),
+			Handler: http.DefaultServeMux,
+		}
+
+		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", p.pprofPort))
+		if err != nil {
+			p.logger.Error("failed to listen on port for pprof server", "port", p.pprofPort, "error", err)
+			return fmt.Errorf("failed to listen on port %v for pprof server: %v", p.pprofPort, err)
+		}
+
+		go func() {
+			p.logger.Info("Serving pprof on existing listener", "port", p.pprofPort)
+			if err := p.pprofServer.Serve(ln); err != nil && errors.Is(err, http.ErrServerClosed) {
+				p.logger.Error("pprof server error", "error", err)
+			}
+		}()
+
+	}
+
 	var err error
 	p.listener, err = net.Listen("tcp", fmt.Sprintf(":%d", p.httpPort))
 	if err != nil {
@@ -103,6 +136,15 @@ func (p *Server) Stop() error {
 	if err != nil {
 		p.logger.Error("Failed to close listener", "error", err)
 		return err
+	}
+
+	// Close pprof server
+	if p.pprofServer != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := p.pprofServer.Shutdown(ctx); err != nil {
+			p.logger.Error("Failed to shutdown pprof server", "error", err)
+		}
 	}
 
 	return nil

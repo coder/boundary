@@ -29,6 +29,8 @@ type Config struct {
 	LogDir       string
 	Unprivileged bool
 	ProxyPort    int64
+	PprofEnabled bool
+	PprofPort    int64
 }
 
 // NewCommand creates and returns the root serpent command
@@ -93,6 +95,19 @@ func BaseCommand() *serpent.Command {
 				Description: "Set a port for HTTP proxy.",
 				Default:     "8080",
 				Value:       serpent.Int64Of(&config.ProxyPort),
+			},
+			{
+				Flag:        "pprof",
+				Env:         "BOUNDARY_PPROF",
+				Description: "Enable pprof profiling server.",
+				Value:       serpent.BoolOf(&config.PprofEnabled),
+			},
+			{
+				Flag:        "pprof-port",
+				Env:         "BOUNDARY_PPROF_PORT",
+				Description: "Set port for pprof profiling server.",
+				Default:     "6060",
+				Value:       serpent.Int64Of(&config.PprofPort),
 			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
@@ -203,12 +218,14 @@ func Run(ctx context.Context, config Config, args []string) error {
 
 	// Create boundary instance
 	boundaryInstance, err := boundary.New(ctx, boundary.Config{
-		RuleEngine: ruleEngine,
-		Auditor:    auditor,
-		TLSConfig:  tlsConfig,
-		Logger:     logger,
-		Jailer:     jailer,
-		ProxyPort:  int(config.ProxyPort),
+		RuleEngine:   ruleEngine,
+		Auditor:      auditor,
+		TLSConfig:    tlsConfig,
+		Logger:       logger,
+		Jailer:       jailer,
+		ProxyPort:    int(config.ProxyPort),
+		PprofEnabled: config.PprofEnabled,
+		PprofPort:    int(config.PprofPort),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create boundary instance: %v", err)
