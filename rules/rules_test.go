@@ -91,4 +91,35 @@ func TestStub(t *testing.T) {
 	}
 	matches = engine.matches(rule, "GET", "coder.com")
 	require.True(t, matches)
+
+	{
+		allowStrings := []string{
+			"*",
+		}
+		rules, err := ParseAllowSpecs(allowStrings)
+		require.NoError(t, err, "Failed to parse allow specs")
+
+		// Create a standard slog logger with the appropriate level
+		logHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		})
+		logger := slog.New(logHandler)
+
+		engine := NewRuleEngine(rules, logger)
+		rez := engine.Evaluate("GET", "coder.com")
+		require.Equal(t, true, rez.Allowed)
+		require.Equal(t, rules[0].Raw, rez.Rule)
+
+		rez = engine.Evaluate("PUT", "coder.com")
+		require.Equal(t, true, rez.Allowed)
+		require.Equal(t, rules[0].Raw, rez.Rule)
+
+		rez = engine.Evaluate("GET", "github.com")
+		require.Equal(t, true, rez.Allowed)
+		require.Equal(t, rules[0].Raw, rez.Rule)
+
+		rez = engine.Evaluate("PUT", "github.com")
+		require.Equal(t, true, rez.Allowed)
+		require.Equal(t, rules[0].Raw, rez.Rule)
+	}
 }
