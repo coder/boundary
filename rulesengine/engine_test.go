@@ -130,13 +130,40 @@ func TestEngineMatches(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "subpath matches",
+			name: "subpath does not implicitly match",
 			rule: Rule{
 				PathPattern: []string{"api"},
 			},
 			method:   "GET",
 			url:      "https://example.com/api/users/123",
+			expected: false,
+		},
+		{
+			name: "asterisk matches in path",
+			rule: Rule{
+				PathPattern: []string{"api", "*"},
+			},
+			method: "GET",
+			url: "https://example.com/api/users/123",
 			expected: true,
+		},
+		{
+			name: "one asterisk at end matches any number of trailing segments",
+			rule: Rule{
+				PathPattern: []string{"api", "*"},
+			},
+			method: "GET",
+			url: "https://example.com/api/foo/bar/baz",
+			expected: true,
+		},
+		{
+			name: "asterisk in middle of path only matches one segment",
+			rule: Rule{
+				PathPattern: []string{"api", "*", "foo"},
+			},
+			method: "GET",
+			url: "https://example.com/api/users/admin/foo",
+			expected: false,
 		},
 		{
 			name: "path pattern too long",

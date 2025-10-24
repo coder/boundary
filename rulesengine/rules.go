@@ -208,7 +208,12 @@ func parseHostPattern(input string) ([]string, string, error) {
 		host = append(host, label)
 	}
 
-	// Validate: host patterns cannot end with asterisk
+	// If the host is a single standalone asterisk, that's the same as "matches anything"
+	if len(host) == 1 && host[0] == "*" {
+		return host, rest, nil
+	}
+
+	// Validate: host patterns other than a single `*` cannot end with asterisk
 	if len(host) > 0 && host[len(host)-1] == "*" {
 		return nil, "", errors.New("host patterns cannot end with asterisk")
 	}
@@ -263,6 +268,9 @@ func isValidLabelChar(c byte) bool {
 	}
 }
 
+
+// https://myfileserver.com/"my file"
+
 func parsePathPattern(input string) ([]string, string, error) {
 	if input == "" {
 		return nil, "", nil
@@ -312,7 +320,7 @@ func parsePathPattern(input string) ([]string, string, error) {
 func parsePathSegmentPattern(input string) (string, string, error) {
 	if input == "" {
 		return "", "", nil
-	}
+	} 
 
 	if len(input) > 0 && input[0] == '*' {
 		if len(input) > 1 && input[1] != '/' {

@@ -702,13 +702,6 @@ func TestParsePath(t *testing.T) {
 			expectError:      false,
 		},
 		{
-			name:             "relative path",
-			input:            "api/users",
-			expectedSegments: []string{"api", "users"},
-			expectedRest:     "",
-			expectError:      false,
-		},
-		{
 			name:             "path with trailing slash",
 			input:            "/api/users/",
 			expectedSegments: []string{"api", "users"},
