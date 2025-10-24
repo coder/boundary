@@ -122,6 +122,14 @@ func TestRoundTrip(t *testing.T) {
 			expectMatch: true,
 		},
 		{
+			name:        "domain wildcard matches multiple subdomains",
+			rules:       []string{"domain=*.github.com"},
+			url:         "https://v1.api.github.com/repos",
+			method:      "GET",
+			expectParse: true,
+			expectMatch: true,
+		},
+		{
 			name:        "path asterisk in middle matches",
 			rules:       []string{"path=/api/*/users"},
 			url:         "https://github.com/api/v1/users",
