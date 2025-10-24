@@ -64,9 +64,6 @@ func (l *LinuxJail) ConfigureBeforeCommandExecution() error {
 func (l *LinuxJail) Command(command []string) *exec.Cmd {
 	l.logger.Debug("Creating command with namespace")
 
-	l.logger.Debug("DEBUG", "command[0 ]", command[0])
-	l.logger.Debug("DEBUG", "command[1:]", command[1:])
-
 	cmd := exec.Command(command[0], command[1:]...)
 	cmd.Env = l.commandEnv
 	cmd.Env = append(cmd.Env, "CHILD=true")
@@ -88,7 +85,6 @@ func (l *LinuxJail) Command(command []string) *exec.Cmd {
 			{ContainerID: 0, HostID: 0, Size: 1},
 			{ContainerID: gid, HostID: gid, Size: 1},
 		},
-		AmbientCaps: []uintptr{unix.CAP_NET_ADMIN},
 	}
 
 	return cmd
