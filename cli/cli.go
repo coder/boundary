@@ -138,6 +138,22 @@ func Run(ctx context.Context, config Config, args []string) error {
 		}
 		logger.Info("child networking is successfully configured")
 
+		// Drop privileges before executing target command
+		username, uid, gid, _, _ := util.GetUserInfo()
+		logger.Info("Dropping privileges", "username", username, "uid", uid, "gid", gid)
+		
+		// Set effective UID/GID to non-root user
+		err = syscall.Setgid(gid)
+		if err != nil {
+			return fmt.Errorf("failed to setgid: %v", err)
+		}
+		err = syscall.Setuid(uid)
+		if err != nil {
+			return fmt.Errorf("failed to setuid: %v", err)
+		}
+		
+		logger.Info("Privileges dropped successfully")
+
 		// Program to run
 		bin := args[0]
 		args = args[1:]
