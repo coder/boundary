@@ -215,7 +215,7 @@ func TestContentLengthHeader(t *testing.T) {
 
 	// Start boundary process with sudo
 	boundaryCmd := exec.CommandContext(ctx, "/tmp/boundary-test",
-		"--allow", "example.com",
+		"--allow", "domain=example.com",
 		"--log-level", "debug",
 		"--", "/bin/bash", "-c", "/usr/bin/sleep 10 && /usr/bin/echo 'Test completed'")
 

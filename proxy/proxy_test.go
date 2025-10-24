@@ -143,7 +143,7 @@ func TestProxyServerBasicHTTPS(t *testing.T) {
 		Gid:       gid,
 	})
 	require.NoError(t, err)
-	
+
 	// Setup TLS to get cert path for jailer
 	tlsConfig, caCertPath, configDir, err := certManager.SetupTLSAndWriteCACert()
 	require.NoError(t, err)
