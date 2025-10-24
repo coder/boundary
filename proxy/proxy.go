@@ -440,8 +440,8 @@ Request: %s %s
 Host: %s
 
 To allow this request, restart boundary with:
-  --allow "%s"                    # Allow all methods to this host
-  --allow "%s %s"          # Allow only %s requests to this host
+  --allow "domain=%s"                    # Allow all methods to this host
+  --allow "method=%s domain=%s"          # Allow only %s requests to this host
 
 For more help: https://github.com/coder/boundary
 `,
