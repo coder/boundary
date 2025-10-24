@@ -102,18 +102,41 @@ func (re *Engine) matches(r Rule, method, url string) bool {
 			segments = segments[1:]
 		}
 
-		// If the path pattern is longer than the actual path, definitely not a match
-		if len(r.PathPattern) > len(segments) {
-			re.logger.Debug("rule does not match", "reason", "path pattern too long", "rule", r.Raw, "method", method, "url", url, "pattern_length", len(r.PathPattern), "path_segments", len(segments))
-			return false
+		// Check if any of the path patterns match
+		pathMatches := false
+		for _, pattern := range r.PathPattern {
+			// If the path pattern is longer than the actual path, definitely not a match
+			if len(pattern) > len(segments) {
+				continue
+			}
+
+			// Each segment in the pattern must be either as asterisk or match the actual path segment
+			patternMatches := true
+			for i, sp := range pattern {
+				if sp != segments[i] && sp != "*" {
+					patternMatches = false
+					break
+				}
+			}
+
+			if !patternMatches {
+				continue
+			}
+
+			// If the path is longer than the path pattern, it should only match if:
+			// 1. The pattern is empty (root path matches any path), OR
+			// 2. The final segment of the pattern is an asterisk
+			if len(segments) > len(pattern) && len(pattern) > 0 && pattern[len(pattern)-1] != "*" {
+				continue
+			}
+
+			pathMatches = true
+			break
 		}
 
-		// Each segment in the pattern must be either as asterisk or match the actual path segment
-		for i, sp := range r.PathPattern {
-			if string(sp) != segments[i] && sp != "*" {
-				re.logger.Debug("rule does not match", "reason", "path pattern segment mismatch", "rule", r.Raw, "method", method, "url", url, "expected", string(sp), "actual", segments[i])
-				return false
-			}
+		if !pathMatches {
+			re.logger.Debug("rule does not match", "reason", "no path pattern matches", "rule", r.Raw, "method", method, "url", url)
+			return false
 		}
 	}
 

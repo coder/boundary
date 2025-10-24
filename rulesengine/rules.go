@@ -11,11 +11,11 @@ import (
 // Example: --allow="method=GET,PATCH domain=wibble.wobble.com, path=/posts/*"
 type Rule struct {
 
-	// The path segments of the url.
+	// The path patterns that can match for this rule.
 	// - nil means all paths allowed
+	// - Each []string represents a path pattern (list of segments)
 	// - a path segment of `*` acts as a wild card.
-	// - sub paths automatically match
-	PathPattern []string
+	PathPattern [][]string
 
 	// The labels of the host, i.e. ["google", "com"].
 	// - nil means all hosts allowed
@@ -103,14 +103,24 @@ func parseAllowRule(ruleStr string) (Rule, error) {
 			rule.HostPattern = append(rule.HostPattern, host...)
 
 		case "path":
-			var segments []string
-			segments, rest, err = parsePathPattern(rest)
-			if err != nil {
-				return Rule{}, fmt.Errorf("failed to parse path: %v", err)
-			}
+			for {
+				var segments []string
+				segments, rest, err = parsePathPattern(rest)
+				if err != nil {
+					return Rule{}, fmt.Errorf("failed to parse path: %v", err)
+				}
 
-			// Convert segments to strings
-			rule.PathPattern = append(rule.PathPattern, segments...)
+				// Add this path pattern to the list of patterns
+				rule.PathPattern = append(rule.PathPattern, segments)
+
+				// Check if there's a comma for more paths
+				if rest != "" && rest[0] == ',' {
+					rest = rest[1:] // Skip the comma
+					continue
+				}
+
+				break
+			}
 
 		default:
 			return Rule{}, fmt.Errorf("unknown key: %s", key)
@@ -268,7 +278,6 @@ func isValidLabelChar(c byte) bool {
 	}
 }
 
-
 // https://myfileserver.com/"my file"
 
 func parsePathPattern(input string) ([]string, string, error) {
@@ -320,7 +329,7 @@ func parsePathPattern(input string) ([]string, string, error) {
 func parsePathSegmentPattern(input string) (string, string, error) {
 	if input == "" {
 		return "", "", nil
-	} 
+	}
 
 	if len(input) > 0 && input[0] == '*' {
 		if len(input) > 1 && input[1] != '/' {
@@ -361,18 +370,18 @@ func isUnreserved(c byte) bool {
 		c == '-' || c == '.' || c == '_' || c == '~'
 }
 
-// isSubDelim returns true if the character is a sub-delimiter per RFC 3986
-// sub-delims = "!" / "$" / "&" / "'" / "(" / ")" / "*" / "+" / "," / ";" / "="
-func isSubDelim(c byte) bool {
-	return c == '!' || c == '$' || c == '&' || c == '\'' ||
-		c == '(' || c == ')' || c == '*' || c == '+' ||
-		c == ',' || c == ';' || c == '='
-}
-
 // isPChar returns true if the character is valid in a path segment (excluding percent-encoded)
 // pchar = unreserved / sub-delims / ":" / "@"
+// Note: We exclude comma from sub-delims for our rule parsing to support comma-separated paths
 func isPChar(c byte) bool {
-	return isUnreserved(c) || isSubDelim(c) || c == ':' || c == '@'
+	return isUnreserved(c) || isSubDelimExceptComma(c) || c == ':' || c == '@'
+}
+
+// isSubDelimExceptComma returns true if the character is a sub-delimiter except comma
+func isSubDelimExceptComma(c byte) bool {
+	return c == '!' || c == '$' || c == '&' || c == '\'' ||
+		c == '(' || c == ')' || c == '*' || c == '+' ||
+		c == ';' || c == '='
 }
 
 // isHexDigit returns true if the character is a hexadecimal digit

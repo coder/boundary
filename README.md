@@ -47,14 +47,15 @@ boundary -- curl https://example.com
 **Keys:**
 - `method` - HTTP method(s), comma-separated (GET, POST, etc.)
 - `domain` - Domain/hostname pattern
-- `path` - URL path pattern
+- `path` - URL path pattern(s), comma-separated
 
 ### Examples
 ```bash
 boundary --allow "domain=github.com" -- git pull
 boundary --allow "domain=*.github.com" -- npm install           # GitHub subdomains
 boundary --allow "method=GET,HEAD domain=api.github.com" -- curl https://api.github.com
-boundary --allow "method=POST domain=api.example.com path=/users" -- ./app
+boundary --allow "method=POST domain=api.example.com path=/users,/posts" -- ./app  # Multiple paths
+boundary --allow "path=/api/v1/*,/api/v2/*" -- curl https://api.example.com/api/v1/users
 ```
 
 Wildcards: `*` matches any characters. All traffic is denied unless explicitly allowed.

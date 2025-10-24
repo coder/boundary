@@ -121,6 +121,62 @@ func TestRoundTrip(t *testing.T) {
 			expectParse: true,
 			expectMatch: true,
 		},
+		{
+			name:        "path asterisk in middle matches",
+			rules:       []string{"path=/api/*/users"},
+			url:         "https://github.com/api/v1/users",
+			method:      "GET",
+			expectParse: true,
+			expectMatch: true,
+		},
+		{
+			name:        "path asterisk at start matches",
+			rules:       []string{"path=/*/users"},
+			url:         "https://github.com/api/users",
+			method:      "GET",
+			expectParse: true,
+			expectMatch: true,
+		},
+		{
+			name:        "path asterisk doesn't match multiple segments",
+			rules:       []string{"path=/api/*/users"},
+			url:         "https://github.com/api/../admin/users",
+			method:      "GET",
+			expectParse: true,
+			expectMatch: false,
+		},
+		{
+			name:        "path asterisk at end matches",
+			rules:       []string{"path=/api/v1/*"},
+			url:         "https://github.com/api/v1/users",
+			method:      "GET",
+			expectParse: true,
+			expectMatch: true,
+		},
+		{
+			name:        "path asterisk at end matches multiple segments",
+			rules:       []string{"path=/api/*"},
+			url:         "https://github.com/api/v1/users/123/details",
+			method:      "GET",
+			expectParse: true,
+			expectMatch: true,
+		},
+		{
+			name:        "subpaths do not match automatically",
+			rules:       []string{"path=/api"},
+			url:         "https://github.com/api/users",
+			method:      "GET",
+			expectParse: true,
+			expectMatch: false,
+		},
+		{
+			name:        "multiple rules match specific path and subpaths",
+			rules:       []string{"path=/wibble/wobble,/wibble/wobble/*"},
+			url:         "https://github.com/wibble/wobble/sub",
+			method:      "GET",
+			expectParse: true,
+			expectMatch: true,
+		},
 	}
 
 	logHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
@@ -129,14 +185,16 @@ func TestRoundTrip(t *testing.T) {
 	logger := slog.New(logHandler)
 
 	for _, tc := range tcs {
-		rules, err := ParseAllowSpecs(tc.rules)
-		if tc.expectParse {
-			require.Nil(t, err)
-			engine := NewRuleEngine(rules, logger)
-			result := engine.Evaluate(tc.method, tc.url)
-			require.Equal(t, tc.expectMatch, result.Allowed)
-		} else {
-			require.NotNil(t, err)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			rules, err := ParseAllowSpecs(tc.rules)
+			if tc.expectParse {
+				require.Nil(t, err)
+				engine := NewRuleEngine(rules, logger)
+				result := engine.Evaluate(tc.method, tc.url)
+				require.Equal(t, tc.expectMatch, result.Allowed)
+			} else {
+				require.NotNil(t, err)
+			}
+		})
 	}
 }

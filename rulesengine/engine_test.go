@@ -114,7 +114,7 @@ func TestEngineMatches(t *testing.T) {
 		{
 			name: "path matches exact",
 			rule: Rule{
-				PathPattern: []string{"api", "users"},
+				PathPattern: [][]string{{"api", "users"}},
 			},
 			method:   "GET",
 			url:      "https://example.com/api/users",
@@ -123,7 +123,7 @@ func TestEngineMatches(t *testing.T) {
 		{
 			name: "path does not match",
 			rule: Rule{
-				PathPattern: []string{"api", "posts"},
+				PathPattern: [][]string{{"api", "posts"}},
 			},
 			method:   "GET",
 			url:      "https://example.com/api/users",
@@ -132,7 +132,7 @@ func TestEngineMatches(t *testing.T) {
 		{
 			name: "subpath does not implicitly match",
 			rule: Rule{
-				PathPattern: []string{"api"},
+				PathPattern: [][]string{{"api"}},
 			},
 			method:   "GET",
 			url:      "https://example.com/api/users/123",
@@ -141,34 +141,34 @@ func TestEngineMatches(t *testing.T) {
 		{
 			name: "asterisk matches in path",
 			rule: Rule{
-				PathPattern: []string{"api", "*"},
+				PathPattern: [][]string{{"api", "*"}},
 			},
-			method: "GET",
-			url: "https://example.com/api/users/123",
+			method:   "GET",
+			url:      "https://example.com/api/users/123",
 			expected: true,
 		},
 		{
 			name: "one asterisk at end matches any number of trailing segments",
 			rule: Rule{
-				PathPattern: []string{"api", "*"},
+				PathPattern: [][]string{{"api", "*"}},
 			},
-			method: "GET",
-			url: "https://example.com/api/foo/bar/baz",
+			method:   "GET",
+			url:      "https://example.com/api/foo/bar/baz",
 			expected: true,
 		},
 		{
 			name: "asterisk in middle of path only matches one segment",
 			rule: Rule{
-				PathPattern: []string{"api", "*", "foo"},
+				PathPattern: [][]string{{"api", "*", "foo"}},
 			},
-			method: "GET",
-			url: "https://example.com/api/users/admin/foo",
+			method:   "GET",
+			url:      "https://example.com/api/users/admin/foo",
 			expected: false,
 		},
 		{
 			name: "path pattern too long",
 			rule: Rule{
-				PathPattern: []string{"api", "v1", "users", "profile"},
+				PathPattern: [][]string{{"api", "v1", "users", "profile"}},
 			},
 			method:   "GET",
 			url:      "https://example.com/api/v1/users",
@@ -177,7 +177,7 @@ func TestEngineMatches(t *testing.T) {
 		{
 			name: "path wildcard matches",
 			rule: Rule{
-				PathPattern: []string{"api", "*", "profile"},
+				PathPattern: [][]string{{"api", "*", "profile"}},
 			},
 			method:   "GET",
 			url:      "https://example.com/api/users/profile",
@@ -186,7 +186,7 @@ func TestEngineMatches(t *testing.T) {
 		{
 			name: "multiple path wildcards",
 			rule: Rule{
-				PathPattern: []string{"*", "*"},
+				PathPattern: [][]string{{"*", "*"}},
 			},
 			method:   "GET",
 			url:      "https://example.com/api/users/123",
@@ -199,7 +199,7 @@ func TestEngineMatches(t *testing.T) {
 			rule: Rule{
 				MethodPatterns: map[string]struct{}{"POST": {}},
 				HostPattern:    []string{"api", "com"},
-				PathPattern:    []string{"users"},
+				PathPattern:    [][]string{{"users"}},
 			},
 			method:   "POST",
 			url:      "https://api.com/users",
@@ -210,7 +210,7 @@ func TestEngineMatches(t *testing.T) {
 			rule: Rule{
 				MethodPatterns: map[string]struct{}{"POST": {}},
 				HostPattern:    []string{"api", "com"},
-				PathPattern:    []string{"users"},
+				PathPattern:    [][]string{{"users"}},
 			},
 			method:   "GET",
 			url:      "https://api.com/users",
@@ -221,7 +221,7 @@ func TestEngineMatches(t *testing.T) {
 			rule: Rule{
 				MethodPatterns: map[string]struct{}{"POST": {}},
 				HostPattern:    []string{"api", "org"},
-				PathPattern:    []string{"users"},
+				PathPattern:    [][]string{{"users"}},
 			},
 			method:   "POST",
 			url:      "https://api.com/users",
@@ -232,7 +232,7 @@ func TestEngineMatches(t *testing.T) {
 			rule: Rule{
 				MethodPatterns: map[string]struct{}{"POST": {}},
 				HostPattern:    []string{"api", "com"},
-				PathPattern:    []string{"posts"},
+				PathPattern:    [][]string{{"posts"}},
 			},
 			method:   "POST",
 			url:      "https://api.com/users",
@@ -243,7 +243,7 @@ func TestEngineMatches(t *testing.T) {
 			rule: Rule{
 				MethodPatterns: map[string]struct{}{"*": {}},
 				HostPattern:    []string{"*", "*"},
-				PathPattern:    []string{"*", "*"},
+				PathPattern:    [][]string{{"*", "*"}},
 			},
 			method:   "PATCH",
 			url:      "https://test.example.com/api/users/123",
@@ -270,7 +270,7 @@ func TestEngineMatches(t *testing.T) {
 		{
 			name: "root path",
 			rule: Rule{
-				PathPattern: []string{},
+				PathPattern: [][]string{{}},
 			},
 			method:   "GET",
 			url:      "https://example.com/",

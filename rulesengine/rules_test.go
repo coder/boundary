@@ -602,10 +602,17 @@ func TestParsePathSegment(t *testing.T) {
 			expectError:     false,
 		},
 		{
-			name:            "all sub-delims",
-			input:           "!$&'()*+,;=",
-			expectedSegment: "!$&'()*+,;=",
+			name:            "sub-delims except comma",
+			input:           "!$&'()*+;=",
+			expectedSegment: "!$&'()*+;=",
 			expectedRest:    "",
+			expectError:     false,
+		},
+		{
+			name:            "comma stops segment parsing",
+			input:           "test,more",
+			expectedSegment: "test",
+			expectedRest:    ",more",
 			expectError:     false,
 		},
 		{
@@ -908,7 +915,7 @@ func TestParseAllowRule(t *testing.T) {
 			input: "path=/api/v1",
 			expectedRule: Rule{
 				Raw:         "path=/api/v1",
-				PathPattern: []string{"api", "v1"},
+				PathPattern: [][]string{{"api", "v1"}},
 			},
 			expectError: false,
 		},
@@ -929,7 +936,7 @@ func TestParseAllowRule(t *testing.T) {
 				Raw:            "method=DELETE domain=test.com path=/resources/456",
 				MethodPatterns: map[string]struct{}{"DELETE": {}},
 				HostPattern:    []string{"test", "com"},
-				PathPattern:    []string{"resources", "456"},
+				PathPattern:    [][]string{{"resources", "456"}},
 			},
 			expectError: false,
 		},
@@ -947,7 +954,7 @@ func TestParseAllowRule(t *testing.T) {
 			input: "path=/api/*/users",
 			expectedRule: Rule{
 				Raw:         "path=/api/*/users",
-				PathPattern: []string{"api", "*", "users"},
+				PathPattern: [][]string{{"api", "*", "users"}},
 			},
 			expectError: false,
 		},
@@ -1048,9 +1055,15 @@ func TestParseAllowRule(t *testing.T) {
 			if len(rule.PathPattern) != len(tt.expectedRule.PathPattern) {
 				t.Errorf("expected PathPattern length %d, got %d", len(tt.expectedRule.PathPattern), len(rule.PathPattern))
 			} else {
-				for i, expectedSegment := range tt.expectedRule.PathPattern {
-					if rule.PathPattern[i] != expectedSegment {
-						t.Errorf("expected PathPattern[%d] %q, got %q", i, expectedSegment, rule.PathPattern[i])
+				for i, expectedPattern := range tt.expectedRule.PathPattern {
+					if len(rule.PathPattern[i]) != len(expectedPattern) {
+						t.Errorf("expected PathPattern[%d] length %d, got %d", i, len(expectedPattern), len(rule.PathPattern[i]))
+					} else {
+						for j, expectedSegment := range expectedPattern {
+							if rule.PathPattern[i][j] != expectedSegment {
+								t.Errorf("expected PathPattern[%d][%d] %q, got %q", i, j, expectedSegment, rule.PathPattern[i][j])
+							}
+						}
 					}
 				}
 			}
@@ -1149,10 +1162,10 @@ func TestReadmeExamples(t *testing.T) {
 				expected bool
 			}{
 				{"POST", "https://api.example.com/users", true},
-				{"POST", "https://api.example.com/users/123", true}, // subpath match
-				{"GET", "https://api.example.com/users", false},     // wrong method
-				{"POST", "https://api.example.com/posts", false},    // wrong path
-				{"POST", "https://example.com/users", false},        // wrong domain
+				{"POST", "https://api.example.com/users/123", false}, // subpaths don't match automatically
+				{"GET", "https://api.example.com/users", false},      // wrong method
+				{"POST", "https://api.example.com/posts", false},     // wrong path
+				{"POST", "https://example.com/users", false},         // wrong domain
 			},
 		},
 		{
