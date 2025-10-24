@@ -8,6 +8,7 @@ type Auditor interface {
 type Request struct {
 	Method  string
 	URL     string
+	Host    string
 	Allowed bool
 	Rule    string // The rule that matched (if any)
 }

@@ -20,6 +20,9 @@ type Config struct {
 	TLSConfig  *tls.Config
 	Logger     *slog.Logger
 	Jailer     jail.Jailer
+	ProxyPort  int
+	PprofEnabled bool
+	PprofPort    int
 }
 
 type Boundary struct {
@@ -34,11 +37,13 @@ type Boundary struct {
 func New(ctx context.Context, config Config) (*Boundary, error) {
 	// Create proxy server
 	proxyServer := proxy.NewProxyServer(proxy.Config{
-		HTTPPort:   8080,
-		RuleEngine: config.RuleEngine,
-		Auditor:    config.Auditor,
-		Logger:     config.Logger,
-		TLSConfig:  config.TLSConfig,
+		HTTPPort:     config.ProxyPort,
+		RuleEngine:   config.RuleEngine,
+		Auditor:      config.Auditor,
+		Logger:       config.Logger,
+		TLSConfig:    config.TLSConfig,
+		PprofEnabled: config.PprofEnabled,
+		PprofPort:    config.PprofPort,
 	})
 
 	// Create cancellable context for boundary
@@ -55,8 +60,8 @@ func New(ctx context.Context, config Config) (*Boundary, error) {
 }
 
 func (b *Boundary) Start() error {
-	// Start the jailer (network isolation)
-	err := b.jailer.Start()
+	// Configure the jailer (network isolation)
+	err := b.jailer.ConfigureBeforeCommandExecution()
 	if err != nil {
 		return fmt.Errorf("failed to start jailer: %v", err)
 	}
@@ -76,6 +81,10 @@ func (b *Boundary) Start() error {
 
 func (b *Boundary) Command(command []string) *exec.Cmd {
 	return b.jailer.Command(command)
+}
+
+func (b *Boundary) ConfigureAfterCommandExecution(processPID int) error {
+	return b.jailer.ConfigureAfterCommandExecution(processPID)
 }
 
 func (b *Boundary) Close() error {
