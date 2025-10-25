@@ -11,7 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/coder/boundary/util"
 	"golang.org/x/sys/unix"
 )
 
@@ -73,18 +72,19 @@ func (l *LinuxJail) Command(command []string) *exec.Cmd {
 	cmd.Stdin = os.Stdin
 
 	l.logger.Debug("os.Getuid()", "os.Getuid()", os.Getuid())
-	_, uid, gid, _, _ := util.GetUserInfo()
+	l.logger.Debug("os.Getgid()", "os.Getgid()", os.Getgid())
+	currentUid := os.Getuid()
+	currentGid := os.Getgid()
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags: syscall.CLONE_NEWUSER | syscall.CLONE_NEWNET,
 		UidMappings: []syscall.SysProcIDMap{
-			{ContainerID: 0, HostID: 0, Size: 1},
-			{ContainerID: uid, HostID: uid, Size: 1},
+			{ContainerID: currentUid, HostID: currentUid, Size: 1},
 		},
 		GidMappings: []syscall.SysProcIDMap{
-			{ContainerID: 0, HostID: 0, Size: 1},
-			{ContainerID: gid, HostID: gid, Size: 1},
+			{ContainerID: currentGid, HostID: currentGid, Size: 1},
 		},
+		AmbientCaps: []uintptr{unix.CAP_NET_ADMIN},
 	}
 
 	return cmd
