@@ -63,6 +63,12 @@ func (re *Engine) matches(r Rule, method, url string) bool {
 		}
 	}
 
+	// If the provided url doesn't have a scheme parsing will fail. This can happen when you do something like `curl google.com`
+
+	if !strings.Contains(url, "://") {
+		// This is just for parsing, we won't use the scheme.
+		url = "https://" + url
+	}
 	parsedUrl, err := neturl.Parse(url)
 	if err != nil {
 		re.logger.Debug("rule does not match", "reason", "invalid URL", "rule", r.Raw, "method", method, "url", url, "error", err)

@@ -185,6 +185,30 @@ func TestRoundTrip(t *testing.T) {
 			expectParse: true,
 			expectMatch: true,
 		},
+		{
+			name:        "domain matches without scheme - example.com case",
+			rules:       []string{"domain=example.com"},
+			url:         "example.com",
+			method:      "GET",
+			expectParse: true,
+			expectMatch: true,
+		},
+		{
+			name:        "domain matches without scheme - jsonplaceholder case",
+			rules:       []string{"domain=jsonplaceholder.typicode.com"},
+			url:         "jsonplaceholder.typicode.com",
+			method:      "GET",
+			expectParse: true,
+			expectMatch: true,
+		},
+		{
+			name:        "domain matches without scheme - dev.coder.com case",
+			rules:       []string{"domain=dev.coder.com"},
+			url:         "dev.coder.com",
+			method:      "GET",
+			expectParse: true,
+			expectMatch: true,
+		},
 	}
 
 	logHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
