@@ -11,16 +11,16 @@ import (
 	"github.com/coder/boundary/audit"
 	"github.com/coder/boundary/jail"
 	"github.com/coder/boundary/proxy"
-	"github.com/coder/boundary/rules"
+	"github.com/coder/boundary/rulesengine"
 )
 
 type Config struct {
-	RuleEngine rules.Evaluator
-	Auditor    audit.Auditor
-	TLSConfig  *tls.Config
-	Logger     *slog.Logger
-	Jailer     jail.Jailer
-	ProxyPort  int
+	RuleEngine   rulesengine.Engine
+	Auditor      audit.Auditor
+	TLSConfig    *tls.Config
+	Logger       *slog.Logger
+	Jailer       jail.Jailer
+	ProxyPort    int
 	PprofEnabled bool
 	PprofPort    int
 }

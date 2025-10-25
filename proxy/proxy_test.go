@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/coder/boundary/audit"
-	"github.com/coder/boundary/rules"
+	"github.com/coder/boundary/rulesengine"
 )
 
 // mockAuditor is a simple mock auditor for testing
@@ -35,13 +35,13 @@ func TestProxyServerBasicHTTP(t *testing.T) {
 	}))
 
 	// Create test rules (allow all for testing)
-	testRules, err := rules.ParseAllowSpecs([]string{"*"})
+	testRules, err := rulesengine.ParseAllowSpecs([]string{"method=*"})
 	if err != nil {
 		t.Fatalf("Failed to parse test rules: %v", err)
 	}
 
 	// Create rule engine
-	ruleEngine := rules.NewRuleEngine(testRules, logger)
+	ruleEngine := rulesengine.NewRuleEngine(testRules, logger)
 
 	// Create mock auditor
 	auditor := &mockAuditor{}
@@ -116,13 +116,13 @@ func TestProxyServerBasicHTTPS(t *testing.T) {
 	}))
 
 	// Create test rules (allow all for testing)
-	testRules, err := rules.ParseAllowSpecs([]string{"*"})
+	testRules, err := rulesengine.ParseAllowSpecs([]string{"method=*"})
 	if err != nil {
 		t.Fatalf("Failed to parse test rules: %v", err)
 	}
 
 	// Create rule engine
-	ruleEngine := rules.NewRuleEngine(testRules, logger)
+	ruleEngine := rulesengine.NewRuleEngine(testRules, logger)
 
 	// Create mock auditor
 	auditor := &mockAuditor{}
@@ -143,7 +143,7 @@ func TestProxyServerBasicHTTPS(t *testing.T) {
 		Gid:       gid,
 	})
 	require.NoError(t, err)
-	
+
 	// Setup TLS to get cert path for jailer
 	tlsConfig, caCertPath, configDir, err := certManager.SetupTLSAndWriteCACert()
 	require.NoError(t, err)
@@ -212,13 +212,13 @@ func TestProxyServerCONNECT(t *testing.T) {
 	}))
 
 	// Create test rules (allow all for testing)
-	testRules, err := rules.ParseAllowSpecs([]string{"*"})
+	testRules, err := rulesengine.ParseAllowSpecs([]string{"method=*"})
 	if err != nil {
 		t.Fatalf("Failed to parse test rules: %v", err)
 	}
 
 	// Create rule engine
-	ruleEngine := rules.NewRuleEngine(testRules, logger)
+	ruleEngine := rulesengine.NewRuleEngine(testRules, logger)
 
 	// Create mock auditor
 	auditor := &mockAuditor{}

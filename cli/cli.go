@@ -16,7 +16,7 @@ import (
 	"github.com/coder/boundary"
 	"github.com/coder/boundary/audit"
 	"github.com/coder/boundary/jail"
-	"github.com/coder/boundary/rules"
+	"github.com/coder/boundary/rulesengine"
 	"github.com/coder/boundary/tls"
 	"github.com/coder/boundary/util"
 	"github.com/coder/serpent"
@@ -43,10 +43,10 @@ func NewCommand() *serpent.Command {
 	// may be called something different when used as a subcommand / there will be a leading binary (i.e. `coder boundary` vs. `boundary`).
 	cmd.Long += `Examples:
   # Allow only requests to github.com
-  boundary --allow "github.com" -- curl https://github.com
+  boundary --allow "domain=github.com" -- curl https://github.com
 
   # Monitor all requests to specific domains (allow only those)
-  boundary --allow "github.com/api/issues/*" --allow "GET,HEAD github.com" -- npm install
+  boundary --allow "domain=github.com path=/api/issues/*" --allow "method=GET,HEAD domain=github.com" -- npm install
 
   # Block everything by default (implicit)`
 
@@ -171,14 +171,14 @@ func Run(ctx context.Context, config Config, args []string) error {
 	}
 
 	// Parse allow rules
-	allowRules, err := rules.ParseAllowSpecs(config.AllowStrings)
+	allowRules, err := rulesengine.ParseAllowSpecs(config.AllowStrings)
 	if err != nil {
 		logger.Error("Failed to parse allow rules", "error", err)
 		return fmt.Errorf("failed to parse allow rules: %v", err)
 	}
 
 	// Create rule engine
-	ruleEngine := rules.NewRuleEngine(allowRules, logger)
+	ruleEngine := rulesengine.NewRuleEngine(allowRules, logger)
 
 	// Create auditor
 	auditor := audit.NewLogAuditor(logger)
