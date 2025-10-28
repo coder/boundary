@@ -264,6 +264,14 @@ func TestRoundTripExtraRules(t *testing.T) {
 			expectParse: true,
 			expectMatch: true,
 		},
+		{
+			name:        "complex scenario 1",
+			rules:       []string{"method=GET,POST,PUT domain=github.com path=/api/issues/*"},
+			url:         "https://github.com:8080/api/issues/123/edit",
+			method:      "POST",
+			expectParse: true,
+			expectMatch: true,
+		},
 	}
 
 	logHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
