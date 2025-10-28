@@ -142,23 +142,16 @@ func parseMethodPattern(token string) (string, string, error) {
 	if token == "" {
 		return "", "", errors.New("expected http token, got empty string")
 	}
-	return doParseMethodPattern(token, nil)
-}
-
-func doParseMethodPattern(token string, acc []byte) (string, string, error) {
-	// BASE CASE: if the token passed in is empty, we're done parsing
-	if token == "" {
-		return string(acc), "", nil
+	
+	// Find the first invalid HTTP token character
+	for i := 0; i < len(token); i++ {
+		if !isHTTPTokenChar(token[i]) {
+			return token[:i], token[i:], nil
+		}
 	}
-
-	// If the next byte in the string is not a valid http token character, we're done parsing.
-	if !isHTTPTokenChar(token[0]) {
-		return string(acc), token, nil
-	}
-
-	// The next character is valid, so the http token continues
-	acc = append(acc, token[0])
-	return doParseMethodPattern(token[1:], acc)
+	
+	// Entire string is a valid HTTP token
+	return token, "", nil
 }
 
 // The valid characters that can be in an http token (like the lexer/parser kind of token).
