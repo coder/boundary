@@ -230,3 +230,58 @@ func TestRoundTrip(t *testing.T) {
 		})
 	}
 }
+
+func TestRoundTripExtraRules(t *testing.T) {
+	tcs := []struct {
+		name        string
+		rules       []string
+		url         string
+		method      string
+		expectParse bool
+		expectMatch bool
+	}{
+		{
+			name:        "domain=* allows everything",
+			rules:       []string{"domain=*"},
+			url:         "https://github.com/wibble/wobble",
+			method:      "DELETE",
+			expectParse: true,
+			expectMatch: true,
+		},
+		{
+			name:        "specifying port in Domain key is NOT allowed",
+			rules:       []string{"domain=github.com:8080"},
+			url:         "https://github.com/wibble/wobble",
+			method:      "DELETE",
+			expectParse: false,
+			expectMatch: false,
+		},
+		{
+			name:        "specifying port in URL is allowed",
+			rules:       []string{"domain=github.com"},
+			url:         "https://github.com:8080/wibble/wobble",
+			method:      "DELETE",
+			expectParse: true,
+			expectMatch: true,
+		},
+	}
+
+	logHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})
+	logger := slog.New(logHandler)
+
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			rules, err := ParseAllowSpecs(tc.rules)
+			if tc.expectParse {
+				require.Nil(t, err)
+				engine := NewRuleEngine(rules, logger)
+				result := engine.Evaluate(tc.method, tc.url)
+				require.Equal(t, tc.expectMatch, result.Allowed)
+			} else {
+				require.NotNil(t, err)
+			}
+		})
+	}
+}
