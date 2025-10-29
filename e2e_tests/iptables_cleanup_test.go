@@ -50,8 +50,8 @@ func TestIPTablesCleanup(t *testing.T) {
 
 	// Start boundary process with sudo
 	boundaryCmd := exec.CommandContext(ctx, "/tmp/boundary-test",
-		"--allow", "dev.coder.com",
-		"--allow", "jsonplaceholder.typicode.com",
+		"--allow", "domain=dev.coder.com",
+		"--allow", "domain=jsonplaceholder.typicode.com",
 		"--log-level", "debug",
 		"--", "/bin/bash", "-c", "/usr/bin/sleep 10 && /usr/bin/echo 'Test completed'")
 

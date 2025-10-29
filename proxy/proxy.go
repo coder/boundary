@@ -19,12 +19,12 @@ import (
 	"time"
 
 	"github.com/coder/boundary/audit"
-	"github.com/coder/boundary/rules"
+	"github.com/coder/boundary/rulesengine"
 )
 
 // Server handles HTTP and HTTPS requests with rule-based filtering
 type Server struct {
-	ruleEngine rules.Evaluator
+	ruleEngine rulesengine.Engine
 	auditor    audit.Auditor
 	logger     *slog.Logger
 	tlsConfig  *tls.Config
@@ -40,7 +40,7 @@ type Server struct {
 // Config holds configuration for the proxy server
 type Config struct {
 	HTTPPort     int
-	RuleEngine   rules.Evaluator
+	RuleEngine   rulesengine.Engine
 	Auditor      audit.Auditor
 	Logger       *slog.Logger
 	TLSConfig    *tls.Config
@@ -440,8 +440,8 @@ Request: %s %s
 Host: %s
 
 To allow this request, restart boundary with:
-  --allow "%s"                    # Allow all methods to this host
-  --allow "%s %s"          # Allow only %s requests to this host
+  --allow "domain=%s"                    # Allow all methods to this host
+  --allow "method=%s domain=%s"          # Allow only %s requests to this host
 
 For more help: https://github.com/coder/boundary
 `,
