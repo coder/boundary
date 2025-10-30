@@ -40,23 +40,19 @@ func loadConfigFile(configPath string) (fileConfig, string, error) {
 }
 
 func resolveConfigPath(configPath string) (string, error) {
-	if configPath != "" {
-		return configPath, nil
-	}
-	// XDG default: $XDG_CONFIG_HOME/boundary/config.yaml or ~/.config/boundary/config.yaml
-	base := os.Getenv("XDG_CONFIG_HOME")
-	if base == "" {
-		h, err := os.UserHomeDir()
-		if err != nil {
-			return "", nil
-		}
-		base = filepath.Join(h, ".config")
-	}
-	path := filepath.Join(base, "boundary", "config.yaml")
-	if _, err := os.Stat(path); err == nil {
-		return path, nil
-	}
-	return "", nil
+    if configPath != "" {
+        return configPath, nil
+    }
+    // Default: ~/.config/coder_boundary/config.yaml (same base as cert storage)
+    h, err := os.UserHomeDir()
+    if err != nil {
+        return "", nil
+    }
+    path := filepath.Join(h, ".config", "coder_boundary", "config.yaml")
+    if _, err := os.Stat(path); err == nil {
+        return path, nil
+    }
+    return "", nil
 }
 
 // mergeConfig applies CLI over file config (CLI wins), with allow exclusivity enforced.
