@@ -6,11 +6,11 @@ boundary creates an isolated network environment for target processes, intercept
 
 ## Features
 
-- Process-level network isolation (Linux namespaces, macOS process groups)
+ - Process-level network isolation (Linux namespaces)
 - HTTP/HTTPS interception with transparent proxy and TLS certificate injection
 - Wildcard pattern matching for URL patterns
 - Request logging and monitoring
-- Cross-platform support (Linux and macOS)
+ - Linux support
 - Default deny-all security model
 
 ## Installation
@@ -71,21 +71,20 @@ boundary --log-level debug --allow "domain=github.com" -- git pull  # Debug info
 
 ## Platform Support
 
-| Platform | Implementation | Sudo Required |
-|----------|----------------|---------------|
-| Linux    | Network namespaces + iptables | No             |
-| macOS    | Not supported | -             |
-| Windows  | Not supported | -             |
+| Platform | Implementation                 | Privileges                |
+|----------|--------------------------------|---------------------------|
+| Linux    | Network namespaces + iptables  | CAP_NET_ADMIN (or root)   |
+| macOS    | Not supported                  | -                         |
+| Windows  | Not supported                  | -                         |
 
 ## Command-Line Options
 
 ```text
 boundary [flags] -- command [args...]
 
---allow <SPEC>             Allow rule (repeatable)
---log-level <LEVEL>        Set log level (error, warn, info, debug)
---unprivileged             Run without network isolation
--h, --help                 Print help
+ --allow <SPEC>             Allow rule (repeatable)
+ --log-level <LEVEL>        Set log level (error, warn, info, debug)
+ -h, --help                 Print help
 ```
 
 ## Development

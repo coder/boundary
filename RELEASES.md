@@ -26,8 +26,7 @@ This triggers the **Release** workflow which:
 |----------|--------------|-------------|----------|
 | Linux | x64 | `boundary-linux-amd64` | `.tar.gz` |
 | Linux | ARM64 | `boundary-linux-arm64` | `.tar.gz` |
-| macOS | Intel | `boundary-darwin-amd64` | `.tar.gz` |
-| macOS | Apple Silicon | `boundary-darwin-arm64` | `.tar.gz` |
+
 
 ## Version Naming
 
@@ -87,19 +86,7 @@ sudo mv boundary-linux-arm64 /usr/local/bin/boundary
 boundary --help
 ```
 
-**macOS (Intel)**
-```bash
-curl -fsSL https://github.com/coder/boundary/releases/latest/download/boundary-darwin-amd64.tar.gz | tar -xz
-sudo mv boundary-darwin-amd64 /usr/local/bin/boundary
-boundary --help
-```
 
-**macOS (Apple Silicon)**
-```bash
-curl -fsSL https://github.com/coder/boundary/releases/latest/download/boundary-darwin-arm64.tar.gz | tar -xz
-sudo mv boundary-darwin-arm64 /usr/local/bin/boundary
-boundary --help
-```
 
 ### Verify Installation
 

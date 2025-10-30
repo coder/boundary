@@ -27,7 +27,6 @@ type Config struct {
 	AllowStrings []string
 	LogLevel     string
 	LogDir       string
-	Unprivileged bool
 	ProxyPort    int64
 	PprofEnabled bool
 	PprofPort    int64

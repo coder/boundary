@@ -64,11 +64,8 @@ detect_platform() {
         Linux*)
             os="linux"
             ;;
-        Darwin*)
-            os="darwin"
-            ;;
         *)
-            log_error "Unsupported operating system: $(uname -s). Only Linux and macOS are supported."
+            log_error "Unsupported operating system: $(uname -s). Only Linux is supported."
             ;;
     esac
     

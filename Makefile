@@ -28,10 +28,7 @@ build-all:
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./cmd/boundary
 	@echo "Building Linux arm64..."
 	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./cmd/boundary
-	@echo "Building macOS amd64..."
-	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 ./cmd/boundary
-	@echo "Building macOS arm64..."
-	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 ./cmd/boundary
+	@# macOS builds removed; Linux only
 	@echo "✓ All binaries built successfully!"
 	@echo "Binaries are in the '$(BUILD_DIR)' directory:"
 	@ls -la $(BUILD_DIR)/
