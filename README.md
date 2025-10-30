@@ -6,11 +6,11 @@ boundary creates an isolated network environment for target processes, intercept
 
 ## Features
 
-- Process-level network isolation (Linux namespaces, macOS process groups)
+ - Process-level network isolation (Linux namespaces)
 - HTTP/HTTPS interception with transparent proxy and TLS certificate injection
 - Wildcard pattern matching for URL patterns
 - Request logging and monitoring
-- Cross-platform support (Linux and macOS)
+ - Linux support
 - Default deny-all security model
 
 ## Installation
@@ -69,42 +69,22 @@ boundary --log-level debug --allow "domain=github.com" -- git pull  # Debug info
 
 **Log Levels:** `error`, `warn` (default), `info`, `debug`
 
-## Unprivileged Mode
-
-When you can't or don't want to run with sudo privileges, use `--unprivileged`:
-
-```bash
-# Run without network isolation (uses HTTP_PROXY/HTTPS_PROXY environment variables)
-boundary --unprivileged --allow "domain=github.com" -- npm install
-
-# Useful in containers or restricted environments
-boundary --unprivileged --allow "domain=*.npmjs.org" --allow "domain=registry.npmjs.org" -- npm install
-```
-
-**Unprivileged Mode:**
-- No network namespaces or firewall rules
-- Works without sudo privileges  
-- Uses proxy environment variables instead
-- Applications must respect HTTP_PROXY/HTTPS_PROXY settings
-- Less secure but more compatible
-
 ## Platform Support
 
-| Platform | Implementation | Sudo Required |
-|----------|----------------|---------------|
-| Linux    | Network namespaces + iptables | Yes |
-| macOS    | Process groups + PF rules | Yes |
-| Windows  | Not supported | - |
+| Platform | Implementation                 | Privileges                |
+|----------|--------------------------------|---------------------------|
+| Linux    | Network namespaces + iptables  | CAP_NET_ADMIN (or root)   |
+| macOS    | Not supported                  | -                         |
+| Windows  | Not supported                  | -                         |
 
 ## Command-Line Options
 
 ```text
 boundary [flags] -- command [args...]
 
---allow <SPEC>             Allow rule (repeatable)
---log-level <LEVEL>        Set log level (error, warn, info, debug)
---unprivileged             Run without network isolation
--h, --help                 Print help
+ --allow <SPEC>             Allow rule (repeatable)
+ --log-level <LEVEL>        Set log level (error, warn, info, debug)
+ -h, --help                 Print help
 ```
 
 ## Development

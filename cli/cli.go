@@ -27,7 +27,6 @@ type Config struct {
 	AllowStrings []string
 	LogLevel     string
 	LogDir       string
-	Unprivileged bool
 	ProxyPort    int64
 	PprofEnabled bool
 	PprofPort    int64
@@ -82,12 +81,6 @@ func BaseCommand() *serpent.Command {
 				Env:         "BOUNDARY_LOG_DIR",
 				Description: "Set a directory to write logs to rather than stderr.",
 				Value:       serpent.StringOf(&config.LogDir),
-			},
-			{
-				Flag:        "unprivileged",
-				Env:         "BOUNDARY_UNPRIVILEGED",
-				Description: "Run in unprivileged mode (no network isolation, uses proxy environment variables).",
-				Value:       serpent.BoolOf(&config.Unprivileged),
 			},
 			{
 				Flag:        "proxy-port",
@@ -211,7 +204,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 		HomeDir:       homeDir,
 		ConfigDir:     configDir,
 		CACertPath:    caCertPath,
-	}, config.Unprivileged)
+	})
 	if err != nil {
 		return fmt.Errorf("failed to create jailer: %v", err)
 	}
@@ -334,11 +327,7 @@ func setupLogging(config Config) (*slog.Logger, error) {
 }
 
 // createJailer creates a new jail instance for the current platform
-func createJailer(config jail.Config, unprivileged bool) (jail.Jailer, error) {
-	if unprivileged {
-		return jail.NewUnprivileged(config)
-	}
-
+func createJailer(config jail.Config) (jail.Jailer, error) {
 	// Use the DefaultOS function for platform-specific jail creation
 	return jail.DefaultOS(config)
 }

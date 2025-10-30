@@ -48,7 +48,7 @@ This document describes the architecture and components of boundary, a network i
 │ │  │   TARGET COMMAND    │                                                │ │
 │ │  │                     │                                                │ │
 │ │  │   npm install       │  ◄── HTTP_PROXY/HTTPS_PROXY env vars           │ │
-│ │  │   curl https://...  │  ◄── Network isolation (Linux/macOS)           │ │
+│ │  │   curl https://...  │  ◄── Network isolation (Linux)                 │ │
 │ │  │   git clone         │  ◄── DNS redirection                           │ │
 │ │  │                     │                                                │ │
 │ │  └─────────────────────┘                                                │ │
@@ -61,7 +61,7 @@ This document describes the architecture and components of boundary, a network i
 ## Component Details
 
 ### 1. CLI Layer
-**Input**: Command line arguments (`--allow`, `--log-level`, `--unprivileged`, target command)
+**Input**: Command line arguments (`--allow`, `--log-level`, target command)
 **Output**: Configured boundary instance and executed target command
 
 **Responsibilities**:
@@ -106,57 +106,7 @@ Platform-specific implementations:
 └─────────────────────────────────────────────┘
 ```
 
-#### macOS Jailer
-```
-┌─────────────────────────────────────────────┐
-│              MACOS JAILER                   │
-├─────────────────────────────────────────────┤
-│                                             │
-│  PF (Packet Filter) Rules                   │
-│  │                                          │
-│  ├─ Create custom anchor                    │
-│  ├─ REDIRECT HTTP  → proxy (127.0.0.1:8080) │
-│  ├─ REDIRECT HTTPS → proxy (127.0.0.1:8080) │
-│  └─ Apply rules to specific process group   │
-│                                             │
-│  Process Group Isolation                    │
-│  │                                          │
-│  ├─ Create restricted group                 │
-│  ├─ Set process group ID                    │
-│  └─ Configure environment variables         │
-│                                             │
-│  Process Execution                          │
-│  │                                          │
-│  ├─ Set HTTP_PROXY env var                  │
-│  ├─ Set HTTPS_PROXY env var                 │
-│  ├─ Set SSL_CERT_FILE (custom CA)           │
-│  └─ Execute with group restrictions         │
-│                                             │
-└─────────────────────────────────────────────┘
-```
 
-#### Unprivileged Jailer
-```
-┌─────────────────────────────────────────────┐
-│           UNPRIVILEGED JAILER               │
-├─────────────────────────────────────────────┤
-│                                             │
-│  Environment Variables Only                 │
-│  │                                          │
-│  ├─ Set HTTP_PROXY env var                  │
-│  ├─ Set HTTPS_PROXY env var                 │
-│  ├─ Set SSL_CERT_FILE (custom CA)           │
-│  └─ No network isolation                    │
-│                                             │
-│  Process Execution                          │
-│  │                                          │
-│  ├─ Execute with proxy env vars             │
-│  └─ Relies on application proxy support     │
-│                                             │
-│  Note: Less secure but works without sudo   │
-│                                             │
-└─────────────────────────────────────────────┘
-```
 
 ### 3. Proxy Server Component
 **Input**: HTTP/HTTPS requests from jailed processes
@@ -427,15 +377,15 @@ Platform-specific implementations:
 
 ## Platform Differences
 
-| Aspect | Linux | macOS | Unprivileged |
-|--------|--------|--------|--------------|
-| **Isolation** | Network namespaces | Process groups + PF | Environment variables only |
-| **Traffic Interception** | iptables REDIRECT | PF rdr rules | HTTP_PROXY/HTTPS_PROXY |
-| **DNS** | Custom resolv.conf | System DNS + PF | System DNS |
-| **Privileges** | Requires sudo | Requires sudo | No privileges required |
-| **Security** | Strong isolation | Moderate isolation | Weak (app-dependent) |
-| **Compatibility** | Linux kernel 3.8+ | macOS with PF | Any platform |
-| **Process Control** | Network namespace | Process group | Standard process |
+| Aspect | Linux |
+|--------|-------|
+| **Isolation** | Network namespaces |
+| **Traffic Interception** | iptables REDIRECT |
+| **DNS** | Custom resolv.conf |
+| **Privileges** | Requires network capabilities (e.g., CAP_NET_ADMIN) |
+| **Security** | Strong isolation |
+| **Compatibility** | Linux kernel 3.8+ |
+| **Process Control** | Network namespace |
 
 ## Security Model
 
@@ -445,7 +395,7 @@ Platform-specific implementations:
 - Fail-safe behavior: unknown requests are denied
 
 ### Network Isolation
-- Process cannot bypass boundary (except in unprivileged mode)
+- Process cannot bypass boundary
 - All traffic routed through proxy server
 - TLS interception prevents encrypted bypass
 
