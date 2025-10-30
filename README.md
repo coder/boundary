@@ -69,32 +69,13 @@ boundary --log-level debug --allow "domain=github.com" -- git pull  # Debug info
 
 **Log Levels:** `error`, `warn` (default), `info`, `debug`
 
-## Unprivileged Mode
-
-When you can't or don't want to run with sudo privileges, use `--unprivileged`:
-
-```bash
-# Run without network isolation (uses HTTP_PROXY/HTTPS_PROXY environment variables)
-boundary --unprivileged --allow "domain=github.com" -- npm install
-
-# Useful in containers or restricted environments
-boundary --unprivileged --allow "domain=*.npmjs.org" --allow "domain=registry.npmjs.org" -- npm install
-```
-
-**Unprivileged Mode:**
-- No network namespaces or firewall rules
-- Works without sudo privileges  
-- Uses proxy environment variables instead
-- Applications must respect HTTP_PROXY/HTTPS_PROXY settings
-- Less secure but more compatible
-
 ## Platform Support
 
 | Platform | Implementation | Sudo Required |
 |----------|----------------|---------------|
-| Linux    | Network namespaces + iptables | Yes |
-| macOS    | Process groups + PF rules | Yes |
-| Windows  | Not supported | - |
+| Linux    | Network namespaces + iptables | No             |
+| macOS    | Not supported | -             |
+| Windows  | Not supported | -             |
 
 ## Command-Line Options
 

@@ -30,8 +30,6 @@ func DefaultOS(config Config) (Jailer, error) {
 	switch runtime.GOOS {
 	case "linux":
 		return NewLinuxJail(config)
-	case "darwin":
-		return NewMacOSJail(config)
 	default:
 		return nil, fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
 	}
