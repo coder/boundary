@@ -39,6 +39,19 @@ func loadConfigFile(configPath string) (fileConfig, string, error) {
 	return cfg, path, nil
 }
 
+// loadAndMergeConfig loads YAML config (if any) and merges with CLI config, returning the merged Config and the file path used.
+func loadAndMergeConfig(cliCfg Config) (Config, string, error) {
+    fileCfg, filePath, err := loadConfigFile(cliCfg.ConfigPath)
+    if err != nil {
+        return Config{}, "", err
+    }
+    merged, err := mergeConfig(fileCfg, cliCfg)
+    if err != nil {
+        return Config{}, filePath, err
+    }
+    return merged, filePath, nil
+}
+
 func resolveConfigPath(configPath string) (string, error) {
     if configPath != "" {
         return configPath, nil

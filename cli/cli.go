@@ -165,19 +165,14 @@ func Run(ctx context.Context, config Config, args []string) error {
 		return fmt.Errorf("no command specified")
 	}
 
-    // Load file config and merge (CLI overrides file), enforce allow exclusivity
-    fileCfg, filePath, err := loadConfigFile(config.ConfigPath)
+    // Load and merge config (CLI overrides file), enforce allow exclusivity
+    mergedCfg, filePath, err := loadAndMergeConfig(config)
     if err != nil {
-        logger.Error("Failed to load config file", "error", err)
+        logger.Error("Configuration error", "error", err)
         return err
     }
     if filePath != "" {
         logger.Debug("Loaded config file", "path", filePath)
-    }
-    mergedCfg, err := mergeConfig(fileCfg, config)
-    if err != nil {
-        logger.Error("Configuration error", "error", err)
-        return err
     }
     // Parse allow list; default to deny-all if none provided
     if len(mergedCfg.AllowStrings) == 0 {
