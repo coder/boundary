@@ -174,18 +174,18 @@ func Run(ctx context.Context, config Config, args []string) error {
     if filePath != "" {
         logger.Debug("Loaded config file", "path", filePath)
     }
-    mergedCfg, allowList, err := mergeConfig(fileCfg, config)
+    mergedCfg, err := mergeConfig(fileCfg, config)
     if err != nil {
         logger.Error("Configuration error", "error", err)
         return err
     }
     // Parse allow list; default to deny-all if none provided
-    if len(allowList) == 0 {
+    if len(mergedCfg.AllowStrings) == 0 {
         logger.Warn("No allow rules specified; all network traffic will be denied by default")
     }
 
     // Parse allow rules
-    allowRules, err := rulesengine.ParseAllowSpecs(allowList)
+    allowRules, err := rulesengine.ParseAllowSpecs(mergedCfg.AllowStrings)
 	if err != nil {
 		logger.Error("Failed to parse allow rules", "error", err)
 		return fmt.Errorf("failed to parse allow rules: %v", err)

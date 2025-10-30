@@ -60,12 +60,12 @@ func resolveConfigPath(configPath string) (string, error) {
 }
 
 // mergeConfig applies CLI over file config (CLI wins), with allow exclusivity enforced.
-// Returns final Config and the allow list to use.
-func mergeConfig(file fileConfig, cliCfg Config) (Config, []string, error) {
+// Returns final merged Config with AllowStrings set from the single allowed source.
+func mergeConfig(file fileConfig, cliCfg Config) (Config, error) {
 	// Enforce allow exclusivity
-	if len(file.Allow) > 0 && len(cliCfg.AllowStrings) > 0 {
-		return Config{}, nil, errors.New("allow rules specified in both config file and CLI; specify in only one source")
-	}
+    if len(file.Allow) > 0 && len(cliCfg.AllowStrings) > 0 {
+        return Config{}, errors.New("allow rules specified in both config file and CLI; specify in only one source")
+    }
 
 	final := cliCfg
 
@@ -87,13 +87,12 @@ func mergeConfig(file fileConfig, cliCfg Config) (Config, []string, error) {
 		final.PprofPort = file.Pprof.Port
 	}
 
-	// Choose allow from the only specified source
-	allow := cliCfg.AllowStrings
-	if len(allow) == 0 && len(file.Allow) > 0 {
-		allow = file.Allow
-	}
+    // Choose allow from the only specified source and set on final config
+    if len(final.AllowStrings) == 0 && len(file.Allow) > 0 {
+        final.AllowStrings = file.Allow
+    }
 
-	return final, allow, nil
+    return final, nil
 }
 
 
