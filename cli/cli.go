@@ -27,6 +27,7 @@ type Config struct {
 	AllowStrings []string
 	LogLevel     string
 	LogDir       string
+    ConfigPath   string
 	ProxyPort    int64
 	PprofEnabled bool
 	PprofPort    int64
@@ -63,6 +64,12 @@ func BaseCommand() *serpent.Command {
 		Short: "Network isolation tool for monitoring and restricting HTTP/HTTPS requests",
 		Long:  `boundary creates an isolated network environment for target processes, intercepting HTTP/HTTPS traffic through a transparent proxy that enforces user-defined allow rules.`,
 		Options: []serpent.Option{
+            {
+                Flag:        "config",
+                Env:         "BOUNDARY_CONFIG",
+                Description: "Path to YAML config file.",
+                Value:       serpent.StringOf(&config.ConfigPath),
+            },
 			{
 				Flag:        "allow",
 				Env:         "BOUNDARY_ALLOW",
@@ -104,8 +111,8 @@ func BaseCommand() *serpent.Command {
 			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
-			args := inv.Args
-			return Run(inv.Context(), config, args)
+            args := inv.Args
+            return Run(inv.Context(), config, args)
 		},
 	}
 }
@@ -158,13 +165,27 @@ func Run(ctx context.Context, config Config, args []string) error {
 		return fmt.Errorf("no command specified")
 	}
 
-	// Parse allow list; default to deny-all if none provided
-	if len(config.AllowStrings) == 0 {
-		logger.Warn("No allow rules specified; all network traffic will be denied by default")
-	}
+    // Load file config and merge (CLI overrides file), enforce allow exclusivity
+    fileCfg, filePath, err := loadConfigFile(config.ConfigPath)
+    if err != nil {
+        logger.Error("Failed to load config file", "error", err)
+        return err
+    }
+    if filePath != "" {
+        logger.Debug("Loaded config file", "path", filePath)
+    }
+    mergedCfg, allowList, err := mergeConfig(fileCfg, config)
+    if err != nil {
+        logger.Error("Configuration error", "error", err)
+        return err
+    }
+    // Parse allow list; default to deny-all if none provided
+    if len(allowList) == 0 {
+        logger.Warn("No allow rules specified; all network traffic will be denied by default")
+    }
 
-	// Parse allow rules
-	allowRules, err := rulesengine.ParseAllowSpecs(config.AllowStrings)
+    // Parse allow rules
+    allowRules, err := rulesengine.ParseAllowSpecs(allowList)
 	if err != nil {
 		logger.Error("Failed to parse allow rules", "error", err)
 		return fmt.Errorf("failed to parse allow rules: %v", err)
@@ -176,7 +197,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 	// Create auditor
 	auditor := audit.NewLogAuditor(logger)
 
-	// Create TLS certificate manager
+    // Create TLS certificate manager
 	certManager, err := tls.NewCertificateManager(tls.Config{
 		Logger:    logger,
 		ConfigDir: configDir,
@@ -194,10 +215,10 @@ func Run(ctx context.Context, config Config, args []string) error {
 		return fmt.Errorf("failed to setup TLS and CA certificate: %v", err)
 	}
 
-	// Create jailer with cert path from TLS setup
-	jailer, err := createJailer(jail.Config{
+    // Create jailer with cert path from TLS setup
+    jailer, err := createJailer(jail.Config{
 		Logger:        logger,
-		HttpProxyPort: int(config.ProxyPort),
+        HttpProxyPort: int(mergedCfg.ProxyPort),
 		Username:      username,
 		Uid:           uid,
 		Gid:           gid,
@@ -209,16 +230,16 @@ func Run(ctx context.Context, config Config, args []string) error {
 		return fmt.Errorf("failed to create jailer: %v", err)
 	}
 
-	// Create boundary instance
-	boundaryInstance, err := boundary.New(ctx, boundary.Config{
+    // Create boundary instance
+    boundaryInstance, err := boundary.New(ctx, boundary.Config{
 		RuleEngine:   ruleEngine,
 		Auditor:      auditor,
 		TLSConfig:    tlsConfig,
 		Logger:       logger,
 		Jailer:       jailer,
-		ProxyPort:    int(config.ProxyPort),
-		PprofEnabled: config.PprofEnabled,
-		PprofPort:    int(config.PprofPort),
+        ProxyPort:    int(mergedCfg.ProxyPort),
+        PprofEnabled: mergedCfg.PprofEnabled,
+        PprofPort:    int(mergedCfg.PprofPort),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create boundary instance: %v", err)
