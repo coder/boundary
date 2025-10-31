@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"log/slog"
@@ -30,7 +31,7 @@ type Config struct {
 	LogDir       serpent.String         `yaml:"log_dir"`
 	ProxyPort    serpent.Int64          `yaml:"proxy_port"`
 	Pprof        struct {
-		Enabled serpent.Bool `yaml:"enabled"`
+		Enabled serpent.Bool  `yaml:"enabled"`
 		Port    serpent.Int64 `yaml:"port"`
 	} `yaml:"pprof"`
 }
@@ -61,6 +62,18 @@ func NewCommand() *serpent.Command {
 func BaseCommand() *serpent.Command {
 	config := Config{}
 
+	// Resolve default config path - use same logic as util.GetUserInfo() (handles sudo scenarios)
+	_, _, _, _, configDir := util.GetUserInfo()
+	defaultConfigPath := ""
+	if configDir != "" {
+		defaultConfigPath = filepath.Join(configDir, "config.yaml")
+	} else {
+		// Fallback if we can't determine config dir
+		if home, err := os.UserHomeDir(); err == nil {
+			defaultConfigPath = filepath.Join(home, ".config", "coder_boundary", "config.yaml")
+		}
+	}
+
 	return &serpent.Command{
 		Use:   "boundary",
 		Short: "Network isolation tool for monitoring and restricting HTTP/HTTPS requests",
@@ -70,7 +83,7 @@ func BaseCommand() *serpent.Command {
 				Flag:        "config",
 				Env:         "BOUNDARY_CONFIG",
 				Description: "Path to YAML config file.",
-				Default:     "~/.config/coder_boundary/config.yaml",
+				Default:     defaultConfigPath,
 				Value:       &config.Config,
 				YAML:        "",
 			},
@@ -109,7 +122,7 @@ func BaseCommand() *serpent.Command {
 				Env:         "BOUNDARY_PPROF",
 				Description: "Enable pprof profiling server.",
 				Value:       &config.Pprof.Enabled,
-				YAML:        "pprof.enabled",
+				YAML:        "pprof_enabled",
 			},
 			{
 				Flag:        "pprof-port",
@@ -117,7 +130,7 @@ func BaseCommand() *serpent.Command {
 				Description: "Set port for pprof profiling server.",
 				Default:     "6060",
 				Value:       &config.Pprof.Port,
-				YAML:        "pprof.port",
+				YAML:        "pprof_port",
 			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
@@ -133,6 +146,23 @@ func isChild() bool {
 
 // Run executes the boundary command with the given configuration and arguments
 func Run(ctx context.Context, config Config, args []string) error {
+	// Debug: show config path and if file exists
+	configPath := config.Config.String()
+	fmt.Fprintf(os.Stderr, "Config path: %s\n", configPath)
+	if configPath != "" {
+		if _, err := os.Stat(configPath); err == nil {
+			fmt.Fprintf(os.Stderr, "Config file exists and will be loaded by serpent\n")
+		} else {
+			fmt.Fprintf(os.Stderr, "Config file does not exist: %v\n", err)
+		}
+	}
+
+	configInJSON, err := json.Marshal(config)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("%s\n", configInJSON)
+
 	logger, err := setupLogging(config)
 	if err != nil {
 		return fmt.Errorf("could not set up logging: %v", err)
