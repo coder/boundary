@@ -142,14 +142,14 @@ func parseMethodPattern(token string) (string, string, error) {
 	if token == "" {
 		return "", "", errors.New("expected http token, got empty string")
 	}
-	
+
 	// Find the first invalid HTTP token character
 	for i := 0; i < len(token); i++ {
 		if !isHTTPTokenChar(token[i]) {
 			return token[:i], token[i:], nil
 		}
 	}
-	
+
 	// Entire string is a valid HTTP token
 	return token, "", nil
 }
