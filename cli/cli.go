@@ -24,13 +24,15 @@ import (
 
 // Config holds all configuration for the CLI
 type Config struct {
-	AllowStrings []string
-	LogLevel     string
-	LogDir       string
-	ConfigPath   string
-	ProxyPort    int64
-	PprofEnabled bool
-	PprofPort    int64
+	Config       serpent.YAMLConfigPath `yaml:"-"`
+	AllowStrings serpent.StringArray    `yaml:"allow"`
+	LogLevel     serpent.String         `yaml:"log_level"`
+	LogDir       serpent.String         `yaml:"log_dir"`
+	ProxyPort    serpent.Int64          `yaml:"proxy_port"`
+	Pprof        struct {
+		Enabled serpent.Bool `yaml:"enabled"`
+		Port    serpent.Int64 `yaml:"port"`
+	} `yaml:"pprof"`
 }
 
 // NewCommand creates and returns the root serpent command
@@ -68,46 +70,54 @@ func BaseCommand() *serpent.Command {
 				Flag:        "config",
 				Env:         "BOUNDARY_CONFIG",
 				Description: "Path to YAML config file.",
-				Value:       serpent.StringOf(&config.ConfigPath),
+				Default:     "~/.config/coder_boundary/config.yaml",
+				Value:       &config.Config,
+				YAML:        "",
 			},
 			{
 				Flag:        "allow",
 				Env:         "BOUNDARY_ALLOW",
 				Description: "Allow rule (repeatable). Format: \"pattern\" or \"METHOD[,METHOD] pattern\".",
-				Value:       serpent.StringArrayOf(&config.AllowStrings),
+				Value:       &config.AllowStrings,
+				YAML:        "allow",
 			},
 			{
 				Flag:        "log-level",
 				Env:         "BOUNDARY_LOG_LEVEL",
 				Description: "Set log level (error, warn, info, debug).",
 				Default:     "warn",
-				Value:       serpent.StringOf(&config.LogLevel),
+				Value:       &config.LogLevel,
+				YAML:        "log_level",
 			},
 			{
 				Flag:        "log-dir",
 				Env:         "BOUNDARY_LOG_DIR",
 				Description: "Set a directory to write logs to rather than stderr.",
-				Value:       serpent.StringOf(&config.LogDir),
+				Value:       &config.LogDir,
+				YAML:        "log_dir",
 			},
 			{
 				Flag:        "proxy-port",
 				Env:         "PROXY_PORT",
 				Description: "Set a port for HTTP proxy.",
 				Default:     "8080",
-				Value:       serpent.Int64Of(&config.ProxyPort),
+				Value:       &config.ProxyPort,
+				YAML:        "proxy_port",
 			},
 			{
 				Flag:        "pprof",
 				Env:         "BOUNDARY_PPROF",
 				Description: "Enable pprof profiling server.",
-				Value:       serpent.BoolOf(&config.PprofEnabled),
+				Value:       &config.Pprof.Enabled,
+				YAML:        "pprof.enabled",
 			},
 			{
 				Flag:        "pprof-port",
 				Env:         "BOUNDARY_PPROF_PORT",
 				Description: "Set port for pprof profiling server.",
 				Default:     "6060",
-				Value:       serpent.Int64Of(&config.PprofPort),
+				Value:       &config.Pprof.Port,
+				YAML:        "pprof.port",
 			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
@@ -165,22 +175,14 @@ func Run(ctx context.Context, config Config, args []string) error {
 		return fmt.Errorf("no command specified")
 	}
 
-	// Load and merge config (CLI overrides file), enforce allow exclusivity
-	mergedCfg, filePath, err := loadAndMergeConfig(config)
-	if err != nil {
-		logger.Error("Configuration error", "error", err)
-		return err
-	}
-	if filePath != "" {
-		logger.Debug("Loaded config file", "path", filePath)
-	}
 	// Parse allow list; default to deny-all if none provided
-	if len(mergedCfg.AllowStrings) == 0 {
+	allowStrings := config.AllowStrings.Value()
+	if len(allowStrings) == 0 {
 		logger.Warn("No allow rules specified; all network traffic will be denied by default")
 	}
 
 	// Parse allow rules
-	allowRules, err := rulesengine.ParseAllowSpecs(mergedCfg.AllowStrings)
+	allowRules, err := rulesengine.ParseAllowSpecs(allowStrings)
 	if err != nil {
 		logger.Error("Failed to parse allow rules", "error", err)
 		return fmt.Errorf("failed to parse allow rules: %v", err)
@@ -213,7 +215,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 	// Create jailer with cert path from TLS setup
 	jailer, err := createJailer(jail.Config{
 		Logger:        logger,
-		HttpProxyPort: int(mergedCfg.ProxyPort),
+		HttpProxyPort: int(config.ProxyPort.Value()),
 		Username:      username,
 		Uid:           uid,
 		Gid:           gid,
@@ -232,9 +234,9 @@ func Run(ctx context.Context, config Config, args []string) error {
 		TLSConfig:    tlsConfig,
 		Logger:       logger,
 		Jailer:       jailer,
-		ProxyPort:    int(mergedCfg.ProxyPort),
-		PprofEnabled: mergedCfg.PprofEnabled,
-		PprofPort:    int(mergedCfg.PprofPort),
+		ProxyPort:    int(config.ProxyPort.Value()),
+		PprofEnabled: config.Pprof.Enabled.Value(),
+		PprofPort:    int(config.Pprof.Port.Value()),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create boundary instance: %v", err)
@@ -299,7 +301,7 @@ func Run(ctx context.Context, config Config, args []string) error {
 // setupLogging creates a slog logger with the specified level
 func setupLogging(config Config) (*slog.Logger, error) {
 	var level slog.Level
-	switch strings.ToLower(config.LogLevel) {
+	switch strings.ToLower(config.LogLevel.Value()) {
 	case "error":
 		level = slog.LevelError
 	case "warn":
@@ -314,10 +316,11 @@ func setupLogging(config Config) (*slog.Logger, error) {
 
 	logTarget := os.Stderr
 
-	if config.LogDir != "" {
+	logDir := config.LogDir.Value()
+	if logDir != "" {
 		// Set up the logging directory if it doesn't exist yet
-		if err := os.MkdirAll(config.LogDir, 0755); err != nil {
-			return nil, fmt.Errorf("could not set up log dir %s: %v", config.LogDir, err)
+		if err := os.MkdirAll(logDir, 0755); err != nil {
+			return nil, fmt.Errorf("could not set up log dir %s: %v", logDir, err)
 		}
 
 		// Create a logfile (timestamp and pid to avoid race conditions with multiple boundary calls running)
@@ -325,7 +328,7 @@ func setupLogging(config Config) (*slog.Logger, error) {
 			time.Now().Format("2006-01-02_15-04-05"),
 			os.Getpid())
 
-		logFile, err := os.Create(filepath.Join(config.LogDir, logFilePath))
+		logFile, err := os.Create(filepath.Join(logDir, logFilePath))
 		if err != nil {
 			return nil, fmt.Errorf("could not create log file %s: %v", logFilePath, err)
 		}
