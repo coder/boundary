@@ -139,16 +139,16 @@ func isChild() bool {
 
 // Run executes the boundary command with the given configuration and arguments
 func Run(ctx context.Context, config Config, args []string) error {
-	configInJSON, err := json.Marshal(config)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Printf("%s\n", configInJSON)
-
 	logger, err := setupLogging(config)
 	if err != nil {
 		return fmt.Errorf("could not set up logging: %v", err)
 	}
+
+	configInJSON, err := json.Marshal(config)
+	if err != nil {
+		return err
+	}
+	logger.Debug("config", "json_config", configInJSON)
 
 	if isChild() {
 		logger.Info("boundary CHILD process is started")
