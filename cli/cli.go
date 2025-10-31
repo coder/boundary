@@ -30,10 +30,8 @@ type Config struct {
 	LogLevel     serpent.String         `yaml:"log_level"`
 	LogDir       serpent.String         `yaml:"log_dir"`
 	ProxyPort    serpent.Int64          `yaml:"proxy_port"`
-	Pprof        struct {
-		Enabled serpent.Bool  `yaml:"enabled"`
-		Port    serpent.Int64 `yaml:"port"`
-	} `yaml:"pprof"`
+	PprofEnabled serpent.Bool           `yaml:"pprof_enabled"`
+	PprofPort    serpent.Int64          `yaml:"pprof_port"`
 }
 
 // NewCommand creates and returns the root serpent command
@@ -62,22 +60,11 @@ func NewCommand() *serpent.Command {
 func BaseCommand() *serpent.Command {
 	config := Config{}
 
-	// Resolve default config path - use same logic as util.GetUserInfo() (handles sudo scenarios)
-	// Set it directly on the config so serpent sees it as the default value
-	_, _, _, _, configDir := util.GetUserInfo()
-	if configDir != "" {
-		defaultPath := filepath.Join(configDir, "config.yaml")
-		// Only set if file exists - serpent will load it automatically
+	// Set default config path if file exists - serpent will load it automatically
+	if home, err := os.UserHomeDir(); err == nil {
+		defaultPath := filepath.Join(home, ".config", "coder_boundary", "config.yaml")
 		if _, err := os.Stat(defaultPath); err == nil {
 			config.Config = serpent.YAMLConfigPath(defaultPath)
-		}
-	} else {
-		// Fallback if we can't determine config dir
-		if home, err := os.UserHomeDir(); err == nil {
-			defaultPath := filepath.Join(home, ".config", "coder_boundary", "config.yaml")
-			if _, err := os.Stat(defaultPath); err == nil {
-				config.Config = serpent.YAMLConfigPath(defaultPath)
-			}
 		}
 	}
 
@@ -127,7 +114,7 @@ func BaseCommand() *serpent.Command {
 				Flag:        "pprof",
 				Env:         "BOUNDARY_PPROF",
 				Description: "Enable pprof profiling server.",
-				Value:       &config.Pprof.Enabled,
+				Value:       &config.PprofEnabled,
 				YAML:        "pprof_enabled",
 			},
 			{
@@ -135,7 +122,7 @@ func BaseCommand() *serpent.Command {
 				Env:         "BOUNDARY_PPROF_PORT",
 				Description: "Set port for pprof profiling server.",
 				Default:     "6060",
-				Value:       &config.Pprof.Port,
+				Value:       &config.PprofPort,
 				YAML:        "pprof_port",
 			},
 		},
@@ -260,8 +247,8 @@ func Run(ctx context.Context, config Config, args []string) error {
 		Logger:       logger,
 		Jailer:       jailer,
 		ProxyPort:    int(config.ProxyPort.Value()),
-		PprofEnabled: config.Pprof.Enabled.Value(),
-		PprofPort:    int(config.Pprof.Port.Value()),
+		PprofEnabled: config.PprofEnabled.Value(),
+		PprofPort:    int(config.PprofPort.Value()),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create boundary instance: %v", err)
