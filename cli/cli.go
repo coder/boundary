@@ -63,14 +63,21 @@ func BaseCommand() *serpent.Command {
 	config := Config{}
 
 	// Resolve default config path - use same logic as util.GetUserInfo() (handles sudo scenarios)
+	// Set it directly on the config so serpent sees it as the default value
 	_, _, _, _, configDir := util.GetUserInfo()
-	defaultConfigPath := ""
 	if configDir != "" {
-		defaultConfigPath = filepath.Join(configDir, "config.yaml")
+		defaultPath := filepath.Join(configDir, "config.yaml")
+		// Only set if file exists - serpent will load it automatically
+		if _, err := os.Stat(defaultPath); err == nil {
+			config.Config = serpent.YAMLConfigPath(defaultPath)
+		}
 	} else {
 		// Fallback if we can't determine config dir
 		if home, err := os.UserHomeDir(); err == nil {
-			defaultConfigPath = filepath.Join(home, ".config", "coder_boundary", "config.yaml")
+			defaultPath := filepath.Join(home, ".config", "coder_boundary", "config.yaml")
+			if _, err := os.Stat(defaultPath); err == nil {
+				config.Config = serpent.YAMLConfigPath(defaultPath)
+			}
 		}
 	}
 
@@ -83,7 +90,6 @@ func BaseCommand() *serpent.Command {
 				Flag:        "config",
 				Env:         "BOUNDARY_CONFIG",
 				Description: "Path to YAML config file.",
-				Default:     defaultConfigPath,
 				Value:       &config.Config,
 				YAML:        "",
 			},
@@ -146,17 +152,6 @@ func isChild() bool {
 
 // Run executes the boundary command with the given configuration and arguments
 func Run(ctx context.Context, config Config, args []string) error {
-	// Debug: show config path and if file exists
-	configPath := config.Config.String()
-	fmt.Fprintf(os.Stderr, "Config path: %s\n", configPath)
-	if configPath != "" {
-		if _, err := os.Stat(configPath); err == nil {
-			fmt.Fprintf(os.Stderr, "Config file exists and will be loaded by serpent\n")
-		} else {
-			fmt.Fprintf(os.Stderr, "Config file does not exist: %v\n", err)
-		}
-	}
-
 	configInJSON, err := json.Marshal(config)
 	if err != nil {
 		panic(err)
