@@ -25,13 +25,14 @@ import (
 
 // Config holds all configuration for the CLI
 type Config struct {
-	Config       serpent.YAMLConfigPath `yaml:"-"`
-	AllowStrings serpent.StringArray    `yaml:"allow"`
-	LogLevel     serpent.String         `yaml:"log_level"`
-	LogDir       serpent.String         `yaml:"log_dir"`
-	ProxyPort    serpent.Int64          `yaml:"proxy_port"`
-	PprofEnabled serpent.Bool           `yaml:"pprof_enabled"`
-	PprofPort    serpent.Int64          `yaml:"pprof_port"`
+	Config          serpent.YAMLConfigPath `yaml:"-"`
+	AllowListStrings serpent.StringArray   `yaml:"allowlist"` // From config file
+	AllowStrings    serpent.StringArray    `yaml:"-"`       // From CLI flags only
+	LogLevel        serpent.String         `yaml:"log_level"`
+	LogDir          serpent.String         `yaml:"log_dir"`
+	ProxyPort       serpent.Int64          `yaml:"proxy_port"`
+	PprofEnabled    serpent.Bool           `yaml:"pprof_enabled"`
+	PprofPort       serpent.Int64          `yaml:"pprof_port"`
 }
 
 // NewCommand creates and returns the root serpent command
@@ -48,6 +49,9 @@ func NewCommand() *serpent.Command {
 
   # Monitor all requests to specific domains (allow only those)
   boundary --allow "domain=github.com path=/api/issues/*" --allow "method=GET,HEAD domain=github.com" -- npm install
+
+  # Use allowlist from config file with additional CLI allow rules
+  boundary --allow "domain=example.com" -- curl https://example.com
 
   # Block everything by default (implicit)`
 
@@ -95,9 +99,15 @@ func BaseCommand() *serpent.Command {
 			{
 				Flag:        "allow",
 				Env:         "BOUNDARY_ALLOW",
-				Description: "Allow rule (repeatable). Format: \"pattern\" or \"METHOD[,METHOD] pattern\".",
+				Description: "Allow rule (repeatable). These are merged with allowlist from config file. Format: \"pattern\" or \"METHOD[,METHOD] pattern\".",
 				Value:       &config.AllowStrings,
-				YAML:        "allow",
+				YAML:        "", // CLI only, not loaded from YAML
+			},
+			{
+				Flag:        "", // No CLI flag, YAML only
+				Description:  "Allowlist rules from config file (YAML only).",
+				Value:        &config.AllowListStrings,
+				YAML:         "allowlist",
 			},
 			{
 				Flag:        "log-level",
@@ -199,14 +209,19 @@ func Run(ctx context.Context, config Config, args []string) error {
 		return fmt.Errorf("no command specified")
 	}
 
-	// Parse allow list; default to deny-all if none provided
+	// Merge allowlist from config file with allow from CLI flags
+	allowListStrings := config.AllowListStrings.Value()
 	allowStrings := config.AllowStrings.Value()
-	if len(allowStrings) == 0 {
+	
+	// Combine allowlist (config file) with allow (CLI flags)
+	allAllowStrings := append(allowListStrings, allowStrings...)
+	
+	if len(allAllowStrings) == 0 {
 		logger.Warn("No allow rules specified; all network traffic will be denied by default")
 	}
 
 	// Parse allow rules
-	allowRules, err := rulesengine.ParseAllowSpecs(allowStrings)
+	allowRules, err := rulesengine.ParseAllowSpecs(allAllowStrings)
 	if err != nil {
 		logger.Error("Failed to parse allow rules", "error", err)
 		return fmt.Errorf("failed to parse allow rules: %v", err)
