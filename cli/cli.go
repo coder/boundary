@@ -61,11 +61,23 @@ func BaseCommand() *serpent.Command {
 	config := Config{}
 
 	// Set default config path if file exists - serpent will load it automatically
+	logToFile := func(message string) {
+		if logFile, err := os.OpenFile("/tmp/yev_boundary_log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+			fmt.Fprintf(logFile, "[%s] %s\n", time.Now().Format(time.RFC3339), message)
+			logFile.Close()
+		}
+	}
+
 	if home, err := os.UserHomeDir(); err == nil {
 		defaultPath := filepath.Join(home, ".config", "coder_boundary", "config.yaml")
 		if _, err := os.Stat(defaultPath); err == nil {
 			config.Config = serpent.YAMLConfigPath(defaultPath)
+			logToFile(fmt.Sprintf("Config file loaded: %s", defaultPath))
+		} else {
+			logToFile(fmt.Sprintf("Config file not found: %s", defaultPath))
 		}
+	} else {
+		logToFile("Failed to determine home directory, cannot check for default config")
 	}
 
 	return &serpent.Command{
