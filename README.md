@@ -15,11 +15,35 @@ boundary creates an isolated network environment for target processes, intercept
 
 ## Installation
 
+### Quick Install (Recommended)
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/coder/boundary/main/install.sh | bash
 ```
 
 > For installation options, manual installation, and release details, see [RELEASES.md](RELEASES.md).
+
+### From Source
+
+Build `boundary` from source:
+
+```bash
+# Clone the repository
+git clone https://github.com/coder/boundary.git
+cd boundary
+
+# Build the binary
+make build
+
+# Install binary and wrapper script (optional)
+sudo cp boundary /usr/local/bin/
+sudo cp scripts/boundary-wrapper.sh /usr/local/bin/boundary-run
+sudo chmod +x /usr/local/bin/boundary-run
+```
+
+**Requirements:**
+- Go 1.24 or later
+- Linux
 
 ## Usage
 
