@@ -23,18 +23,48 @@ curl -fsSL https://raw.githubusercontent.com/coder/boundary/main/install.sh | ba
 
 ## Usage
 
+### Quick Start with Shortcut
+
+The recommended way to run `boundary` is using the `boundary-run` shortcut, which handles privilege escalation automatically:
+
+```bash
+# Install the wrapper script (optional but recommended)
+sudo cp scripts/boundary-wrapper.sh /usr/local/bin/boundary-run
+sudo chmod +x /usr/local/bin/boundary-run
+
+# Now you can use the shortcut:
+boundary-run --allow "domain=github.com" -- curl https://github.com
+boundary-run -- bash
+```
+
+### Direct Usage
+
+If you prefer to run `boundary` directly, you'll need to handle privilege escalation:
+
+```bash
+sudo -E env PATH=$PATH setpriv \
+  --reuid=$(id -u) \
+  --regid=$(id -g) \
+  --clear-groups \
+  --inh-caps=+net_admin \
+  --ambient-caps=+net_admin \
+  boundary --allow "domain=github.com" -- curl https://github.com
+```
+
+### Examples
+
 ```bash
 # Allow only requests to github.com
-boundary --allow "domain=github.com" -- curl https://github.com
+boundary-run --allow "domain=github.com" -- curl https://github.com
 
 # Allow full access to GitHub issues API, but only GET/HEAD elsewhere on GitHub
-boundary \
+boundary-run \
   --allow "domain=github.com path=/api/issues/*" \
   --allow "method=GET,HEAD domain=github.com" \
   -- npm install
 
 # Default deny-all: everything is blocked unless explicitly allowed
-boundary -- curl https://example.com
+boundary-run -- curl https://example.com
 ```
 
 ## Allow Rules
