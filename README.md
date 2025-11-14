@@ -83,11 +83,11 @@ boundary-run -- curl https://example.com
 
 ### Examples
 ```bash
-boundary --allow "domain=github.com" -- git pull
-boundary --allow "domain=*.github.com" -- npm install           # GitHub subdomains
-boundary --allow "method=GET,HEAD domain=api.github.com" -- curl https://api.github.com
-boundary --allow "method=POST domain=api.example.com path=/users,/posts" -- ./app  # Multiple paths
-boundary --allow "path=/api/v1/*,/api/v2/*" -- curl https://api.example.com/api/v1/users
+boundary-run --allow "domain=github.com" -- git pull
+boundary-run --allow "domain=*.github.com" -- npm install           # GitHub subdomains
+boundary-run --allow "method=GET,HEAD domain=api.github.com" -- curl https://api.github.com
+boundary-run --allow "method=POST domain=api.example.com path=/users,/posts" -- ./app  # Multiple paths
+boundary-run --allow "path=/api/v1/*,/api/v2/*" -- curl https://api.example.com/api/v1/users
 ```
 
 Wildcards: `*` matches any characters. All traffic is denied unless explicitly allowed.
@@ -95,8 +95,9 @@ Wildcards: `*` matches any characters. All traffic is denied unless explicitly a
 ## Logging
 
 ```bash
-boundary --log-level info --allow "method=*" -- npm install     # Show all requests
-boundary --log-level debug --allow "domain=github.com" -- git pull  # Debug info
+boundary-run --log-level warn --allow "domain=github.com" -- git pull  # Default: only logs denied requests
+boundary-run --log-level info --allow "method=*" -- npm install     # Show all requests
+boundary-run --log-level debug --allow "domain=github.com" -- git pull  # Debug info
 ```
 
 **Log Levels:** `error`, `warn` (default), `info`, `debug`
@@ -112,12 +113,19 @@ boundary --log-level debug --allow "domain=github.com" -- git pull  # Debug info
 ## Command-Line Options
 
 ```text
-boundary [flags] -- command [args...]
+boundary-run [flags] -- command [args...]
 
- --allow <SPEC>             Allow rule (repeatable)
- --log-level <LEVEL>        Set log level (error, warn, info, debug)
- -h, --help                 Print help
+ --config <PATH>             Path to YAML config file (default: ~/.config/coder_boundary/config.yaml)
+ --allow <SPEC>              Allow rule (repeatable). Merged with allowlist from config file
+ --log-level <LEVEL>        Set log level (error, warn, info, debug). Default: warn
+ --log-dir <DIR>             Directory to write logs to (default: stderr)
+ --proxy-port <PORT>        HTTP proxy port (default: 8080)
+ --pprof                     Enable pprof profiling server
+ --pprof-port <PORT>         pprof server port (default: 6060)
+ -h, --help                  Print help
 ```
+
+Environment variables: `BOUNDARY_CONFIG`, `BOUNDARY_ALLOW`, `BOUNDARY_LOG_LEVEL`, `BOUNDARY_LOG_DIR`, `PROXY_PORT`, `BOUNDARY_PPROF`, `BOUNDARY_PPROF_PORT`
 
 ## Development
 
