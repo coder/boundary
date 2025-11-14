@@ -25,17 +25,19 @@ curl -fsSL https://raw.githubusercontent.com/coder/boundary/main/install.sh | ba
 
 ### Quick Start with Shortcut
 
-The recommended way to run `boundary` is using the `boundary-run` shortcut, which handles privilege escalation automatically:
+The recommended way to run `boundary` is using the `boundary-run` shortcut, which handles privilege escalation automatically. The `boundary-run` wrapper is installed automatically when you use the installation script:
 
 ```bash
-# Install the wrapper script (optional but recommended)
-sudo cp scripts/boundary-wrapper.sh /usr/local/bin/boundary-run
-sudo chmod +x /usr/local/bin/boundary-run
-
-# Now you can use the shortcut:
+# After installation, use the shortcut:
 boundary-run --allow "domain=github.com" -- curl https://github.com
 boundary-run -- bash
 ```
+
+> **Note:** If you installed `boundary` manually, you can install the wrapper script separately:
+> ```bash
+> sudo cp scripts/boundary-wrapper.sh /usr/local/bin/boundary-run
+> sudo chmod +x /usr/local/bin/boundary-run
+> ```
 
 ### Direct Usage
 
