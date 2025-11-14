@@ -15,26 +15,82 @@ boundary creates an isolated network environment for target processes, intercept
 
 ## Installation
 
+### Quick Install (Recommended)
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/coder/boundary/main/install.sh | bash
 ```
 
 > For installation options, manual installation, and release details, see [RELEASES.md](RELEASES.md).
 
+### From Source
+
+Build `boundary` from source:
+
+```bash
+# Clone the repository
+git clone https://github.com/coder/boundary.git
+cd boundary
+
+# Build the binary
+make build
+
+# Install binary and wrapper script (optional)
+sudo cp boundary /usr/local/bin/
+sudo cp scripts/boundary-wrapper.sh /usr/local/bin/boundary-run
+sudo chmod +x /usr/local/bin/boundary-run
+```
+
+**Requirements:**
+- Go 1.24 or later
+- Linux
+
 ## Usage
+
+### Quick Start with Shortcut
+
+The recommended way to run `boundary` is using the `boundary-run` shortcut, which handles privilege escalation automatically. The `boundary-run` wrapper is installed automatically when you use the installation script:
+
+```bash
+# After installation, use the shortcut:
+boundary-run --allow "domain=github.com" -- curl https://github.com
+boundary-run -- bash
+```
+
+> **Note:** If you installed `boundary` manually, you can install the wrapper script separately:
+> ```bash
+> sudo cp scripts/boundary-wrapper.sh /usr/local/bin/boundary-run
+> sudo chmod +x /usr/local/bin/boundary-run
+> ```
+
+### Direct Usage
+
+If you prefer to run `boundary` directly, you'll need to handle privilege escalation:
+
+```bash
+sudo -E env PATH=$PATH setpriv \
+  --reuid=$(id -u) \
+  --regid=$(id -g) \
+  --clear-groups \
+  --inh-caps=+net_admin \
+  --ambient-caps=+net_admin \
+  boundary --allow "domain=github.com" -- curl https://github.com
+```
+
+### Examples
 
 ```bash
 # Allow only requests to github.com
-boundary --allow "domain=github.com" -- curl https://github.com
+boundary-run --allow "domain=github.com" -- curl https://github.com
 
 # Allow full access to GitHub issues API, but only GET/HEAD elsewhere on GitHub
-boundary \
+boundary-run \
   --allow "domain=github.com path=/api/issues/*" \
   --allow "method=GET,HEAD domain=github.com" \
   -- npm install
 
 # Default deny-all: everything is blocked unless explicitly allowed
-boundary -- curl https://example.com
+boundary-run -- curl https://example.com
 ```
 
 ## Allow Rules
@@ -51,11 +107,11 @@ boundary -- curl https://example.com
 
 ### Examples
 ```bash
-boundary --allow "domain=github.com" -- git pull
-boundary --allow "domain=*.github.com" -- npm install           # GitHub subdomains
-boundary --allow "method=GET,HEAD domain=api.github.com" -- curl https://api.github.com
-boundary --allow "method=POST domain=api.example.com path=/users,/posts" -- ./app  # Multiple paths
-boundary --allow "path=/api/v1/*,/api/v2/*" -- curl https://api.example.com/api/v1/users
+boundary-run --allow "domain=github.com" -- git pull
+boundary-run --allow "domain=*.github.com" -- npm install           # GitHub subdomains
+boundary-run --allow "method=GET,HEAD domain=api.github.com" -- curl https://api.github.com
+boundary-run --allow "method=POST domain=api.example.com path=/users,/posts" -- ./app  # Multiple paths
+boundary-run --allow "path=/api/v1/*,/api/v2/*" -- curl https://api.example.com/api/v1/users
 ```
 
 Wildcards: `*` matches any characters. All traffic is denied unless explicitly allowed.
@@ -63,8 +119,9 @@ Wildcards: `*` matches any characters. All traffic is denied unless explicitly a
 ## Logging
 
 ```bash
-boundary --log-level info --allow "method=*" -- npm install     # Show all requests
-boundary --log-level debug --allow "domain=github.com" -- git pull  # Debug info
+boundary-run --log-level warn --allow "domain=github.com" -- git pull  # Default: only logs denied requests
+boundary-run --log-level info --allow "method=*" -- npm install     # Show all requests
+boundary-run --log-level debug --allow "domain=github.com" -- git pull  # Debug info
 ```
 
 **Log Levels:** `error`, `warn` (default), `info`, `debug`
@@ -80,12 +137,19 @@ boundary --log-level debug --allow "domain=github.com" -- git pull  # Debug info
 ## Command-Line Options
 
 ```text
-boundary [flags] -- command [args...]
+boundary-run [flags] -- command [args...]
 
- --allow <SPEC>             Allow rule (repeatable)
- --log-level <LEVEL>        Set log level (error, warn, info, debug)
- -h, --help                 Print help
+ --config <PATH>             Path to YAML config file (default: ~/.config/coder_boundary/config.yaml)
+ --allow <SPEC>              Allow rule (repeatable). Merged with allowlist from config file
+ --log-level <LEVEL>        Set log level (error, warn, info, debug). Default: warn
+ --log-dir <DIR>             Directory to write logs to (default: stderr)
+ --proxy-port <PORT>        HTTP proxy port (default: 8080)
+ --pprof                     Enable pprof profiling server
+ --pprof-port <PORT>         pprof server port (default: 6060)
+ -h, --help                  Print help
 ```
+
+Environment variables: `BOUNDARY_CONFIG`, `BOUNDARY_ALLOW`, `BOUNDARY_LOG_LEVEL`, `BOUNDARY_LOG_DIR`, `PROXY_PORT`, `BOUNDARY_PPROF`, `BOUNDARY_PPROF_PORT`
 
 ## Development
 
@@ -98,6 +162,10 @@ make clean          # Clean build artifacts
 make fmt            # Format code
 make lint           # Lint code
 ```
+
+## Architecture
+
+For detailed information about how `boundary` works internally, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## License
 

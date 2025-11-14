@@ -163,6 +163,35 @@ download_binary() {
     log_success "Binary extracted and made executable"
 }
 
+# Download wrapper script
+download_wrapper() {
+    local wrapper_url="https://raw.githubusercontent.com/$REPO/main/scripts/boundary-wrapper.sh"
+    WRAPPER_PATH="$TMP_DIR/boundary-wrapper.sh"
+    
+    log_info "Downloading boundary-run wrapper script..."
+    
+    if command -v curl &> /dev/null; then
+        if ! curl -fsSL "$wrapper_url" -o "$WRAPPER_PATH"; then
+            log_warning "Failed to download wrapper script. You can install it manually later."
+            WRAPPER_PATH=""
+            return
+        fi
+    elif command -v wget &> /dev/null; then
+        if ! wget -q "$wrapper_url" -O "$WRAPPER_PATH"; then
+            log_warning "Failed to download wrapper script. You can install it manually later."
+            WRAPPER_PATH=""
+            return
+        fi
+    else
+        log_warning "Cannot download wrapper script (neither curl nor wget available)."
+        WRAPPER_PATH=""
+        return
+    fi
+    
+    chmod +x "$WRAPPER_PATH"
+    log_success "Wrapper script downloaded"
+}
+
 # Install binary
 install_binary() {
     local target_path="$INSTALL_DIR/$BINARY_NAME"
@@ -181,6 +210,22 @@ install_binary() {
     fi
     
     log_success "boundary installed successfully!"
+    
+    # Install wrapper script if available
+    if [[ -n "$WRAPPER_PATH" && -f "$WRAPPER_PATH" ]]; then
+        local wrapper_target="$INSTALL_DIR/boundary-run"
+        log_info "Installing boundary-run wrapper to $wrapper_target..."
+        
+        if [[ "$NEED_SUDO" == "true" ]]; then
+            sudo cp "$WRAPPER_PATH" "$wrapper_target"
+            sudo chmod +x "$wrapper_target"
+        else
+            cp "$WRAPPER_PATH" "$wrapper_target"
+            chmod +x "$wrapper_target"
+        fi
+        
+        log_success "boundary-run wrapper installed successfully!"
+    fi
 }
 
 # Verify installation
@@ -196,6 +241,13 @@ verify_installation() {
         log_warning "boundary is not in PATH. You may need to add $INSTALL_DIR to your PATH."
         log_info "You can run boundary using the full path: $INSTALL_DIR/$BINARY_NAME"
     fi
+    
+    if command -v "boundary-run" &> /dev/null; then
+        log_success "boundary-run wrapper is available in PATH"
+    elif [[ -f "$INSTALL_DIR/boundary-run" ]]; then
+        log_info "boundary-run is installed at $INSTALL_DIR/boundary-run"
+        log_info "You can use it directly: $INSTALL_DIR/boundary-run"
+    fi
 }
 
 # Print usage examples
@@ -204,9 +256,16 @@ print_usage() {
     echo -e "${GREEN}🎉 Installation complete!${NC}"
     echo
     echo -e "${BLUE}Quick Start:${NC}"
-    echo "  boundary --help"
-    echo "  boundary --allow 'github.com' -- curl https://github.com"
-    echo "  boundary --allow '*.npmjs.org' -- npm install"
+    if command -v "boundary-run" &> /dev/null; then
+        echo "  boundary-run --help"
+        echo "  boundary-run --allow 'github.com' -- curl https://github.com"
+        echo "  boundary-run --allow '*.npmjs.org' -- npm install"
+        echo "  boundary-run -- bash"
+    else
+        echo "  boundary --help"
+        echo "  boundary --allow 'github.com' -- curl https://github.com"
+        echo "  boundary --allow '*.npmjs.org' -- npm install"
+    fi
     echo
     echo -e "${BLUE}Documentation:${NC}"
     echo "  https://github.com/$REPO"
@@ -293,6 +352,7 @@ main() {
     fi
     
     download_binary
+    download_wrapper
     install_binary
     verify_installation
     print_usage
