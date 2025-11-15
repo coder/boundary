@@ -126,10 +126,10 @@ get_latest_version() {
 # Download binary
 download_binary() {
     local binary_name="${BINARY_NAME}-${PLATFORM}"
-    local download_url="https://github.com/$REPO/releases/download/v$VERSION/${binary_name}.tar.gz"
+    local download_url="https://github.com/$REPO/releases/download/$VERSION/${binary_name}.tar.gz"
     local archive_path="$TMP_DIR/${binary_name}.tar.gz"
     
-    log_info "Downloading $binary_name v$VERSION..."
+    log_info "Downloading $binary_name $VERSION..."
     log_info "URL: $download_url"
     
     if command -v curl &> /dev/null; then
