@@ -117,9 +117,6 @@ get_latest_version() {
         log_error "Failed to fetch the latest release version. Please check your internet connection."
     fi
     
-    # Remove 'v' prefix if present
-    VERSION=${VERSION#v}
-    
     log_info "Latest version: $VERSION"
 }
 
