@@ -49,7 +49,7 @@ curl -fsSL https://raw.githubusercontent.com/coder/boundary/main/install.sh | ba
 **Custom Installation Options**
 ```bash
 # Install specific version
-curl -fsSL https://raw.githubusercontent.com/coder/boundary/main/install.sh | bash -s -- --version 1.0.0
+curl -fsSL https://raw.githubusercontent.com/coder/boundary/main/install.sh | bash -s -- --version v1.0.0
 
 # Install to custom directory
 curl -fsSL https://raw.githubusercontent.com/coder/boundary/main/install.sh | bash -s -- --install-dir ~/.local/bin

@@ -117,19 +117,16 @@ get_latest_version() {
         log_error "Failed to fetch the latest release version. Please check your internet connection."
     fi
     
-    # Remove 'v' prefix if present
-    VERSION=${VERSION#v}
-    
     log_info "Latest version: $VERSION"
 }
 
 # Download binary
 download_binary() {
     local binary_name="${BINARY_NAME}-${PLATFORM}"
-    local download_url="https://github.com/$REPO/releases/download/v$VERSION/${binary_name}.tar.gz"
+    local download_url="https://github.com/$REPO/releases/download/$VERSION/${binary_name}.tar.gz"
     local archive_path="$TMP_DIR/${binary_name}.tar.gz"
     
-    log_info "Downloading $binary_name v$VERSION..."
+    log_info "Downloading $binary_name $VERSION..."
     log_info "URL: $download_url"
     
     if command -v curl &> /dev/null; then
@@ -303,7 +300,7 @@ main() {
                     VERSION="$2"
                     shift 2
                 else
-                    log_error "--version requires a version number"
+                    log_error "--version requires a version number (use 'latest' to get the latest version)"
                 fi
                 ;;
             --install-dir)
@@ -320,7 +317,7 @@ main() {
                 echo "Usage: $0 [OPTIONS]"
                 echo
                 echo "Options:"
-                echo "  --version VERSION     Install specific version (default: latest)"
+                echo "  --version VERSION     Install specific version or 'latest' (default: latest)"
                 echo "  --install-dir DIR     Install directory (default: /usr/local/bin)"
                 echo "  -h, --help            Show this help message"
                 echo
@@ -329,6 +326,7 @@ main() {
                 echo
                 echo "Examples:"
                 echo "  $0                                    # Install latest version"
+                echo "  $0 --version latest                  # Explicitly install latest version"
                 echo "  $0 --version 1.0.0                   # Install specific version"
                 echo "  $0 --install-dir ~/.local/bin        # Install to custom directory"
                 echo "  INSTALL_DIR=~/.local/bin $0          # Using environment variable"
@@ -344,8 +342,11 @@ main() {
     detect_platform
     check_permissions
     
-    # Get version if not specified
+    # Get version if not specified or if "latest" was explicitly requested
     if [[ -z "$VERSION" ]]; then
+        get_latest_version
+    elif [[ "$VERSION" == "latest" ]]; then
+        log_info "Fetching latest version..."
         get_latest_version
     else
         log_info "Using specified version: $VERSION"
