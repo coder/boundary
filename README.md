@@ -68,12 +68,12 @@ boundary-run -- bash
 If you prefer to run `boundary` directly, you'll need to handle privilege escalation:
 
 ```bash
+# Note: sys_admin is only needed in restricted environments (e.g., Docker with seccomp).
+# If boundary works without it on your system, you can remove +sys_admin from both flags.
 sudo -E env PATH=$PATH setpriv \
   --reuid=$(id -u) \
   --regid=$(id -g) \
   --clear-groups \
-  # Note: sys_admin is only needed in restricted environments (e.g., Docker with seccomp).
-  # If boundary works without it on your system, you can remove +sys_admin from both flags.
   --inh-caps=+net_admin,+sys_admin \
   --ambient-caps=+net_admin,+sys_admin \
   boundary --allow "domain=github.com" -- curl https://github.com
@@ -135,6 +135,18 @@ boundary-run --log-level debug --allow "domain=github.com" -- git pull  # Debug 
 | Linux    | Network namespaces + iptables  | CAP_NET_ADMIN (or root)   |
 | macOS    | Not supported                  | -                         |
 | Windows  | Not supported                  | -                         |
+
+## Security and Privileges
+
+**All processes are expected to run as non-root users** for security best practices:
+
+- **boundary-parent**: The main boundary process that sets up network isolation
+- **boundary-child**: The child process created within the network namespace
+- **target/agent process**: The command you're running (e.g., `curl`, `npm`, `bash`)
+
+The `boundary-run` wrapper script handles privilege escalation automatically using `setpriv` to drop privileges before launching boundary. This ensures all processes run with the minimum required capabilities (`CAP_NET_ADMIN` and optionally `CAP_SYS_ADMIN` for restricted environments) while executing as your regular user account.
+
+If you run `boundary` directly with `sudo` (without `setpriv`), all processes will run as root, which is **not recommended** for security reasons. Always use `boundary-run` or the equivalent `setpriv` command shown in the [Direct Usage](#direct-usage) section.
 
 ## Command-Line Options
 
