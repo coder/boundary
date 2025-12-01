@@ -13,12 +13,6 @@ else
     exit 1
 fi
 
-# Check if we're already running as the target user (not root)
-if [ "$(id -u)" -eq 0 ]; then
-    echo "Error: This wrapper should not be run as root. It will handle privilege escalation automatically." >&2
-    exit 1
-fi
-
 # Run boundary with proper privilege handling
 # Note: sys_admin is only needed in restricted environments (e.g., Docker with seccomp).
 # If boundary works without it on your system, you can remove +sys_admin from both flags.
