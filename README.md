@@ -72,8 +72,8 @@ sudo -E env PATH=$PATH setpriv \
   --reuid=$(id -u) \
   --regid=$(id -g) \
   --clear-groups \
-  --inh-caps=+net_admin \
-  --ambient-caps=+net_admin \
+  --inh-caps=+net_admin,+sys_admin \
+  --ambient-caps=+net_admin,+sys_admin \
   boundary --allow "domain=github.com" -- curl https://github.com
 ```
 
