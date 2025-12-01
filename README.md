@@ -72,6 +72,8 @@ sudo -E env PATH=$PATH setpriv \
   --reuid=$(id -u) \
   --regid=$(id -g) \
   --clear-groups \
+  # Note: sys_admin is only needed in restricted environments (e.g., Docker with seccomp).
+  # If boundary works without it on your system, you can remove +sys_admin from both flags.
   --inh-caps=+net_admin,+sys_admin \
   --ambient-caps=+net_admin,+sys_admin \
   boundary --allow "domain=github.com" -- curl https://github.com

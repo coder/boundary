@@ -20,6 +20,8 @@ if [ "$(id -u)" -eq 0 ]; then
 fi
 
 # Run boundary with proper privilege handling
+# Note: sys_admin is only needed in restricted environments (e.g., Docker with seccomp).
+# If boundary works without it on your system, you can remove +sys_admin from both flags.
 exec sudo -E env PATH="$PATH" setpriv \
     --reuid="$(id -u)" \
     --regid="$(id -g)" \
