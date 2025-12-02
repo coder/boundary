@@ -223,7 +223,7 @@ func (p *Server) handleHTTPConnection(conn net.Conn) {
 	p.logger.Debug("   User-Agent", "user-agent", req.Header.Get("User-Agent"))
 
 	// Check if request should be allowed
-	result := p.ruleEngine.Evaluate(req.Method, req.Host)
+	result := p.ruleEngine.Evaluate(req.Method, req.Host+req.URL.String())
 
 	// Audit the request
 	p.auditor.AuditRequest(audit.Request{
@@ -274,7 +274,7 @@ func (p *Server) handleTLSConnection(conn net.Conn) {
 	p.logger.Debug("   User-Agent", "user-agent", req.Header.Get("User-Agent"))
 
 	// Check if request should be allowed
-	result := p.ruleEngine.Evaluate(req.Method, req.Host)
+	result := p.ruleEngine.Evaluate(req.Method, req.Host+req.URL.String())
 
 	// Audit the request
 	p.auditor.AuditRequest(audit.Request{
