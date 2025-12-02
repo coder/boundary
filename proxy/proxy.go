@@ -219,28 +219,7 @@ func (p *Server) handleHTTPConnection(conn net.Conn) {
 	}
 
 	p.logger.Debug("🌐 HTTP Request: %s %s", req.Method, req.URL.String())
-	p.logger.Debug("   Host", "host", req.Host)
-	p.logger.Debug("   User-Agent", "user-agent", req.Header.Get("User-Agent"))
-
-	// Check if request should be allowed
-	result := p.ruleEngine.Evaluate(req.Method, req.Host+req.URL.String())
-
-	// Audit the request
-	p.auditor.AuditRequest(audit.Request{
-		Method:  req.Method,
-		URL:     req.URL.String(),
-		Host:    req.Host,
-		Allowed: result.Allowed,
-		Rule:    result.Rule,
-	})
-
-	if !result.Allowed {
-		p.writeBlockedResponse(conn, req)
-		return
-	}
-
-	// Forward HTTP request to destination
-	p.forwardRequest(conn, req, false)
+	p.processHTTPRequest(conn, req, false)
 }
 
 func (p *Server) handleTLSConnection(conn net.Conn) {
@@ -270,6 +249,10 @@ func (p *Server) handleTLSConnection(conn net.Conn) {
 	}
 
 	p.logger.Debug("🔒 HTTPS Request", "method", req.Method, "url", req.URL.String())
+	p.processHTTPRequest(tlsConn, req, true)
+}
+
+func (p *Server) processHTTPRequest(conn net.Conn, req *http.Request, https bool) {
 	p.logger.Debug("   Host", "host", req.Host)
 	p.logger.Debug("   User-Agent", "user-agent", req.Header.Get("User-Agent"))
 
@@ -286,12 +269,12 @@ func (p *Server) handleTLSConnection(conn net.Conn) {
 	})
 
 	if !result.Allowed {
-		p.writeBlockedResponse(tlsConn, req)
+		p.writeBlockedResponse(conn, req)
 		return
 	}
 
-	// Forward HTTPS request to destination
-	p.forwardRequest(tlsConn, req, true)
+	// Forward request to destination
+	p.forwardRequest(conn, req, https)
 }
 
 func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
