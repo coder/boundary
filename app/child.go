@@ -72,6 +72,7 @@ func RunChild(logger *slog.Logger, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to configure DNS in namespace: %v", err)
 	}
+	logger.Info("DNS in namespace is configured successfully")
 
 	// Program to run
 	bin := args[0]
