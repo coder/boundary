@@ -27,6 +27,9 @@ type TestEnv struct {
 	allowRules      []string
 	certPath        string
 	initialIPTables *iptablesSnapshot
+	waitCalled      bool
+	stdoutBuf       bytes.Buffer
+	stderrBuf       bytes.Buffer
 }
 
 // iptablesSnapshot captures iptables state for cleanup verification
@@ -124,21 +127,12 @@ func (env *TestEnv) Start() {
 	env.boundaryCmd = exec.CommandContext(ctx, env.binaryPath, args...)
 
 	// Capture both stdout and stderr to see boundary errors
-	var stdoutBuf, stderrBuf bytes.Buffer
 	env.boundaryCmd.Stdin = os.Stdin
-	env.boundaryCmd.Stdout = &stdoutBuf
-	env.boundaryCmd.Stderr = &stderrBuf
+	env.boundaryCmd.Stdout = &env.stdoutBuf
+	env.boundaryCmd.Stderr = &env.stderrBuf
 
 	err := env.boundaryCmd.Start()
 	require.NoError(env.t, err, "Failed to start boundary process")
-
-	// Monitor process exit in background
-	go func() {
-		env.boundaryCmd.Wait()
-		if stdoutBuf.Len() > 0 || stderrBuf.Len() > 0 {
-			env.t.Logf("Boundary exited. Stdout: %s\nStderr: %s", stdoutBuf.String(), stderrBuf.String())
-		}
-	}()
 
 	// Wait for boundary to be ready and for child process to be created
 	time.Sleep(2 * time.Second)
@@ -377,10 +371,18 @@ func (env *TestEnv) Cleanup() {
 		env.cancel()
 	}
 
-	if env.boundaryCmd != nil {
+	if env.boundaryCmd != nil && !env.waitCalled {
+		env.waitCalled = true
 		err := env.boundaryCmd.Wait()
 		if err != nil {
 			env.t.Logf("Boundary process finished with error: %v", err)
+		}
+		// Log captured output
+		if env.stdoutBuf.Len() > 0 {
+			env.t.Logf("Boundary stdout: %s", env.stdoutBuf.String())
+		}
+		if env.stderrBuf.Len() > 0 {
+			env.t.Logf("Boundary stderr: %s", env.stderrBuf.String())
 		}
 	}
 
