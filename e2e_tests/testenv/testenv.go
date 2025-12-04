@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -54,9 +55,17 @@ func NewTestEnv(t *testing.T, opts ...TestEnvOption) *TestEnv {
 		t.Skipf("E2E tests require Linux (current OS: %s)", runtime.GOOS)
 	}
 
+	// This is tightly coupled to e2e_test/main_test.go.
+	_, file, _, _ := runtime.Caller(0)
+	dir := filepath.Dir(file)
+	binPath, err := filepath.Abs(filepath.Join(dir, "../boundary-test"))
+	if err != nil {
+		t.Fatalf("Failed to get absolute path for boundary binary: %v", err)
+	}
+
 	env := &TestEnv{
 		t:          t,
-		binaryPath: "../boundary-test", // This is tightly coupled to e2e_test/main_test.go.
+		binaryPath: binPath,
 	}
 
 	for _, opt := range opts {
@@ -107,8 +116,10 @@ func (env *TestEnv) Start() {
 		args = append(args, "--allow", rule)
 	}
 	args = append(args, "--log-level", "debug")
+	// Add the child command that boundary will execute inside the namespace
+	args = append(args, "--", "/bin/bash", "-c", "/usr/bin/sleep 10 && /usr/bin/echo 'Test completed'")
 
-	// Start boundary process
+	// Start boundary process (binary has cap_net_admin capability set, so no sudo needed)
 	env.boundaryCmd = exec.CommandContext(ctx, env.binaryPath, args...)
 	env.boundaryCmd.Stdin = os.Stdin
 	env.boundaryCmd.Stdout = os.Stdout

@@ -21,10 +21,26 @@ func TestMain(m *testing.M) {
 func buildBinary() {
 	_, file, _, _ := runtime.Caller(0)
 	dir := filepath.Dir(file)
-	buildCmd := exec.Command("go", "build", "-o", path.Join(dir, "boundary-test"))
+	binaryPath := path.Join(dir, "boundary-test")
+
+	buildCmd := exec.Command("go", "build", "-o", binaryPath)
 	buildCmd.Dir = "../cmd/boundary"
 	err := buildCmd.Run()
 	if err != nil {
 		panic(fmt.Sprintf("Failed to build boundary binary: %v", err))
+	}
+
+	// Ensure the binary has execute permissions
+	err = os.Chmod(binaryPath, 0755)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to set execute permissions on boundary binary: %v", err))
+	}
+
+	// Set capabilities on the binary so it can create network namespaces and configure networking
+	// without needing sudo. This allows boundary to use user namespaces (CLONE_NEWUSER) properly.
+	setcapCmd := exec.Command("sudo", "setcap", "cap_net_admin+ep", binaryPath)
+	output, err := setcapCmd.CombinedOutput()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to set capabilities on boundary binary: %v, output: %s", err, output))
 	}
 }
