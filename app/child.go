@@ -20,6 +20,11 @@ func RunChild(logger *slog.Logger, args []string) error {
 	}
 	logger.Info("child networking is successfully configured")
 
+	err = jail.ConfigureDNSInNamespace()
+	if err != nil {
+		return fmt.Errorf("failed to configure DNS in namespace: %v", err)
+	}
+
 	// Program to run
 	bin := args[0]
 	args = args[1:]

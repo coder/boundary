@@ -38,3 +38,18 @@ func SetupChildNetworking(vethNetJail string) error {
 
 	return nil
 }
+
+func ConfigureDNSInNamespace() error {
+	runner := newCommandRunner([]*command{
+		{
+			"DNS Redirection",
+			exec.Command("iptables", "-t", "nat", "-A", "OUTPUT", "-p", "udp", "--dport", "53", "-j", "DNAT", "--to-destination", "192.168.100.1:53"),
+			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		},
+	})
+	if err := runner.run(); err != nil {
+		return err
+	}
+
+	return nil
+}
