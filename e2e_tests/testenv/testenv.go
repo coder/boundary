@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -232,7 +231,7 @@ func (env *TestEnv) ExecInNamespace(command string, args ...string) (string, err
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
 		return stdout.String(), fmt.Errorf("command failed: %w, stderr: %s", err, stderr.String())
 	}
