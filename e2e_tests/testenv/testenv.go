@@ -122,15 +122,37 @@ func (env *TestEnv) Start() {
 
 	// Start boundary process (binary has cap_net_admin capability set, so no sudo needed)
 	env.boundaryCmd = exec.CommandContext(ctx, env.binaryPath, args...)
+
+	// Capture stderr to see boundary errors
+	var stderrBuf bytes.Buffer
 	env.boundaryCmd.Stdin = os.Stdin
 	env.boundaryCmd.Stdout = os.Stdout
-	env.boundaryCmd.Stderr = os.Stderr
+	env.boundaryCmd.Stderr = &stderrBuf
 
 	err := env.boundaryCmd.Start()
 	require.NoError(env.t, err, "Failed to start boundary process")
 
+	// Monitor stderr in background
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		if stderrBuf.Len() > 0 {
+			env.t.Logf("Boundary stderr: %s", stderrBuf.String())
+		}
+	}()
+
 	// Wait for boundary to be ready and for child process to be created
 	time.Sleep(2 * time.Second)
+
+	// Check if boundary process is still running
+	checkCmd := exec.Command("ps", "-p", strconv.Itoa(env.boundaryCmd.Process.Pid), "-o", "state=")
+	if output, err := checkCmd.Output(); err == nil {
+		state := strings.TrimSpace(string(output))
+		env.t.Logf("Boundary process state: %s (PID: %d)", state, env.boundaryCmd.Process.Pid)
+		if state == "Z" {
+			env.t.Logf("WARNING: Boundary process is a zombie (defunct) - it has exited")
+			env.t.Logf("Boundary stderr captured: %s", stderrBuf.String())
+		}
+	}
 
 	// The child process (with the network namespace) is created by boundary
 	// We need to find its PID to use with nsenter
@@ -141,6 +163,12 @@ func (env *TestEnv) Start() {
 	psOutput, psErr := psCmd.Output()
 	if psErr == nil {
 		env.t.Logf("Boundary/sleep processes:\n%s", string(psOutput))
+	}
+
+	// Check capabilities on binary
+	getcapCmd := exec.Command("getcap", env.binaryPath)
+	if output, err := getcapCmd.Output(); err == nil {
+		env.t.Logf("Binary capabilities: %s", strings.TrimSpace(string(output)))
 	}
 }
 
