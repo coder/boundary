@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -117,7 +118,8 @@ func (env *TestEnv) Start() {
 	}
 	args = append(args, "--log-level", "debug")
 	// Add the child command that boundary will execute inside the namespace
-	args = append(args, "--", "/bin/bash", "-c", "/usr/bin/sleep 10 && /usr/bin/echo 'Test completed'")
+	// Use sleep infinity to keep the process alive for the entire test duration
+	args = append(args, "--", "sleep", "infinity")
 
 	// Start boundary process (binary has cap_net_admin capability set, so no sudo needed)
 	env.boundaryCmd = exec.CommandContext(ctx, env.binaryPath, args...)
@@ -128,13 +130,53 @@ func (env *TestEnv) Start() {
 	err := env.boundaryCmd.Start()
 	require.NoError(env.t, err, "Failed to start boundary process")
 
-	// Wait for boundary to be ready
+	// Wait for boundary to be ready and for child process to be created
 	time.Sleep(2 * time.Second)
+
+	// The child process (with the network namespace) is created by boundary
+	// We need to find its PID to use with nsenter
+	env.t.Logf("Parent boundary PID: %d", env.boundaryCmd.Process.Pid)
+}
+
+// getChildPID finds the child process PID (the one with the network namespace)
+func (env *TestEnv) getChildPID() (int, error) {
+	parentPID := env.boundaryCmd.Process.Pid
+
+	// Find child process using ps
+	cmd := exec.Command("ps", "--ppid", strconv.Itoa(parentPID), "-o", "pid", "--no-headers")
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, fmt.Errorf("failed to find child process: %w", err)
+	}
+
+	pidStr := strings.TrimSpace(string(output))
+	if pidStr == "" {
+		return 0, fmt.Errorf("no child process found for parent PID %d", parentPID)
+	}
+
+	// If multiple children, take the first one
+	pids := strings.Fields(pidStr)
+	if len(pids) == 0 {
+		return 0, fmt.Errorf("no child process found for parent PID %d", parentPID)
+	}
+
+	childPID, err := strconv.Atoi(pids[0])
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse child PID: %w", err)
+	}
+
+	return childPID, nil
 }
 
 // ExecInNamespace executes a command inside the network namespace
 func (env *TestEnv) ExecInNamespace(command string, args ...string) (string, error) {
-	pidStr := strconv.Itoa(env.boundaryCmd.Process.Pid)
+	// Get the child process PID (the one with the network namespace)
+	childPID, err := env.getChildPID()
+	if err != nil {
+		return "", err
+	}
+
+	pidStr := strconv.Itoa(childPID)
 	nsenterArgs := []string{"nsenter", "-t", pidStr, "-n", "--"}
 	nsenterArgs = append(nsenterArgs, command)
 	nsenterArgs = append(nsenterArgs, args...)
