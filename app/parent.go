@@ -49,8 +49,20 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 	// Create rule engine
 	ruleEngine := rulesengine.NewRuleEngine(allowRules, logger)
 
-	// Create auditor
-	auditor := audit.NewLogAuditor(logger)
+	var auditor audit.Auditor
+	auditSocketPath := config.AuditSocket.Value()
+	if auditSocketPath != "" {
+		socketAuditor := audit.NewSocketAuditor(audit.SocketAuditorConfig{
+			Logger:     logger,
+			SocketPath: auditSocketPath,
+		})
+		auditor = socketAuditor
+		// Ensure socket auditor is closed on exit
+		defer socketAuditor.Close()
+		logger.Info("Using socket auditor", "path", auditSocketPath)
+	} else {
+		auditor = audit.NewLogAuditor(logger)
+	}
 
 	// Create TLS certificate manager
 	certManager, err := tls.NewCertificateManager(tls.Config{

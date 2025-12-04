@@ -23,6 +23,7 @@ type Config struct {
 	ProxyPort        serpent.Int64          `yaml:"proxy_port"`
 	PprofEnabled     serpent.Bool           `yaml:"pprof_enabled"`
 	PprofPort        serpent.Int64          `yaml:"pprof_port"`
+	AuditSocket      serpent.String         `yaml:"audit_socket"`
 }
 
 func isChild() bool {

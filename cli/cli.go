@@ -107,6 +107,13 @@ func BaseCommand() *serpent.Command {
 				Default:     "6060",
 				Value:       &config.PprofPort,
 				YAML:        "pprof_port",
+		},
+		{
+			Flag:        "audit-socket",
+			Env:         "BOUNDARY_AUDIT_SOCKET",
+			Description: "Path to Unix socket for sending audit events to Coder agent.",
+			Value:       &config.AuditSocket,
+			YAML:        "audit_socket",
 			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
