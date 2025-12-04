@@ -123,20 +123,20 @@ func (env *TestEnv) Start() {
 	// Start boundary process (binary has cap_net_admin capability set, so no sudo needed)
 	env.boundaryCmd = exec.CommandContext(ctx, env.binaryPath, args...)
 
-	// Capture stderr to see boundary errors
-	var stderrBuf bytes.Buffer
+	// Capture both stdout and stderr to see boundary errors
+	var stdoutBuf, stderrBuf bytes.Buffer
 	env.boundaryCmd.Stdin = os.Stdin
-	env.boundaryCmd.Stdout = os.Stdout
+	env.boundaryCmd.Stdout = &stdoutBuf
 	env.boundaryCmd.Stderr = &stderrBuf
 
 	err := env.boundaryCmd.Start()
 	require.NoError(env.t, err, "Failed to start boundary process")
 
-	// Monitor stderr in background
+	// Monitor process exit in background
 	go func() {
-		time.Sleep(100 * time.Millisecond)
-		if stderrBuf.Len() > 0 {
-			env.t.Logf("Boundary stderr: %s", stderrBuf.String())
+		env.boundaryCmd.Wait()
+		if stdoutBuf.Len() > 0 || stderrBuf.Len() > 0 {
+			env.t.Logf("Boundary exited. Stdout: %s\nStderr: %s", stdoutBuf.String(), stderrBuf.String())
 		}
 	}()
 
@@ -150,7 +150,6 @@ func (env *TestEnv) Start() {
 		env.t.Logf("Boundary process state: %s (PID: %d)", state, env.boundaryCmd.Process.Pid)
 		if state == "Z" {
 			env.t.Logf("WARNING: Boundary process is a zombie (defunct) - it has exited")
-			env.t.Logf("Boundary stderr captured: %s", stderrBuf.String())
 		}
 	}
 
