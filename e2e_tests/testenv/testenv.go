@@ -136,17 +136,62 @@ func (env *TestEnv) Start() {
 	// The child process (with the network namespace) is created by boundary
 	// We need to find its PID to use with nsenter
 	env.t.Logf("Parent boundary PID: %d", env.boundaryCmd.Process.Pid)
+
+	// Debug: Check what boundary/sleep processes exist
+	psCmd := exec.Command("sh", "-c", fmt.Sprintf("ps aux | grep -E 'boundary-test|sleep|PID' | grep -v grep"))
+	psOutput, psErr := psCmd.Output()
+	if psErr == nil {
+		env.t.Logf("Boundary/sleep processes:\n%s", string(psOutput))
+	}
 }
 
 // getChildPID finds the child process PID (the one with the network namespace)
+// This could be either a direct child (re-exec'd boundary) or the sleep process
 func (env *TestEnv) getChildPID() (int, error) {
 	parentPID := env.boundaryCmd.Process.Pid
 
-	// Find child process using ps
-	cmd := exec.Command("ps", "--ppid", strconv.Itoa(parentPID), "-o", "pid", "--no-headers")
-	output, err := cmd.Output()
+	// First, try to find the sleep process since that's what we're actually running
+	// The sleep process is in the network namespace
+	sleepCmd := exec.Command("pgrep", "-f", "^sleep infinity$")
+	output, err := sleepCmd.Output()
+	if err == nil && len(output) > 0 {
+		pidStr := strings.TrimSpace(string(output))
+		pids := strings.Fields(pidStr)
+		if len(pids) > 0 {
+			// Found sleep process, return its PID
+			sleepPID, err := strconv.Atoi(pids[0])
+			if err == nil {
+				return sleepPID, nil
+			}
+		}
+	}
+
+	// If no sleep process, look for direct children using pgrep
+	cmd := exec.Command("pgrep", "-P", strconv.Itoa(parentPID))
+	output, err = cmd.Output()
 	if err != nil {
-		return 0, fmt.Errorf("failed to find child process: %w", err)
+		// Try alternative method: read /proc/<pid>/task/<pid>/children
+		childrenFile := fmt.Sprintf("/proc/%d/task/%d/children", parentPID, parentPID)
+		data, readErr := os.ReadFile(childrenFile)
+		if readErr != nil {
+			return 0, fmt.Errorf("failed to find child process (pgrep failed: %w, /proc read failed: %w)", err, readErr)
+		}
+
+		pidStr := strings.TrimSpace(string(data))
+		if pidStr == "" {
+			return 0, fmt.Errorf("no child process found for parent PID %d", parentPID)
+		}
+
+		pids := strings.Fields(pidStr)
+		if len(pids) == 0 {
+			return 0, fmt.Errorf("no child process found for parent PID %d", parentPID)
+		}
+
+		childPID, err := strconv.Atoi(pids[0])
+		if err != nil {
+			return 0, fmt.Errorf("failed to parse child PID: %w", err)
+		}
+		return childPID, nil
 	}
 
 	pidStr := strings.TrimSpace(string(output))
