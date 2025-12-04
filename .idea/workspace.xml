@@ -4,12 +4,7 @@
     <option name="autoReloadType" value="ALL" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="d810c803-de8e-4371-9f07-3f66dfed2a81" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/jail/command_runner.go" beforeDir="false" afterPath="$PROJECT_DIR$/jail/command_runner.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/jail/jail.go" beforeDir="false" afterPath="$PROJECT_DIR$/jail/jail.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/jail/networking_host.go" beforeDir="false" afterPath="$PROJECT_DIR$/jail/networking_host.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/jail/networking_ns.go" beforeDir="false" afterPath="$PROJECT_DIR$/jail/networking_ns.go" afterDir="false" />
-    </list>
+    <list default="true" id="d810c803-de8e-4371-9f07-3f66dfed2a81" name="Changes" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />

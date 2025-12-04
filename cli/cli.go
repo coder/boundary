@@ -65,10 +65,12 @@ func BaseCommand() *serpent.Command {
 				YAML:        "", // CLI only, not loaded from YAML
 			},
 			{
-				Flag:        "", // No CLI flag, YAML only
-				Description: "Allowlist rules from config file (YAML only).",
+				Flag:        "allowlist",
+				Env:         "BOUNDARY_ALLOWLIST",
+				Description: "Allowlist rules from config file.",
 				Value:       &config.AllowListStrings,
 				YAML:        "allowlist",
+				Hidden:      true, // Hide from CLI help since it's primarily for YAML config
 			},
 			{
 				Flag:        "log-level",
@@ -107,13 +109,13 @@ func BaseCommand() *serpent.Command {
 				Default:     "6060",
 				Value:       &config.PprofPort,
 				YAML:        "pprof_port",
-		},
-		{
-			Flag:        "audit-socket",
-			Env:         "BOUNDARY_AUDIT_SOCKET",
-			Description: "Path to Unix socket for sending audit events to Coder agent.",
-			Value:       &config.AuditSocket,
-			YAML:        "audit_socket",
+			},
+			{
+				Flag:        "audit-socket",
+				Env:         "BOUNDARY_AUDIT_SOCKET",
+				Description: "Path to Unix socket for sending audit events to Coder agent.",
+				Value:       &config.AuditSocket,
+				YAML:        "audit_socket",
 			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
