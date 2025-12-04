@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"log/slog"
@@ -9,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cenkalti/backoff/v5"
 	"golang.org/x/sys/unix"
 
 	"github.com/coder/boundary/jail"
@@ -17,33 +19,34 @@ import (
 // waitForInterface waits for a network interface to appear in the namespace.
 // It retries checking for the interface with exponential backoff up to the specified timeout.
 func waitForInterface(interfaceName string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	interval := 50 * time.Millisecond // Start with 50ms intervals
-	maxInterval := 500 * time.Millisecond
+	b := backoff.NewExponentialBackOff()
+	b.InitialInterval = 50 * time.Millisecond
+	b.MaxInterval = 500 * time.Millisecond
+	b.Multiplier = 2.0
 
-	for time.Now().Before(deadline) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	operation := func() (bool, error) {
 		cmd := exec.Command("ip", "link", "show", interfaceName)
 		cmd.SysProcAttr = &syscall.SysProcAttr{
 			AmbientCaps: []uintptr{uintptr(unix.CAP_NET_ADMIN)},
 		}
 
 		err := cmd.Run()
-		if err == nil {
-			// Interface exists
-			return nil
+		if err != nil {
+			return false, fmt.Errorf("interface %s not found: %w", interfaceName, err)
 		}
-
-		// Wait before next attempt
-		time.Sleep(interval)
-
-		// Exponential backoff, but cap at maxInterval
-		interval *= 2
-		if interval > maxInterval {
-			interval = maxInterval
-		}
+		// Interface exists
+		return true, nil
 	}
 
-	return fmt.Errorf("interface %s did not appear within %v", interfaceName, timeout)
+	_, err := backoff.Retry(ctx, operation, backoff.WithBackOff(b))
+	if err != nil {
+		return fmt.Errorf("interface %s did not appear within %v: %w", interfaceName, timeout, err)
+	}
+
+	return nil
 }
 
 func RunChild(logger *slog.Logger, args []string) error {
