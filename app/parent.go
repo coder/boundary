@@ -71,7 +71,7 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 	}
 
 	// Create jailer with cert path from TLS setup
-	jailer, err := createJailer(jail.Config{
+	jailer, err := jail.NewLinuxJail(jail.Config{
 		Logger:        logger,
 		HttpProxyPort: int(config.ProxyPort.Value()),
 		Username:      username,

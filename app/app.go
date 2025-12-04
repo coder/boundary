@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/coder/boundary/jail"
 	"github.com/coder/serpent"
 )
 
@@ -95,10 +94,4 @@ func setupLogging(config Config) (*slog.Logger, error) {
 	})
 
 	return slog.New(handler), nil
-}
-
-// createJailer creates a new jail instance for the current platform
-func createJailer(config jail.Config) (jail.Jailer, error) {
-	// Use the DefaultOS function for platform-specific jail creation
-	return jail.DefaultOS(config)
 }
