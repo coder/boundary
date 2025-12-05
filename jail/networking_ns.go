@@ -57,6 +57,16 @@ func ConfigureDNSInNamespace() error {
 			exec.Command("iptables", "-t", "nat", "-A", "OUTPUT", "-p", "udp", "--dport", "53", "-j", "DNAT", "--to-destination", "192.168.100.1:53"),
 			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
 		},
+		{
+			"DNS Redirection",
+			exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", "-p", "udp", "--dport", "53", "-d", "192.168.100.1", "-j", "SNAT", "--to-source", "192.168.100.2"),
+			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		},
+		{
+			"DNS Redirection",
+			exec.Command("sysctl", "-w", "net.ipv4.conf.all.route_localnet=1"),
+			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		},
 	})
 	if err := runner.run(); err != nil {
 		return err
