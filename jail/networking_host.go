@@ -80,12 +80,12 @@ func (l *LinuxJail) configureIptables() error {
 			exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", "-s", "192.168.100.0/24", "-j", "MASQUERADE"),
 			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
 		},
-		{
-			// Forward DNS traffic from namespace to systemd-resolved on host
-			"Forward DNS traffic to systemd-resolved",
-			exec.Command("iptables", "-t", "nat", "-A", "PREROUTING", "-i", l.vethHostName, "-p", "udp", "--dport", "53", "-j", "DNAT", "--to-destination", "127.0.0.53:53"),
-			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
-		},
+		//{
+		//	// Forward DNS traffic from namespace to systemd-resolved on host
+		//	"Forward DNS traffic to systemd-resolved",
+		//	exec.Command("iptables", "-t", "nat", "-A", "PREROUTING", "-i", l.vethHostName, "-p", "udp", "--dport", "53", "-j", "DNAT", "--to-destination", "127.0.0.53:53"),
+		//	[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		//},
 		{
 			// COMPREHENSIVE APPROACH: Route ALL TCP traffic to HTTP proxy
 			// The HTTP proxy will intelligently handle both HTTP and TLS traffic
@@ -132,11 +132,11 @@ func (l *LinuxJail) cleanupNetworking() error {
 // cleanupIptables removes iptables rules
 func (l *LinuxJail) cleanupIptables() error {
 	runner := newCommandRunner([]*command{
-		{
-			"Remove DNS forwarding rule",
-			exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-i", l.vethHostName, "-p", "udp", "--dport", "53", "-j", "DNAT", "--to-destination", "127.0.0.53:53"),
-			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
-		},
+		//{
+		//	"Remove DNS forwarding rule",
+		//	exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-i", l.vethHostName, "-p", "udp", "--dport", "53", "-j", "DNAT", "--to-destination", "127.0.0.53:53"),
+		//	[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		//},
 		{
 			"Remove comprehensive TCP redirect rule",
 			exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", "-i", l.vethHostName, "-p", "tcp", "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", l.httpProxyPort)),
