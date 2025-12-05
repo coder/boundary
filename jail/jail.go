@@ -85,7 +85,7 @@ func (l *LinuxJail) Command(command []string) *exec.Cmd {
 	cmd.Env = append(cmd.Env, "CHILD=true")
 	cmd.Env = append(cmd.Env, fmt.Sprintf("VETH_JAIL_NAME=%v", l.vethJailName))
 	if l.configureDNSForLocalStubResolver {
-		cmd.Env = append(cmd.Env, "ENABLE_LOCAL_STUB_RESOLVER_DNS=true")
+		cmd.Env = append(cmd.Env, "CONFIGURE_DNS_FOR_LOCAL_STUB_RESOLVER=true")
 	}
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
