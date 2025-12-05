@@ -3,6 +3,7 @@ module github.com/coder/boundary
 go 1.24.0
 
 require (
+	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/coder/serpent v0.10.0
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/sys v0.38.0
