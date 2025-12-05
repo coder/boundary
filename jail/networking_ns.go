@@ -42,8 +42,10 @@ func SetupChildNetworking(vethNetJail string) error {
 // ConfigureDNSForLocalStubResolver configures DNS redirection from the network namespace
 // to the host's local stub resolver. This function should only be called when the host
 // runs a local stub resolver such as systemd-resolved, and /etc/resolv.conf contains
-// "nameserver 127.0.0.53" (listening on localhost). It redirects DNS requests from
-// the namespace to the host by setting up iptables NAT rules.
+// "nameserver 127.0.0.53" (listening on localhost). It redirects DNS requests from the
+// namespace to the host by setting up iptables NAT rules. Additionally, /etc/systemd/resolved.conf
+// should be configured with DNSStubListener=yes and DNSStubListenerExtra=192.168.100.1:53
+// to listen on the additional server address.
 func ConfigureDNSForLocalStubResolver() error {
 	runner := newCommandRunner([]*command{
 		// Redirect all DNS queries inside the namespace to the host DNS listener.
