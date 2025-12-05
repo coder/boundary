@@ -17,14 +17,17 @@ func NewCommand() *serpent.Command {
 	// Add example usage to the long description. This is different from usage as a subcommand because it
 	// may be called something different when used as a subcommand / there will be a leading binary (i.e. `coder boundary` vs. `boundary`).
 	cmd.Long += `Examples:
-  # Allow only requests to github.com
-  boundary --allow "domain=github.com" -- curl https://github.com
+  # Allow only requests to github.com (requires sudo/capabilities)
+  boundary-run --allow "domain=github.com" -- curl https://github.com
+
+  # Simple mode - no special permissions required
+  boundary --simple --allow "domain=github.com" -- curl https://github.com
 
   # Monitor all requests to specific domains (allow only those)
-  boundary --allow "domain=github.com path=/api/issues/*" --allow "method=GET,HEAD domain=github.com" -- npm install
+  boundary --simple --allow "domain=github.com" --allow "domain=api.npmjs.org" -- npm install
 
   # Use allowlist from config file with additional CLI allow rules
-  boundary --allow "domain=example.com" -- curl https://example.com
+  boundary --simple --allow "domain=example.com" -- curl https://example.com
 
   # Block everything by default (implicit)`
 
@@ -56,6 +59,13 @@ func BaseCommand() *serpent.Command {
 				Description: "Path to YAML config file.",
 				Value:       &config.Config,
 				YAML:        "",
+			},
+			{
+				Flag:        "simple",
+				Env:         "BOUNDARY_SIMPLE",
+				Description: "Use simple mode (no network isolation, no special permissions required). Traffic is proxied via HTTP_PROXY/HTTPS_PROXY environment variables. Less secure: processes can bypass by ignoring proxy env vars.",
+				Value:       &config.SimpleMode,
+				YAML:        "simple",
 			},
 			{
 				Flag:        "allow",

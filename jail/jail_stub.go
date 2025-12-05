@@ -32,3 +32,28 @@ func (l *LinuxJail) ConfigureAfterCommandExecution(pidInt int) error {
 func (l *LinuxJail) Close() error {
 	return nil
 }
+
+// SimpleJail is a stub for non-Linux platforms
+type SimpleJail struct {
+	logger *slog.Logger
+}
+
+func NewSimpleJail(config Config) (*SimpleJail, error) {
+	return nil, fmt.Errorf("boundary is only supported on Linux")
+}
+
+func (s *SimpleJail) ConfigureBeforeCommandExecution() error {
+	return fmt.Errorf("boundary is only supported on Linux")
+}
+
+func (s *SimpleJail) Command(command []string) *exec.Cmd {
+	return nil
+}
+
+func (s *SimpleJail) ConfigureAfterCommandExecution(pidInt int) error {
+	return fmt.Errorf("boundary is only supported on Linux")
+}
+
+func (s *SimpleJail) Close() error {
+	return nil
+}

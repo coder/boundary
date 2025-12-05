@@ -252,16 +252,19 @@ print_usage() {
     echo
     echo -e "${GREEN}🎉 Installation complete!${NC}"
     echo
-    echo -e "${BLUE}Quick Start:${NC}"
+    echo -e "${BLUE}Quick Start (Simple Mode - No special permissions):${NC}"
+    echo "  boundary --simple --allow 'domain=github.com' -- curl https://github.com"
+    echo "  boundary --simple --allow 'domain=*.npmjs.org' -- npm install"
+    echo "  boundary --simple -- bash"
+    echo
+    echo -e "${BLUE}Namespace Mode (Full isolation, requires sudo):${NC}"
     if command -v "boundary-run" &> /dev/null; then
-        echo "  boundary-run --help"
-        echo "  boundary-run --allow 'github.com' -- curl https://github.com"
-        echo "  boundary-run --allow '*.npmjs.org' -- npm install"
+        echo "  boundary-run --allow 'domain=github.com' -- curl https://github.com"
         echo "  boundary-run -- bash"
     else
-        echo "  boundary --help"
-        echo "  boundary --allow 'github.com' -- curl https://github.com"
-        echo "  boundary --allow '*.npmjs.org' -- npm install"
+        echo "  # Install the wrapper for easier usage:"
+        echo "  sudo cp scripts/boundary-wrapper.sh /usr/local/bin/boundary-run"
+        echo "  boundary-run --allow 'domain=github.com' -- curl https://github.com"
     fi
     echo
     echo -e "${BLUE}Documentation:${NC}"

@@ -24,6 +24,7 @@ type Config struct {
 	PprofEnabled     serpent.Bool           `yaml:"pprof_enabled"`
 	PprofPort        serpent.Int64          `yaml:"pprof_port"`
 	AuditSocket      serpent.String         `yaml:"audit_socket"`
+	SimpleMode       serpent.Bool           `yaml:"simple"`
 }
 
 func isChild() bool {
@@ -43,7 +44,8 @@ func Run(ctx context.Context, config Config, args []string) error {
 	}
 	logger.Debug("config", "json_config", configInJSON)
 
-	if isChild() {
+	// Simple mode doesn't use child processes
+	if isChild() && !config.SimpleMode.Value() {
 		return RunChild(logger, args)
 	}
 

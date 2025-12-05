@@ -83,16 +83,27 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 	}
 
 	// Create jailer with cert path from TLS setup
-	jailer, err := jail.NewLinuxJail(jail.Config{
-		Logger:        logger,
-		HttpProxyPort: int(config.ProxyPort.Value()),
-		Username:      username,
-		Uid:           uid,
-		Gid:           gid,
-		HomeDir:       homeDir,
-		ConfigDir:     configDir,
-		CACertPath:    caCertPath,
-	})
+	var jailer jail.Jailer
+	if config.SimpleMode.Value() {
+		logger.Info("Using simple mode (no network isolation)")
+		jailer, err = jail.NewSimpleJail(jail.Config{
+			Logger:        logger,
+			HttpProxyPort: int(config.ProxyPort.Value()),
+			ConfigDir:     configDir,
+			CACertPath:    caCertPath,
+		})
+	} else {
+		jailer, err = jail.NewLinuxJail(jail.Config{
+			Logger:        logger,
+			HttpProxyPort: int(config.ProxyPort.Value()),
+			Username:      username,
+			Uid:           uid,
+			Gid:           gid,
+			HomeDir:       homeDir,
+			ConfigDir:     configDir,
+			CACertPath:    caCertPath,
+		})
+	}
 	if err != nil {
 		return fmt.Errorf("failed to create jailer: %v", err)
 	}
@@ -132,9 +143,9 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 	// Execute command in boundary
 	go func() {
 		defer cancel()
-		cmd := boundaryInstance.Command(os.Args)
+		cmd := boundaryInstance.Command(args)
 
-		logger.Debug("Executing command in boundary", "command", strings.Join(os.Args, " "))
+		logger.Debug("Executing command in boundary", "command", strings.Join(args, " "))
 		err := cmd.Start()
 		if err != nil {
 			logger.Error("Command failed to start", "error", err)

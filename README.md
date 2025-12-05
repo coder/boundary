@@ -6,12 +6,13 @@ boundary creates an isolated network environment for target processes, intercept
 
 ## Features
 
- - Process-level network isolation (Linux namespaces)
+- Process-level network isolation (Linux namespaces)
 - HTTP/HTTPS interception with transparent proxy and TLS certificate injection
 - Wildcard pattern matching for URL patterns
 - Request logging and monitoring
- - Linux support
+- Linux support
 - Default deny-all security model
+- **Simple mode**: No special permissions required (uses HTTP_PROXY environment variables)
 
 ## Installation
 
@@ -45,14 +46,30 @@ sudo chmod +x /usr/local/bin/boundary-run
 - Go 1.24 or later
 - Linux
 
-## Usage
+## Usage Modes
 
-### Quick Start with Shortcut
+boundary supports two modes of operation:
 
-The recommended way to run `boundary` is using the `boundary-run` shortcut, which handles privilege escalation automatically. The `boundary-run` wrapper is installed automatically when you use the installation script:
+### Simple Mode (No Special Permissions)
+
+Simple mode uses `HTTP_PROXY`/`HTTPS_PROXY` environment variables to route traffic through the proxy. **No sudo, no capabilities, no special permissions required.**
 
 ```bash
-# After installation, use the shortcut:
+# No sudo needed!
+boundary --simple --allow "domain=github.com" -- curl https://github.com
+boundary --simple --allow "domain=*.npmjs.org" -- npm install
+boundary --simple -- bash
+```
+
+**Trade-off:** Processes can bypass the proxy by ignoring the `HTTP_PROXY`/`HTTPS_PROXY` environment variables. Use namespace mode for stronger isolation.
+
+### Namespace Mode (Full Isolation)
+
+Namespace mode uses Linux network namespaces and iptables for complete network isolation. Processes cannot bypass the proxy.
+
+The recommended way to run in namespace mode is using the `boundary-run` wrapper, which handles privilege escalation automatically:
+
+```bash
 boundary-run --allow "domain=github.com" -- curl https://github.com
 boundary-run -- bash
 ```
@@ -63,9 +80,9 @@ boundary-run -- bash
 > sudo chmod +x /usr/local/bin/boundary-run
 > ```
 
-### Direct Usage
+#### Direct Namespace Mode Usage
 
-If you prefer to run `boundary` directly, you'll need to handle privilege escalation:
+If you prefer to run `boundary` directly in namespace mode, you'll need to handle privilege escalation:
 
 ```bash
 # Note: sys_admin is only needed in restricted environments (e.g., Docker with seccomp).
@@ -79,20 +96,32 @@ sudo -E env PATH=$PATH setpriv \
   boundary --allow "domain=github.com" -- curl https://github.com
 ```
 
-### Examples
+### Comparison
+
+| Feature | Simple Mode | Namespace Mode |
+|---------|------------|----------------|
+| Permissions Required | None | CAP_NET_ADMIN (via sudo) |
+| Network Isolation | Environment-based | Full namespace isolation |
+| Can Process Bypass? | Yes (ignore env vars) | No |
+| Setup Complexity | Simple | Requires wrapper or setpriv |
+
+## Examples
 
 ```bash
-# Allow only requests to github.com
+# Simple mode - no special permissions
+boundary --simple --allow "domain=github.com" -- curl https://github.com
+
+# Namespace mode with full isolation
 boundary-run --allow "domain=github.com" -- curl https://github.com
 
 # Allow full access to GitHub issues API, but only GET/HEAD elsewhere on GitHub
-boundary-run \
+boundary --simple \
   --allow "domain=github.com path=/api/issues/*" \
   --allow "method=GET,HEAD domain=github.com" \
   -- npm install
 
 # Default deny-all: everything is blocked unless explicitly allowed
-boundary-run -- curl https://example.com
+boundary --simple -- curl https://example.com
 ```
 
 ## Allow Rules
@@ -109,11 +138,11 @@ boundary-run -- curl https://example.com
 
 ### Examples
 ```bash
-boundary-run --allow "domain=github.com" -- git pull
-boundary-run --allow "domain=*.github.com" -- npm install           # GitHub subdomains
-boundary-run --allow "method=GET,HEAD domain=api.github.com" -- curl https://api.github.com
-boundary-run --allow "method=POST domain=api.example.com path=/users,/posts" -- ./app  # Multiple paths
-boundary-run --allow "path=/api/v1/*,/api/v2/*" -- curl https://api.example.com/api/v1/users
+boundary --simple --allow "domain=github.com" -- git pull
+boundary --simple --allow "domain=*.github.com" -- npm install           # GitHub subdomains
+boundary --simple --allow "method=GET,HEAD domain=api.github.com" -- curl https://api.github.com
+boundary --simple --allow "method=POST domain=api.example.com path=/users,/posts" -- ./app  # Multiple paths
+boundary --simple --allow "path=/api/v1/*,/api/v2/*" -- curl https://api.example.com/api/v1/users
 ```
 
 Wildcards: `*` matches any characters. All traffic is denied unless explicitly allowed.
@@ -121,22 +150,29 @@ Wildcards: `*` matches any characters. All traffic is denied unless explicitly a
 ## Logging
 
 ```bash
-boundary-run --log-level warn --allow "domain=github.com" -- git pull  # Default: only logs denied requests
-boundary-run --log-level info --allow "method=*" -- npm install     # Show all requests
-boundary-run --log-level debug --allow "domain=github.com" -- git pull  # Debug info
+boundary --simple --log-level warn --allow "domain=github.com" -- git pull  # Default: only logs denied requests
+boundary --simple --log-level info --allow "method=*" -- npm install     # Show all requests
+boundary --simple --log-level debug --allow "domain=github.com" -- git pull  # Debug info
 ```
 
 **Log Levels:** `error`, `warn` (default), `info`, `debug`
 
 ## Platform Support
 
-| Platform | Implementation                 | Privileges                |
-|----------|--------------------------------|---------------------------|
-| Linux    | Network namespaces + iptables  | CAP_NET_ADMIN (or root)   |
-| macOS    | Not supported                  | -                         |
-| Windows  | Not supported                  | -                         |
+| Platform | Implementation                 | Privileges                           |
+|----------|--------------------------------|--------------------------------------|
+| Linux    | Network namespaces + iptables  | CAP_NET_ADMIN (namespace mode only)  |
+| Linux    | Simple mode (HTTP_PROXY)       | None                                 |
+| macOS    | Not supported                  | -                                    |
+| Windows  | Not supported                  | -                                    |
 
 ## Security and Privileges
+
+### Simple Mode
+
+Simple mode runs entirely as your regular user with no elevated privileges. The target process receives `HTTP_PROXY` and `HTTPS_PROXY` environment variables pointing to the boundary proxy.
+
+### Namespace Mode
 
 **All processes are expected to run as non-root users** for security best practices:
 
@@ -146,13 +182,14 @@ boundary-run --log-level debug --allow "domain=github.com" -- git pull  # Debug 
 
 The `boundary-run` wrapper script handles privilege escalation automatically using `setpriv` to drop privileges before launching boundary. This ensures all processes run with the minimum required capabilities (`CAP_NET_ADMIN` and optionally `CAP_SYS_ADMIN` for restricted environments) while executing as your regular user account.
 
-If you run `boundary` directly with `sudo` (without `setpriv`), all processes will run as root, which is **not recommended** for security reasons. Always use `boundary-run` or the equivalent `setpriv` command shown in the [Direct Usage](#direct-usage) section.
+If you run `boundary` directly with `sudo` (without `setpriv`), all processes will run as root, which is **not recommended** for security reasons. Always use `boundary-run` or the equivalent `setpriv` command shown in the [Direct Namespace Mode Usage](#direct-namespace-mode-usage) section.
 
 ## Command-Line Options
 
 ```text
-boundary-run [flags] -- command [args...]
+boundary [flags] -- command [args...]
 
+ --simple                    Use simple mode (no network isolation, no special permissions)
  --config <PATH>             Path to YAML config file (default: ~/.config/coder_boundary/config.yaml)
  --allow <SPEC>              Allow rule (repeatable). Merged with allowlist from config file
  --log-level <LEVEL>        Set log level (error, warn, info, debug). Default: warn
@@ -163,7 +200,7 @@ boundary-run [flags] -- command [args...]
  -h, --help                  Print help
 ```
 
-Environment variables: `BOUNDARY_CONFIG`, `BOUNDARY_ALLOW`, `BOUNDARY_LOG_LEVEL`, `BOUNDARY_LOG_DIR`, `PROXY_PORT`, `BOUNDARY_PPROF`, `BOUNDARY_PPROF_PORT`
+Environment variables: `BOUNDARY_SIMPLE`, `BOUNDARY_CONFIG`, `BOUNDARY_ALLOW`, `BOUNDARY_LOG_LEVEL`, `BOUNDARY_LOG_DIR`, `PROXY_PORT`, `BOUNDARY_PPROF`, `BOUNDARY_PPROF_PORT`
 
 ## Development
 
