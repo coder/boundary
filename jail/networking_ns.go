@@ -46,6 +46,7 @@ func SetupChildNetworking(vethNetJail string) error {
 // namespace to the host by setting up iptables NAT rules. Additionally, /etc/systemd/resolved.conf
 // should be configured with DNSStubListener=yes and DNSStubListenerExtra=192.168.100.1:53
 // to listen on the additional server address.
+// NOTE: it's called inside network namespace.
 func ConfigureDNSForLocalStubResolver() error {
 	runner := newCommandRunner([]*command{
 		// Redirect all DNS queries inside the namespace to the host DNS listener.
