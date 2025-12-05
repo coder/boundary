@@ -18,15 +18,15 @@ type Jailer interface {
 }
 
 type Config struct {
-	Logger                     *slog.Logger
-	HttpProxyPort              int
-	Username                   string
-	Uid                        int
-	Gid                        int
-	HomeDir                    string
-	ConfigDir                  string
-	CACertPath                 string
-	EnableLocalStubResolverDNS bool
+	Logger                          *slog.Logger
+	HttpProxyPort                   int
+	Username                        string
+	Uid                             int
+	Gid                             int
+	HomeDir                         string
+	ConfigDir                       string
+	CACertPath                      string
+	ConfigureDNSForLocalStubResolver bool
 }
 
 // LinuxJail implements Jailer using Linux network namespaces
@@ -42,7 +42,7 @@ type LinuxJail struct {
 	username                   string
 	uid                        int
 	gid                        int
-	enableLocalStubResolverDNS bool
+	configureDNSForLocalStubResolver bool
 }
 
 func NewLinuxJail(config Config) (*LinuxJail, error) {
@@ -55,7 +55,7 @@ func NewLinuxJail(config Config) (*LinuxJail, error) {
 		username:                   config.Username,
 		uid:                        config.Uid,
 		gid:                        config.Gid,
-		enableLocalStubResolverDNS: config.EnableLocalStubResolverDNS,
+		configureDNSForLocalStubResolver: config.ConfigureDNSForLocalStubResolver,
 	}, nil
 }
 
@@ -84,7 +84,7 @@ func (l *LinuxJail) Command(command []string) *exec.Cmd {
 	cmd.Env = l.commandEnv
 	cmd.Env = append(cmd.Env, "CHILD=true")
 	cmd.Env = append(cmd.Env, fmt.Sprintf("VETH_JAIL_NAME=%v", l.vethJailName))
-	if l.enableLocalStubResolverDNS {
+	if l.configureDNSForLocalStubResolver {
 		cmd.Env = append(cmd.Env, "ENABLE_LOCAL_STUB_RESOLVER_DNS=true")
 	}
 	cmd.Stderr = os.Stderr
