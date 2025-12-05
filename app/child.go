@@ -67,6 +67,14 @@ func RunChild(logger *slog.Logger, args []string) error {
 	}
 	logger.Info("child networking is successfully configured")
 
+	if os.Getenv("CONFIGURE_DNS_FOR_LOCAL_STUB_RESOLVER") == "true" {
+		err = jail.ConfigureDNSForLocalStubResolver()
+		if err != nil {
+			return fmt.Errorf("failed to configure DNS in namespace: %v", err)
+		}
+		logger.Info("DNS in namespace is configured successfully")
+	}
+
 	// Program to run
 	bin := args[0]
 	args = args[1:]
