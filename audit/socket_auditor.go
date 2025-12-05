@@ -16,10 +16,13 @@ const (
 )
 
 // SocketEvent represents an audit event sent over the socket.
+// This matches the format expected by the Coder agent.
 type SocketEvent struct {
-	Timestamp time.Time `json:"timestamp"`
-	Domain    string    `json:"domain"`
-	Allowed   bool      `json:"allowed"`
+	Timestamp    time.Time `json:"timestamp"`
+	ResourceType string    `json:"resource_type"` // "network", "file", etc.
+	Resource     string    `json:"resource"`      // URL, file path, etc.
+	Operation    string    `json:"operation"`     // "GET", "POST", "CONNECT", etc.
+	Decision     string    `json:"decision"`      // "allow" or "deny"
 }
 
 // SocketAuditor implements Auditor by sending events to a Unix socket.
@@ -78,10 +81,17 @@ func (a *SocketAuditor) AuditRequest(req Request) {
 		return
 	}
 
+	decision := "deny"
+	if req.Allowed {
+		decision = "allow"
+	}
+
 	event := SocketEvent{
-		Timestamp: time.Now(),
-		Domain:    req.Host,
-		Allowed:   req.Allowed,
+		Timestamp:    time.Now(),
+		ResourceType: "network",
+		Resource:     req.Host + req.URL,
+		Operation:    req.Method,
+		Decision:     decision,
 	}
 
 	a.batch = append(a.batch, event)
