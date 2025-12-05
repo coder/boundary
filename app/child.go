@@ -11,9 +11,8 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
-	"golang.org/x/sys/unix"
-
 	"github.com/coder/boundary/jail"
+	"golang.org/x/sys/unix"
 )
 
 // waitForInterface waits for a network interface to appear in the namespace.
