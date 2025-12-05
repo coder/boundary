@@ -277,7 +277,14 @@ func (p *Server) processHTTPRequest(conn net.Conn, req *http.Request, https bool
 	p.forwardRequest(conn, req, https)
 }
 
+
 func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
+	// Handle CONNECT method specially - it's for HTTPS tunneling
+	if req.Method == http.MethodConnect {
+		p.handleCONNECT(conn, req)
+		return
+	}
+
 	// Create HTTP client
 	client := &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -322,11 +329,11 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 	// Make request to destination
 	resp, err := client.Do(newReq)
 	if err != nil {
-		p.logger.Error("Failed to forward HTTPS request", "error", err)
+		p.logger.Error("Failed to forward HTTP request", "error", err)
 		return
 	}
 
-	p.logger.Debug("🔒 HTTPS Response", "status code", resp.StatusCode, "status", resp.Status)
+	p.logger.Debug("HTTP Response", "status code", resp.StatusCode, "status", resp.Status)
 
 	p.logger.Debug("Forwarded Request",
 		"method", newReq.Method,
@@ -334,7 +341,7 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 		"URL", newReq.URL,
 	)
 
-	// Read the body and explicitly set Content-Length header, otherwise client can hung up on the request.
+	// Read the body and explicitly set Content-Length header, otherwise client can hang up on the request.
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		p.logger.Error("can't read response body", "error", err)
@@ -367,7 +374,6 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 			"error", err,
 			"host", req.Host,
 			"method", req.Method,
-			//"bodyBytes", string(bodyBytes),
 		)
 		return
 	}
@@ -375,7 +381,63 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 	p.logger.Debug("Successfully wrote to connection")
 }
 
+// handleCONNECT handles HTTP CONNECT method for HTTPS tunneling.
+// This is used when clients want to establish a TLS tunnel through the proxy.
+func (p *Server) handleCONNECT(clientConn net.Conn, req *http.Request) {
+	// Connect to the target server
+	targetConn, err := net.DialTimeout("tcp", req.Host, 10*time.Second)
+	if err != nil {
+		p.logger.Error("Failed to connect to target for CONNECT", "host", req.Host, "error", err)
+		// Send 502 Bad Gateway
+		response := &http.Response{
+			StatusCode: http.StatusBadGateway,
+			ProtoMajor: 1,
+			ProtoMinor: 1,
+			Request:    req,
+			Header:     make(http.Header),
+		}
+		_ = response.Write(clientConn)
+		return
+	}
+	defer targetConn.Close()
+
+	// Send 200 Connection Established
+	_, err = clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
+	if err != nil {
+		p.logger.Error("Failed to send CONNECT response", "error", err)
+		return
+	}
+
+	p.logger.Debug("CONNECT tunnel established", "host", req.Host)
+
+	// Tunnel data between client and target
+	done := make(chan struct{}, 2)
+
+	// Client -> Target
+	go func() {
+		_, _ = io.Copy(targetConn, clientConn)
+		done <- struct{}{}
+	}()
+
+	// Target -> Client
+	go func() {
+		_, _ = io.Copy(clientConn, targetConn)
+		done <- struct{}{}
+	}()
+
+	// Wait for either direction to finish
+	<-done
+	p.logger.Debug("CONNECT tunnel closed", "host", req.Host)
+}
+
 func (p *Server) writeBlockedResponse(conn net.Conn, req *http.Request) {
+	// For CONNECT requests, we need to send a proper HTTP response
+	if req.Method == http.MethodConnect {
+		_, _ = conn.Write([]byte("HTTP/1.1 403 Forbidden\r\n\r\n"))
+		p.logger.Debug("Successfully wrote blocked response for CONNECT")
+		return
+	}
+
 	// Create a response object
 	resp := &http.Response{
 		Status:        "403 Forbidden",
@@ -390,51 +452,30 @@ func (p *Server) writeBlockedResponse(conn net.Conn, req *http.Request) {
 
 	// Set headers
 	resp.Header.Set("Content-Type", "text/plain")
+	resp.Header.Set("Connection", "close")
 
-	// Create the response body
-	host := req.URL.Host
-	if host == "" {
-		host = req.Host
-	}
-
-	body := fmt.Sprintf(`🚫 Request Blocked by Boundary
-
-Request: %s %s
-Host: %s
-
-To allow this request, restart boundary with:
-  --allow "domain=%s"                    # Allow all methods to this host
-  --allow "method=%s domain=%s"          # Allow only %s requests to this host
-
-For more help: https://github.com/coder/boundary
-`,
-		req.Method, req.URL.Path, host, host, req.Method, host, req.Method)
-
-	resp.Body = io.NopCloser(strings.NewReader(body))
-	resp.ContentLength = int64(len(body))
-
-	// Copy response back to client
+	// Write the response
 	err := resp.Write(conn)
 	if err != nil {
-		p.logger.Error("Failed to write blocker response", "error", err)
+		p.logger.Error("Failed to write blocked response", "error", err)
 		return
 	}
 
 	p.logger.Debug("Successfully wrote to connection")
 }
 
-// connectionWrapper lets us "unread" the peeked byte
+// connectionWrapper wraps a net.Conn and prepends a byte buffer to the read stream
 type connectionWrapper struct {
 	net.Conn
-	buf     []byte
-	bufUsed bool
+	buf  []byte
+	used bool
 }
 
-func (c *connectionWrapper) Read(p []byte) (int, error) {
-	if !c.bufUsed && len(c.buf) > 0 {
-		n := copy(p, c.buf)
-		c.bufUsed = true
+func (cw *connectionWrapper) Read(p []byte) (int, error) {
+	if !cw.used && len(cw.buf) > 0 {
+		n := copy(p, cw.buf)
+		cw.used = true
 		return n, nil
 	}
-	return c.Conn.Read(p)
+	return cw.Conn.Read(p)
 }
