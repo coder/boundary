@@ -108,6 +108,13 @@ func BaseCommand() *serpent.Command {
 				Value:       &config.PprofPort,
 				YAML:        "pprof_port",
 			},
+			{
+				Flag:        "enable-local-stub-resolver-dns",
+				Env:         "BOUNDARY_ENABLE_LOCAL_STUB_RESOLVER_DNS",
+				Description: "Enable DNS configuration for local stub resolver (e.g., systemd-resolved). Only needed when /etc/resolv.conf contains nameserver 127.0.0.53.",
+				Value:       &config.EnableLocalStubResolverDNS,
+				YAML:        "enable_local_stub_resolver_dns",
+			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
 			args := inv.Args
