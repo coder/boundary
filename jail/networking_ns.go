@@ -62,7 +62,7 @@ func ConfigureDNSInNamespace() error {
 		// and cannot be redirected to the host.
 		{
 			"Allow loopback-destined traffic to pass through NAT (route_localnet)",
-			// TODO(yevhenii): replace with specific interface instead of all
+			// TODO(yevhenii): consider replacing with specific interfaces instead of all
 			exec.Command("sysctl", "-w", "net.ipv4.conf.all.route_localnet=1"),
 			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
 		},
