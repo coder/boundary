@@ -18,31 +18,31 @@ type Jailer interface {
 }
 
 type Config struct {
-	Logger                      *slog.Logger
-	HttpProxyPort               int
-	Username                    string
-	Uid                         int
-	Gid                         int
-	HomeDir                     string
-	ConfigDir                   string
-	CACertPath                  string
+	Logger                     *slog.Logger
+	HttpProxyPort              int
+	Username                   string
+	Uid                        int
+	Gid                        int
+	HomeDir                    string
+	ConfigDir                  string
+	CACertPath                 string
 	EnableLocalStubResolverDNS bool
 }
 
 // LinuxJail implements Jailer using Linux network namespaces
 type LinuxJail struct {
-	logger                      *slog.Logger
-	vethHostName                string // Host-side veth interface name for iptables rules
-	vethJailName                string // Jail-side veth interface name for iptables rules
-	commandEnv                  []string
-	httpProxyPort               int
-	configDir                   string
-	caCertPath                  string
-	homeDir                     string
-	username                    string
-	uid                         int
-	gid                         int
-	enableLocalStubResolverDNS  bool
+	logger                     *slog.Logger
+	vethHostName               string // Host-side veth interface name for iptables rules
+	vethJailName               string // Jail-side veth interface name for iptables rules
+	commandEnv                 []string
+	httpProxyPort              int
+	configDir                  string
+	caCertPath                 string
+	homeDir                    string
+	username                   string
+	uid                        int
+	gid                        int
+	enableLocalStubResolverDNS bool
 }
 
 func NewLinuxJail(config Config) (*LinuxJail, error) {
