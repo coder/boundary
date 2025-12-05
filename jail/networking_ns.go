@@ -39,7 +39,7 @@ func SetupChildNetworking(vethNetJail string) error {
 	return nil
 }
 
-func ConfigureDNSInNamespace() error {
+func ConfigureDNSForLocalStubResolver() error {
 	runner := newCommandRunner([]*command{
 		// Redirect all DNS queries inside the namespace to the host DNS listener.
 		// Needed because systemd-resolved listens on a host-side IP, not inside the namespace.
