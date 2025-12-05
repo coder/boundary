@@ -109,11 +109,11 @@ func BaseCommand() *serpent.Command {
 				YAML:        "pprof_port",
 			},
 			{
-				Flag:        "enable-local-stub-resolver-dns",
-				Env:         "BOUNDARY_ENABLE_LOCAL_STUB_RESOLVER_DNS",
-				Description: "Enable DNS configuration for local stub resolver (e.g., systemd-resolved). Only needed when /etc/resolv.conf contains nameserver 127.0.0.53.",
-				Value:       &config.EnableLocalStubResolverDNS,
-				YAML:        "enable_local_stub_resolver_dns",
+				Flag:        "configure-dns-for-local-stub-resolver",
+				Env:         "BOUNDARY_CONFIGURE_DNS_FOR_LOCAL_STUB_RESOLVER",
+				Description: "Configure DNS for local stub resolver (e.g., systemd-resolved). Only needed when /etc/resolv.conf contains nameserver 127.0.0.53.",
+				Value:       &config.ConfigureDNSForLocalStubResolver,
+				YAML:        "configure_dns_for_local_stub_resolver",
 			},
 		},
 		Handler: func(inv *serpent.Invocation) error {

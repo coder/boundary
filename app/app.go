@@ -21,9 +21,9 @@ type Config struct {
 	LogLevel                    serpent.String         `yaml:"log_level"`
 	LogDir                      serpent.String         `yaml:"log_dir"`
 	ProxyPort                   serpent.Int64          `yaml:"proxy_port"`
-	PprofEnabled                serpent.Bool           `yaml:"pprof_enabled"`
-	PprofPort                   serpent.Int64          `yaml:"pprof_port"`
-	EnableLocalStubResolverDNS  serpent.Bool           `yaml:"enable_local_stub_resolver_dns"`
+	PprofEnabled                  serpent.Bool           `yaml:"pprof_enabled"`
+	PprofPort                     serpent.Int64          `yaml:"pprof_port"`
+	ConfigureDNSForLocalStubResolver serpent.Bool         `yaml:"configure_dns_for_local_stub_resolver"`
 }
 
 func isChild() bool {

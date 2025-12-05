@@ -80,7 +80,7 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 		HomeDir:                    homeDir,
 		ConfigDir:                  configDir,
 		CACertPath:                 caCertPath,
-		EnableLocalStubResolverDNS: config.EnableLocalStubResolverDNS.Value(),
+		EnableLocalStubResolverDNS: config.ConfigureDNSForLocalStubResolver.Value(),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create jailer: %v", err)
