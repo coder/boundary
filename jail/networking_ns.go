@@ -10,17 +10,6 @@ import (
 // namespace. This runs inside the child process after it has been
 // created and moved to its own network namespace.
 func SetupChildNetworking(vethNetJail string) error {
-	//showCmd := exec.Command("ip", "link", "show")
-	//showCmd.SysProcAttr = &syscall.SysProcAttr{
-	//	AmbientCaps: []uintptr{uintptr(unix.CAP_NET_ADMIN)},
-	//}
-	//output, err := showCmd.CombinedOutput()
-	//if err != nil {
-	//	fmt.Printf("error (ip link show): %v\n", err)
-	//	return err
-	//}
-	//fmt.Printf("output (ip link show): %s\n", output)
-
 	runner := newCommandRunner([]*command{
 		{
 			"configure namespace veth",
