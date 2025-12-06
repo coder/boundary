@@ -89,7 +89,7 @@ func (a *SocketAuditor) AuditRequest(req Request) {
 	event := SocketEvent{
 		Timestamp:    time.Now(),
 		ResourceType: "network",
-		Resource:     req.Host + req.URL,
+		Resource:     req.URL,
 		Operation:    req.Method,
 		Decision:     decision,
 	}
