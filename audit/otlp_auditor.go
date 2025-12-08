@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -21,9 +22,9 @@ import (
 // OTLPAuditorConfig holds configuration for the OTLP auditor.
 type OTLPAuditorConfig struct {
 	Logger   *slog.Logger
-	Endpoint string // OTLP HTTP endpoint (e.g., "https://collector:4318")
+	Endpoint string // OTLP HTTP endpoint (e.g., "https://collector:4318" or "http://localhost:4318")
 	Headers  string // Comma-separated key=value headers (e.g., "x-api-key=secret")
-	Insecure bool   // Use HTTP instead of HTTPS (or skip TLS verification)
+	Insecure bool   // Use HTTP instead of HTTPS
 	CACert   string // Path to CA certificate file
 
 	// Workspace metadata included in all log records.
@@ -52,9 +53,20 @@ func NewOTLPAuditor(ctx context.Context, config OTLPAuditorConfig) (*OTLPAuditor
 		return nil, fmt.Errorf("OTLP endpoint is required")
 	}
 
-	// Build exporter options.
+	// Parse the endpoint URL to extract host:port.
+	parsedURL, err := url.Parse(config.Endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse OTLP endpoint URL: %w", err)
+	}
+
+	// Use WithEndpoint (host:port) which automatically appends /v1/logs.
+	host := parsedURL.Host
+	if host == "" {
+		return nil, fmt.Errorf("OTLP endpoint must include host: %s", config.Endpoint)
+	}
+
 	opts := []otlploghttp.Option{
-		otlploghttp.WithEndpointURL(config.Endpoint),
+		otlploghttp.WithEndpoint(host),
 	}
 
 	// Parse and add headers.
@@ -64,8 +76,9 @@ func NewOTLPAuditor(ctx context.Context, config OTLPAuditorConfig) (*OTLPAuditor
 	}
 
 	// Configure TLS/Insecure mode.
-	if config.Insecure {
-		// Use WithInsecure() to disable TLS entirely.
+	// Use insecure if explicitly set OR if the URL scheme is http.
+	useInsecure := config.Insecure || parsedURL.Scheme == "http"
+	if useInsecure {
 		opts = append(opts, otlploghttp.WithInsecure())
 		config.Logger.Debug("OTLP auditor using insecure mode (no TLS)")
 	} else if config.CACert != "" {
@@ -101,7 +114,7 @@ func NewOTLPAuditor(ctx context.Context, config OTLPAuditorConfig) (*OTLPAuditor
 		sdklog.WithResource(res),
 	)
 
-	config.Logger.Info("OTLP auditor initialized", "endpoint", config.Endpoint)
+	config.Logger.Info("OTLP auditor initialized", "endpoint", host, "insecure", useInsecure)
 
 	return &OTLPAuditor{
 		logger:         config.Logger,
@@ -163,6 +176,11 @@ func (a *OTLPAuditor) AuditRequest(req Request) {
 
 	// Emit the log record.
 	a.otelLogger.Emit(context.Background(), record)
+
+	a.logger.Debug("OTLP audit event emitted",
+		"method", req.Method,
+		"url", req.URL,
+		"decision", boolToDecision(req.Allowed))
 }
 
 // Close flushes pending logs and shuts down the provider.
@@ -174,6 +192,8 @@ func (a *OTLPAuditor) Close() error {
 	}
 	a.closed = true
 	a.mu.Unlock()
+
+	a.logger.Info("Shutting down OTLP auditor, flushing pending logs...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
