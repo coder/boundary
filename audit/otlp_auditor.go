@@ -47,6 +47,36 @@ type OTLPAuditor struct {
 	closed bool
 }
 
+// loggingProcessor wraps a processor to log export errors.
+type loggingProcessor struct {
+	sdklog.Processor
+	logger *slog.Logger
+}
+
+func (p *loggingProcessor) OnEmit(ctx context.Context, record *sdklog.Record) error {
+	err := p.Processor.OnEmit(ctx, record)
+	if err != nil {
+		p.logger.Error("OTLP processor OnEmit failed", "error", err)
+	}
+	return err
+}
+
+func (p *loggingProcessor) Shutdown(ctx context.Context) error {
+	err := p.Processor.Shutdown(ctx)
+	if err != nil {
+		p.logger.Error("OTLP processor Shutdown failed", "error", err)
+	}
+	return err
+}
+
+func (p *loggingProcessor) ForceFlush(ctx context.Context) error {
+	err := p.Processor.ForceFlush(ctx)
+	if err != nil {
+		p.logger.Error("OTLP processor ForceFlush failed", "error", err)
+	}
+	return err
+}
+
 // NewOTLPAuditor creates a new OTLP auditor.
 func NewOTLPAuditor(ctx context.Context, config OTLPAuditorConfig) (*OTLPAuditor, error) {
 	if config.Endpoint == "" {
@@ -108,9 +138,21 @@ func NewOTLPAuditor(ctx context.Context, config OTLPAuditorConfig) (*OTLPAuditor
 		return nil, fmt.Errorf("failed to create resource: %w", err)
 	}
 
-	// Create the logger provider with batching.
+	// Create batch processor with shorter intervals for debugging.
+	batchProcessor := sdklog.NewBatchProcessor(exporter,
+		sdklog.WithExportInterval(5*time.Second),
+		sdklog.WithExportMaxBatchSize(1), // Export immediately for debugging
+	)
+
+	// Wrap with logging processor to catch errors.
+	loggingProc := &loggingProcessor{
+		Processor: batchProcessor,
+		logger:    config.Logger,
+	}
+
+	// Create the logger provider.
 	provider := sdklog.NewLoggerProvider(
-		sdklog.WithProcessor(sdklog.NewBatchProcessor(exporter)),
+		sdklog.WithProcessor(loggingProc),
 		sdklog.WithResource(res),
 	)
 
@@ -199,7 +241,7 @@ func (a *OTLPAuditor) Close() error {
 	defer cancel()
 
 	if err := a.loggerProvider.Shutdown(ctx); err != nil {
-		a.logger.Warn("failed to shutdown OTLP logger provider", "error", err)
+		a.logger.Error("failed to shutdown OTLP logger provider", "error", err)
 		return err
 	}
 	return nil
