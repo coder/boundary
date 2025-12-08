@@ -217,7 +217,7 @@ func TestContentLengthHeader(t *testing.T) {
 	boundaryCmd := exec.CommandContext(ctx, "/tmp/boundary-test",
 		"--allow", "domain=example.com",
 		"--log-level", "debug",
-		"--", "/bin/bash", "-c", "/usr/bin/sleep 10 && /usr/bin/echo 'Test completed'")
+		"--", "/bin/bash", "-c", "/usr/bin/sleep 20 && /usr/bin/echo 'Test completed'")
 
 	boundaryCmd.Stdin = os.Stdin
 	boundaryCmd.Stdout = os.Stdout
