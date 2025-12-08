@@ -24,6 +24,17 @@ type Config struct {
 	PprofEnabled                     serpent.Bool           `yaml:"pprof_enabled"`
 	PprofPort                        serpent.Int64          `yaml:"pprof_port"`
 	ConfigureDNSForLocalStubResolver serpent.Bool           `yaml:"configure_dns_for_local_stub_resolver"`
+
+	// OTLP Configuration
+	OTLPEndpoint serpent.String `yaml:"otlp_endpoint"` // OTLP HTTP endpoint (e.g., "http://collector:4318")
+	OTLPHeaders  serpent.String `yaml:"otlp_headers"`  // Comma-separated key=value headers
+	OTLPInsecure serpent.Bool   `yaml:"otlp_insecure"` // Use HTTP instead of HTTPS
+	OTLPCACert   serpent.String `yaml:"otlp_ca_cert"`  // Path to CA certificate file
+
+	// Workspace metadata for OTLP logs
+	WorkspaceID    serpent.String `yaml:"workspace_id"`
+	WorkspaceName  serpent.String `yaml:"workspace_name"`
+	WorkspaceOwner serpent.String `yaml:"workspace_owner"`
 }
 
 func isChild() bool {

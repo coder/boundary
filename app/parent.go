@@ -49,8 +49,17 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 	// Create rule engine
 	ruleEngine := rulesengine.NewRuleEngine(allowRules, logger)
 
-	// Create auditor
-	auditor := audit.NewLogAuditor(logger)
+	// Build auditor - always include LogAuditor for stdout, add OTLP if configured.
+	auditor, err := buildAuditor(ctx, logger, config)
+	if err != nil {
+		return fmt.Errorf("failed to create auditor: %v", err)
+	}
+	// Ensure auditor is closed on exit (handles MultiAuditor closing all children).
+	defer func() {
+		if closer, ok := auditor.(interface{ Close() error }); ok {
+			_ = closer.Close()
+		}
+	}()
 
 	// Create TLS certificate manager
 	certManager, err := tls.NewCertificateManager(tls.Config{
@@ -72,14 +81,14 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 
 	// Create jailer with cert path from TLS setup
 	jailer, err := jail.NewLinuxJail(jail.Config{
-		Logger:                     logger,
-		HttpProxyPort:              int(config.ProxyPort.Value()),
-		Username:                   username,
-		Uid:                        uid,
-		Gid:                        gid,
-		HomeDir:                    homeDir,
-		ConfigDir:                  configDir,
-		CACertPath:                 caCertPath,
+		Logger:                           logger,
+		HttpProxyPort:                    int(config.ProxyPort.Value()),
+		Username:                         username,
+		Uid:                              uid,
+		Gid:                              gid,
+		HomeDir:                          homeDir,
+		ConfigDir:                        configDir,
+		CACertPath:                       caCertPath,
 		ConfigureDNSForLocalStubResolver: config.ConfigureDNSForLocalStubResolver.Value(),
 	})
 	if err != nil {
@@ -121,9 +130,9 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 	// Execute command in boundary
 	go func() {
 		defer cancel()
-		cmd := boundaryInstance.Command(os.Args)
+		cmd := boundaryInstance.Command(args)
 
-		logger.Debug("Executing command in boundary", "command", strings.Join(os.Args, " "))
+		logger.Debug("Executing command in boundary", "command", strings.Join(args, " "))
 		err := cmd.Start()
 		if err != nil {
 			logger.Error("Command failed to start", "error", err)
@@ -155,4 +164,38 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 	}
 
 	return nil
+}
+
+// buildAuditor creates the appropriate auditor based on configuration.
+// LogAuditor (stdout) is always included. OTLP auditor is added if configured.
+func buildAuditor(ctx context.Context, logger *slog.Logger, config Config) (audit.Auditor, error) {
+	// Always include log auditor for stdout logging.
+	auditors := []audit.Auditor{audit.NewLogAuditor(logger)}
+
+	// Add OTLP auditor if configured.
+	otlpEndpoint := config.OTLPEndpoint.Value()
+	if otlpEndpoint != "" {
+		otlpAuditor, err := audit.NewOTLPAuditor(ctx, audit.OTLPAuditorConfig{
+			Logger:         logger,
+			Endpoint:       otlpEndpoint,
+			Headers:        config.OTLPHeaders.Value(),
+			Insecure:       config.OTLPInsecure.Value(),
+			CACert:         config.OTLPCACert.Value(),
+			WorkspaceID:    config.WorkspaceID.Value(),
+			WorkspaceName:  config.WorkspaceName.Value(),
+			WorkspaceOwner: config.WorkspaceOwner.Value(),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create OTLP auditor: %w", err)
+		}
+		auditors = append(auditors, otlpAuditor)
+		logger.Info("Using OTLP auditor", "endpoint", otlpEndpoint)
+	}
+
+	// If only one auditor (LogAuditor), return it directly.
+	// Otherwise, wrap in MultiAuditor.
+	if len(auditors) == 1 {
+		return auditors[0], nil
+	}
+	return audit.NewMultiAuditor(auditors...), nil
 }
