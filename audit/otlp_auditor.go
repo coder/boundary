@@ -23,7 +23,7 @@ type OTLPAuditorConfig struct {
 	Logger   *slog.Logger
 	Endpoint string // OTLP HTTP endpoint (e.g., "https://collector:4318")
 	Headers  string // Comma-separated key=value headers (e.g., "x-api-key=secret")
-	Insecure bool   // Skip TLS verification
+	Insecure bool   // Use HTTP instead of HTTPS (or skip TLS verification)
 	CACert   string // Path to CA certificate file
 
 	// Workspace metadata included in all log records.
@@ -63,14 +63,21 @@ func NewOTLPAuditor(ctx context.Context, config OTLPAuditorConfig) (*OTLPAuditor
 		opts = append(opts, otlploghttp.WithHeaders(headers))
 	}
 
-	// Configure TLS.
-	tlsConfig, err := buildTLSConfig(config.Insecure, config.CACert)
-	if err != nil {
-		return nil, fmt.Errorf("failed to configure TLS: %w", err)
-	}
-	if tlsConfig != nil {
+	// Configure TLS/Insecure mode.
+	if config.Insecure {
+		// Use WithInsecure() to disable TLS entirely.
+		opts = append(opts, otlploghttp.WithInsecure())
+		config.Logger.Debug("OTLP auditor using insecure mode (no TLS)")
+	} else if config.CACert != "" {
+		// Custom CA certificate.
+		tlsConfig, err := buildTLSConfig(config.CACert)
+		if err != nil {
+			return nil, fmt.Errorf("failed to configure TLS: %w", err)
+		}
 		opts = append(opts, otlploghttp.WithTLSClientConfig(tlsConfig))
+		config.Logger.Debug("OTLP auditor using custom CA certificate", "path", config.CACert)
 	}
+	// Otherwise, use system CA pool (default behavior, no option needed).
 
 	// Create the exporter.
 	exporter, err := otlploghttp.New(ctx, opts...)
@@ -93,6 +100,8 @@ func NewOTLPAuditor(ctx context.Context, config OTLPAuditorConfig) (*OTLPAuditor
 		sdklog.WithProcessor(sdklog.NewBatchProcessor(exporter)),
 		sdklog.WithResource(res),
 	)
+
+	config.Logger.Info("OTLP auditor initialized", "endpoint", config.Endpoint)
 
 	return &OTLPAuditor{
 		logger:         config.Logger,
@@ -192,19 +201,8 @@ func parseHeaders(headers string) map[string]string {
 	return result
 }
 
-// buildTLSConfig creates a TLS configuration based on the provided options.
-func buildTLSConfig(insecure bool, caCertPath string) (*tls.Config, error) {
-	if insecure {
-		return &tls.Config{
-			InsecureSkipVerify: true, //nolint:gosec // User explicitly requested insecure mode.
-		}, nil
-	}
-
-	if caCertPath == "" {
-		// Use system CA pool (default behavior).
-		return nil, nil
-	}
-
+// buildTLSConfig creates a TLS configuration with a custom CA certificate.
+func buildTLSConfig(caCertPath string) (*tls.Config, error) {
 	// Load custom CA certificate.
 	caCert, err := os.ReadFile(caCertPath)
 	if err != nil {
