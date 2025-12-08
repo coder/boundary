@@ -47,36 +47,6 @@ type OTLPAuditor struct {
 	closed bool
 }
 
-// loggingProcessor wraps a processor to log export errors.
-type loggingProcessor struct {
-	sdklog.Processor
-	logger *slog.Logger
-}
-
-func (p *loggingProcessor) OnEmit(ctx context.Context, record *sdklog.Record) error {
-	err := p.Processor.OnEmit(ctx, record)
-	if err != nil {
-		p.logger.Error("OTLP processor OnEmit failed", "error", err)
-	}
-	return err
-}
-
-func (p *loggingProcessor) Shutdown(ctx context.Context) error {
-	err := p.Processor.Shutdown(ctx)
-	if err != nil {
-		p.logger.Error("OTLP processor Shutdown failed", "error", err)
-	}
-	return err
-}
-
-func (p *loggingProcessor) ForceFlush(ctx context.Context) error {
-	err := p.Processor.ForceFlush(ctx)
-	if err != nil {
-		p.logger.Error("OTLP processor ForceFlush failed", "error", err)
-	}
-	return err
-}
-
 // NewOTLPAuditor creates a new OTLP auditor.
 func NewOTLPAuditor(ctx context.Context, config OTLPAuditorConfig) (*OTLPAuditor, error) {
 	if config.Endpoint == "" {
@@ -110,7 +80,6 @@ func NewOTLPAuditor(ctx context.Context, config OTLPAuditorConfig) (*OTLPAuditor
 	useInsecure := config.Insecure || parsedURL.Scheme == "http"
 	if useInsecure {
 		opts = append(opts, otlploghttp.WithInsecure())
-		config.Logger.Debug("OTLP auditor using insecure mode (no TLS)")
 	} else if config.CACert != "" {
 		// Custom CA certificate.
 		tlsConfig, err := buildTLSConfig(config.CACert)
@@ -118,7 +87,6 @@ func NewOTLPAuditor(ctx context.Context, config OTLPAuditorConfig) (*OTLPAuditor
 			return nil, fmt.Errorf("failed to configure TLS: %w", err)
 		}
 		opts = append(opts, otlploghttp.WithTLSClientConfig(tlsConfig))
-		config.Logger.Debug("OTLP auditor using custom CA certificate", "path", config.CACert)
 	}
 	// Otherwise, use system CA pool (default behavior, no option needed).
 
@@ -138,21 +106,9 @@ func NewOTLPAuditor(ctx context.Context, config OTLPAuditorConfig) (*OTLPAuditor
 		return nil, fmt.Errorf("failed to create resource: %w", err)
 	}
 
-	// Create batch processor with shorter intervals for debugging.
-	batchProcessor := sdklog.NewBatchProcessor(exporter,
-		sdklog.WithExportInterval(5*time.Second),
-		sdklog.WithExportMaxBatchSize(1), // Export immediately for debugging
-	)
-
-	// Wrap with logging processor to catch errors.
-	loggingProc := &loggingProcessor{
-		Processor: batchProcessor,
-		logger:    config.Logger,
-	}
-
-	// Create the logger provider.
+	// Create the logger provider with batching.
 	provider := sdklog.NewLoggerProvider(
-		sdklog.WithProcessor(loggingProc),
+		sdklog.WithProcessor(sdklog.NewBatchProcessor(exporter)),
 		sdklog.WithResource(res),
 	)
 
@@ -218,11 +174,6 @@ func (a *OTLPAuditor) AuditRequest(req Request) {
 
 	// Emit the log record.
 	a.otelLogger.Emit(context.Background(), record)
-
-	a.logger.Debug("OTLP audit event emitted",
-		"method", req.Method,
-		"url", req.URL,
-		"decision", boolToDecision(req.Allowed))
 }
 
 // Close flushes pending logs and shuts down the provider.
@@ -235,13 +186,11 @@ func (a *OTLPAuditor) Close() error {
 	a.closed = true
 	a.mu.Unlock()
 
-	a.logger.Info("Shutting down OTLP auditor, flushing pending logs...")
-
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := a.loggerProvider.Shutdown(ctx); err != nil {
-		a.logger.Error("failed to shutdown OTLP logger provider", "error", err)
+		a.logger.Warn("failed to shutdown OTLP logger provider", "error", err)
 		return err
 	}
 	return nil
