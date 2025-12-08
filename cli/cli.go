@@ -127,6 +127,57 @@ func BaseCommand() *serpent.Command {
 				Value:       &config.AuditSocket,
 				YAML:        "audit_socket",
 			},
+			// OTLP Configuration
+			{
+				Flag:        "otlp-endpoint",
+				Env:         "BOUNDARY_OTLP_ENDPOINT",
+				Description: "OTLP HTTP endpoint for exporting audit logs (e.g., https://collector:4318/v1/logs).",
+				Value:       &config.OTLPEndpoint,
+				YAML:        "otlp_endpoint",
+			},
+			{
+				Flag:        "otlp-headers",
+				Env:         "BOUNDARY_OTLP_HEADERS",
+				Description: "Comma-separated key=value headers for OTLP requests (e.g., \"x-api-key=secret,x-team=platform\").",
+				Value:       &config.OTLPHeaders,
+				YAML:        "otlp_headers",
+			},
+			{
+				Flag:        "otlp-insecure",
+				Env:         "BOUNDARY_OTLP_INSECURE",
+				Description: "Skip TLS certificate verification for OTLP endpoint (not recommended for production).",
+				Value:       &config.OTLPInsecure,
+				YAML:        "otlp_insecure",
+			},
+			{
+				Flag:        "otlp-ca-cert",
+				Env:         "BOUNDARY_OTLP_CA_CERT",
+				Description: "Path to CA certificate file for OTLP TLS verification (for internal/custom CAs).",
+				Value:       &config.OTLPCACert,
+				YAML:        "otlp_ca_cert",
+			},
+			// Workspace metadata
+			{
+				Flag:        "workspace-id",
+				Env:         "BOUNDARY_WORKSPACE_ID",
+				Description: "Coder workspace ID to include in OTLP log attributes.",
+				Value:       &config.WorkspaceID,
+				YAML:        "workspace_id",
+			},
+			{
+				Flag:        "workspace-name",
+				Env:         "BOUNDARY_WORKSPACE_NAME",
+				Description: "Coder workspace name to include in OTLP log attributes.",
+				Value:       &config.WorkspaceName,
+				YAML:        "workspace_name",
+			},
+			{
+				Flag:        "workspace-owner",
+				Env:         "BOUNDARY_WORKSPACE_OWNER",
+				Description: "Coder workspace owner to include in OTLP log attributes.",
+				Value:       &config.WorkspaceOwner,
+				YAML:        "workspace_owner",
+			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
 			args := inv.Args

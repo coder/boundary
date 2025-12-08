@@ -25,6 +25,17 @@ type Config struct {
 	PprofPort        serpent.Int64          `yaml:"pprof_port"`
 	AuditSocket      serpent.String         `yaml:"audit_socket"`
 	SimpleMode       serpent.Bool           `yaml:"simple"`
+
+	// OTLP Configuration
+	OTLPEndpoint serpent.String `yaml:"otlp_endpoint"` // OTLP HTTP endpoint (e.g., "https://collector:4318")
+	OTLPHeaders  serpent.String `yaml:"otlp_headers"`  // Comma-separated key=value headers
+	OTLPInsecure serpent.Bool   `yaml:"otlp_insecure"` // Skip TLS verification
+	OTLPCACert   serpent.String `yaml:"otlp_ca_cert"`  // Path to CA certificate file
+
+	// Workspace metadata for OTLP logs
+	WorkspaceID    serpent.String `yaml:"workspace_id"`
+	WorkspaceName  serpent.String `yaml:"workspace_name"`
+	WorkspaceOwner serpent.String `yaml:"workspace_owner"`
 }
 
 func isChild() bool {

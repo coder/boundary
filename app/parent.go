@@ -49,20 +49,17 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 	// Create rule engine
 	ruleEngine := rulesengine.NewRuleEngine(allowRules, logger)
 
-	var auditor audit.Auditor
-	auditSocketPath := config.AuditSocket.Value()
-	if auditSocketPath != "" {
-		socketAuditor := audit.NewSocketAuditor(audit.SocketAuditorConfig{
-			Logger:     logger,
-			SocketPath: auditSocketPath,
-		})
-		auditor = socketAuditor
-		// Ensure socket auditor is closed on exit
-		defer socketAuditor.Close()
-		logger.Info("Using socket auditor", "path", auditSocketPath)
-	} else {
-		auditor = audit.NewLogAuditor(logger)
+	// Build auditor - always include LogAuditor for stdout, add others as configured.
+	auditor, err := buildAuditor(ctx, logger, config)
+	if err != nil {
+		return fmt.Errorf("failed to create auditor: %v", err)
 	}
+	// Ensure auditor is closed on exit (handles MultiAuditor closing all children).
+	defer func() {
+		if closer, ok := auditor.(interface{ Close() error }); ok {
+			_ = closer.Close()
+		}
+	}()
 
 	// Create TLS certificate manager
 	certManager, err := tls.NewCertificateManager(tls.Config{
@@ -177,4 +174,50 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 	}
 
 	return nil
+}
+
+// buildAuditor creates the appropriate auditor based on configuration.
+// LogAuditor (stdout) is always included. Additional auditors (Socket, OTLP)
+// are added based on configuration.
+func buildAuditor(ctx context.Context, logger *slog.Logger, config Config) (audit.Auditor, error) {
+	// Always include log auditor for stdout logging.
+	auditors := []audit.Auditor{audit.NewLogAuditor(logger)}
+
+	// Add socket auditor if configured.
+	auditSocketPath := config.AuditSocket.Value()
+	if auditSocketPath != "" {
+		socketAuditor := audit.NewSocketAuditor(audit.SocketAuditorConfig{
+			Logger:     logger,
+			SocketPath: auditSocketPath,
+		})
+		auditors = append(auditors, socketAuditor)
+		logger.Info("Using socket auditor", "path", auditSocketPath)
+	}
+
+	// Add OTLP auditor if configured.
+	otlpEndpoint := config.OTLPEndpoint.Value()
+	if otlpEndpoint != "" {
+		otlpAuditor, err := audit.NewOTLPAuditor(ctx, audit.OTLPAuditorConfig{
+			Logger:         logger,
+			Endpoint:       otlpEndpoint,
+			Headers:        config.OTLPHeaders.Value(),
+			Insecure:       config.OTLPInsecure.Value(),
+			CACert:         config.OTLPCACert.Value(),
+			WorkspaceID:    config.WorkspaceID.Value(),
+			WorkspaceName:  config.WorkspaceName.Value(),
+			WorkspaceOwner: config.WorkspaceOwner.Value(),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create OTLP auditor: %w", err)
+		}
+		auditors = append(auditors, otlpAuditor)
+		logger.Info("Using OTLP auditor", "endpoint", otlpEndpoint)
+	}
+
+	// If only one auditor (LogAuditor), return it directly.
+	// Otherwise, wrap in MultiAuditor.
+	if len(auditors) == 1 {
+		return auditors[0], nil
+	}
+	return audit.NewMultiAuditor(auditors...), nil
 }
