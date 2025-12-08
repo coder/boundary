@@ -23,18 +23,27 @@ func (l *LinuxJail) configureHostNetworkBeforeCmdExec() error {
 	l.vethJailName = vethJailName
 
 	runner := newCommandRunner([]*command{
+		// Create a virtual Ethernet (veth) pair that forms a point-to-point link
+		// between the host and the jail namespace. One end stays on the host,
+		// the other will be moved into the jail. This provides a dedicated,
+		// isolated L2 network for the jail.
 		{
-			"create veth pair",
+			"Create host–jail veth interface pair",
 			exec.Command("ip", "link", "add", vethHostName, "type", "veth", "peer", "name", vethJailName),
 			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
 		},
+		// Assign an IP address to the host side of the veth pair. The /24 mask
+		// implicitly defines the jail's entire subnet as 192.168.100.0/24.
+		// The host address (192.168.100.1) becomes the default gateway for
+		// processes inside the jail and is used by NAT and interception rules
+		// to route traffic out of the namespace.
 		{
-			"configure host veth",
+			"Assign IP to host-side veth",
 			exec.Command("ip", "addr", "add", "192.168.100.1/24", "dev", vethHostName),
 			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
 		},
 		{
-			"bring up host veth",
+			"Activate host-side veth interface",
 			exec.Command("ip", "link", "set", vethHostName, "up"),
 			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
 		},
@@ -54,8 +63,12 @@ func (l *LinuxJail) configureHostNetworkAfterCmdExec(pidInt int) error {
 	PID := fmt.Sprintf("%v", pidInt)
 
 	runner := newCommandRunner([]*command{
+		// Move the jail-side veth interface into the target network namespace.
+		// This isolates the interface so that it becomes visible only inside the
+		// jail's netns. From this point on, the jail will configure its end of
+		// the veth pair (IP address, routes, etc.) independently of the host.
 		{
-			"move veth to namespace",
+			"Move jail-side veth into network namespace",
 			exec.Command("ip", "link", "set", l.vethJailName, "netns", PID),
 			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
 		},
