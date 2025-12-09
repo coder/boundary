@@ -17,6 +17,7 @@ import (
 // Config holds all configuration for the CLI
 type Config struct {
 	Config                           serpent.YAMLConfigPath `yaml:"-"`
+	SimpleMode                       serpent.Bool           `yaml:"simple"`
 	AllowListStrings                 serpent.StringArray    `yaml:"allowlist"` // From config file
 	AllowStrings                     serpent.StringArray    `yaml:"-"`         // From CLI flags only
 	LogLevel                         serpent.String         `yaml:"log_level"`
@@ -47,6 +48,11 @@ func Run(ctx context.Context, config Config, args []string) error {
 		return err
 	}
 	logger.Debug("config", "json_config", configInJSON)
+
+	// In simple mode, we don't use child processes with network namespaces
+	if config.SimpleMode.Value() {
+		return RunSimple(ctx, logger, args, config)
+	}
 
 	if isChild() {
 		return RunChild(logger, args)

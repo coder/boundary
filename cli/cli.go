@@ -26,6 +26,9 @@ func NewCommand() *serpent.Command {
   # Use allowlist from config file with additional CLI allow rules
   boundary --allow "domain=example.com" -- curl https://example.com
 
+  # Use simple mode (HTTP_PROXY based, no network namespaces)
+  boundary --simple --allow "domain=github.com" -- curl https://github.com
+
   # Block everything by default (implicit)`
 
 	return cmd
@@ -56,6 +59,13 @@ func BaseCommand() *serpent.Command {
 				Description: "Path to YAML config file.",
 				Value:       &config.Config,
 				YAML:        "",
+			},
+			{
+				Flag:        "simple",
+				Env:         "BOUNDARY_SIMPLE",
+				Description: "Use simple mode (HTTP_PROXY based) instead of network namespaces. Does not require elevated privileges but only intercepts traffic from proxy-aware applications.",
+				Value:       &config.SimpleMode,
+				YAML:        "simple",
 			},
 			{
 				Flag:        "allow",
