@@ -9,7 +9,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	agentproto "github.com/coder/coder/v2/agent/proto"
+	boundaryproto "github.com/coder/boundary/proto"
 )
 
 const (
@@ -26,7 +26,7 @@ type SocketAuditor struct {
 
 	mu         sync.Mutex
 	conn       net.Conn
-	logs       []*agentproto.BoundaryLog
+	logs       []*boundaryproto.BoundaryLog
 	closed     bool
 	flushTimer *time.Timer
 }
@@ -50,7 +50,7 @@ func (s *SocketAuditor) AuditRequest(req Request) {
 		return
 	}
 
-	log := &agentproto.BoundaryLog{
+	log := &boundaryproto.BoundaryLog{
 		WorkspaceId: s.workspaceID,
 		Time:        timestamppb.Now(),
 		Allowed:     req.Allowed,
@@ -96,7 +96,7 @@ func (s *SocketAuditor) flushLocked() {
 		s.conn = conn
 	}
 
-	req := &agentproto.ReportBoundaryLogsRequest{
+	req := &boundaryproto.BoundaryLogsRequest{
 		Logs: s.logs,
 	}
 
