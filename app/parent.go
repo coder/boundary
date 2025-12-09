@@ -17,6 +17,14 @@ import (
 	"github.com/coder/boundary/util"
 )
 
+// BoundaryLogSocketEnvVar is the environment variable that specifies the path
+// to the Unix socket where boundary should send audit logs.
+const BoundaryLogSocketEnvVar = "CODER_BOUNDARY_LOG_SOCKET"
+
+// BoundaryWorkspaceIDEnvVar is the environment variable that specifies the
+// workspace ID for boundary audit logs.
+const BoundaryWorkspaceIDEnvVar = "CODER_WORKSPACE_ID"
+
 func RunParent(ctx context.Context, logger *slog.Logger, args []string, config Config) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -49,11 +57,26 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 	// Create rule engine
 	ruleEngine := rulesengine.NewRuleEngine(allowRules, logger)
 
-	// Create auditor - use local logging plus any external auditor
+	// Create auditor - check for socket path to forward logs to agent
 	var auditor audit.Auditor
 	logAuditor := audit.NewLogAuditor(logger)
-	if config.ExternalAuditor != nil {
-		auditor = audit.NewMultiAuditor(logAuditor, config.ExternalAuditor)
+
+	socketPath := os.Getenv(BoundaryLogSocketEnvVar)
+	workspaceIDStr := os.Getenv(BoundaryWorkspaceIDEnvVar)
+
+	if socketPath != "" && workspaceIDStr != "" {
+		// Parse workspace ID - it should be a UUID in standard format
+		workspaceID, err := parseUUID(workspaceIDStr)
+		if err != nil {
+			logger.Warn("Invalid workspace ID, using local auditor only", "error", err)
+			auditor = logAuditor
+		} else {
+			socketAuditor := audit.NewSocketAuditor(socketPath, workspaceID)
+			auditor = audit.NewMultiAuditor(logAuditor, socketAuditor)
+			logger.Info("Boundary log forwarding enabled",
+				"socket_path", socketPath,
+				"workspace_id", workspaceIDStr)
+		}
 	} else {
 		auditor = logAuditor
 	}
@@ -161,4 +184,22 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 	}
 
 	return nil
+}
+
+// parseUUID parses a UUID string into a 16-byte slice.
+func parseUUID(s string) ([]byte, error) {
+	s = strings.ReplaceAll(s, "-", "")
+	if len(s) != 32 {
+		return nil, fmt.Errorf("invalid UUID length: %d", len(s))
+	}
+	b := make([]byte, 16)
+	for i := 0; i < 16; i++ {
+		var v byte
+		_, err := fmt.Sscanf(s[i*2:i*2+2], "%02x", &v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid UUID character at position %d: %v", i*2, err)
+		}
+		b[i] = v
+	}
+	return b, nil
 }
