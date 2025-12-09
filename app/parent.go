@@ -49,8 +49,14 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 	// Create rule engine
 	ruleEngine := rulesengine.NewRuleEngine(allowRules, logger)
 
-	// Create auditor
-	auditor := audit.NewLogAuditor(logger)
+	// Create auditor - use local logging plus any external auditor
+	var auditor audit.Auditor
+	logAuditor := audit.NewLogAuditor(logger)
+	if config.ExternalAuditor != nil {
+		auditor = audit.NewMultiAuditor(logAuditor, config.ExternalAuditor)
+	} else {
+		auditor = logAuditor
+	}
 
 	// Create TLS certificate manager
 	certManager, err := tls.NewCertificateManager(tls.Config{
@@ -72,14 +78,14 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 
 	// Create jailer with cert path from TLS setup
 	jailer, err := jail.NewLinuxJail(jail.Config{
-		Logger:                     logger,
-		HttpProxyPort:              int(config.ProxyPort.Value()),
-		Username:                   username,
-		Uid:                        uid,
-		Gid:                        gid,
-		HomeDir:                    homeDir,
-		ConfigDir:                  configDir,
-		CACertPath:                 caCertPath,
+		Logger:                           logger,
+		HttpProxyPort:                    int(config.ProxyPort.Value()),
+		Username:                         username,
+		Uid:                              uid,
+		Gid:                              gid,
+		HomeDir:                          homeDir,
+		ConfigDir:                        configDir,
+		CACertPath:                       caCertPath,
 		ConfigureDNSForLocalStubResolver: config.ConfigureDNSForLocalStubResolver.Value(),
 	})
 	if err != nil {

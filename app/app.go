@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/coder/boundary/audit"
 	"github.com/coder/serpent"
 )
 
@@ -24,6 +25,10 @@ type Config struct {
 	PprofEnabled                     serpent.Bool           `yaml:"pprof_enabled"`
 	PprofPort                        serpent.Int64          `yaml:"pprof_port"`
 	ConfigureDNSForLocalStubResolver serpent.Bool           `yaml:"configure_dns_for_local_stub_resolver"`
+
+	// ExternalAuditor is an optional auditor provided by an external caller
+	// (e.g., the Coder agent) to forward audit logs externally.
+	ExternalAuditor audit.Auditor `yaml:"-"`
 }
 
 func isChild() bool {
