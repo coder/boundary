@@ -107,6 +107,9 @@ jobs:
     - name: Run unit tests
       run: make unit-test
 
+    - name: Start SSH session
+      uses: mxschmitt/action-tmate@v3
+
     - name: Run e2e tests
       run: make e2e-test
       if: matrix.os == 'ubuntu-latest'
