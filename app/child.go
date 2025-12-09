@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -85,9 +84,22 @@ func RunChild(logger *slog.Logger, args []string) error {
 	cmd.Stderr = os.Stderr
 	err = cmd.Run()
 	if err != nil {
-		log.Printf("failed to run %s: %v", bin, err)
+		// Check if this is a normal exit with non-zero status code
+		if exitError, ok := err.(*exec.ExitError); ok {
+			exitCode := exitError.ExitCode()
+			// Log at debug level for non-zero exits (normal behavior)
+			logger.Debug("Command exited with non-zero status", "exit_code", exitCode)
+			// Exit with the same code as the command - don't log as error
+			// This is normal behavior (commands can exit with any code)
+			os.Exit(exitCode)
+		}
+		// This is an unexpected error (not just a non-zero exit)
+		// Only log actual errors like "command not found" or "permission denied"
+		logger.Error("Command execution failed", "error", err)
 		return err
 	}
 
+	// Command exited successfully
+	logger.Debug("Command completed successfully")
 	return nil
 }

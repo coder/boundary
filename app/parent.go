@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -139,9 +140,18 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 		logger.Debug("waiting on a child process to finish")
 		err = cmd.Wait()
 		if err != nil {
-			logger.Error("Command execution failed", "error", err)
+			// Check if this is a normal exit with non-zero status code
+			if exitError, ok := err.(*exec.ExitError); ok {
+				exitCode := exitError.ExitCode()
+				// Log at debug level for non-zero exits (normal behavior)
+				logger.Debug("Command exited with non-zero status", "exit_code", exitCode)
+			} else {
+				// This is an unexpected error (not just a non-zero exit)
+				logger.Error("Command execution failed", "error", err)
+			}
 			return
 		}
+		logger.Debug("Command completed successfully")
 	}()
 
 	// Wait for signal or context cancellation
