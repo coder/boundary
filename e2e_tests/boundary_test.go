@@ -123,11 +123,11 @@ func (bt *BoundaryTest) Start(command ...string) *BoundaryTest {
 
 	bt.cmd = exec.CommandContext(bt.ctx, bt.binaryPath, args...)
 	bt.cmd.Stdin = os.Stdin
-	
+
 	stdout, _ := bt.cmd.StdoutPipe()
 	stderr, _ := bt.cmd.StderrPipe()
-	go io.Copy(os.Stdout, stdout)
-	go io.Copy(os.Stderr, stderr)
+	go io.Copy(os.Stdout, stdout) //nolint:errcheck
+	go io.Copy(os.Stderr, stderr) //nolint:errcheck
 
 	err := bt.cmd.Start()
 	require.NoError(bt.t, err, "Failed to start boundary process")
