@@ -178,27 +178,27 @@ func (bt *BoundaryTest) Stop() {
 // ExpectAllowed makes an HTTP/HTTPS request and expects it to be allowed with the given response body
 func (bt *BoundaryTest) ExpectAllowed(url string, expectedBody string) {
 	bt.t.Helper()
-	output := bt.makeRequest(url, false)
+	output := bt.makeRequest(url)
 	require.Equal(bt.t, expectedBody, string(output), "Expected response body does not match")
 }
 
 // ExpectAllowedContains makes an HTTP/HTTPS request and expects it to be allowed, checking that response contains the given text
 func (bt *BoundaryTest) ExpectAllowedContains(url string, containsText string) {
 	bt.t.Helper()
-	output := bt.makeRequest(url, false)
+	output := bt.makeRequest(url)
 	require.Contains(bt.t, string(output), containsText, "Response does not contain expected text")
 }
 
 // ExpectDeny makes an HTTP/HTTPS request and expects it to be denied
 func (bt *BoundaryTest) ExpectDeny(url string) {
 	bt.t.Helper()
-	output := bt.makeRequest(url, false)
+	output := bt.makeRequest(url)
 	require.Contains(bt.t, string(output), "Request Blocked by Boundary", "Expected request to be blocked")
 }
 
 // makeRequest makes an HTTP/HTTPS request from inside the namespace
 // Always sets SSL_CERT_FILE for HTTPS support (harmless for HTTP requests)
-func (bt *BoundaryTest) makeRequest(url string, silent bool) []byte {
+func (bt *BoundaryTest) makeRequest(url string) []byte {
 	bt.t.Helper()
 
 	pid := fmt.Sprintf("%v", bt.pid)
@@ -206,11 +206,7 @@ func (bt *BoundaryTest) makeRequest(url string, silent bool) []byte {
 	certPath := fmt.Sprintf("%v/ca-cert.pem", configDir)
 
 	args := []string{"nsenter", "-t", pid, "-n", "--",
-		"env", fmt.Sprintf("SSL_CERT_FILE=%v", certPath), "curl"}
-	if silent {
-		args = append(args, "-s")
-	}
-	args = append(args, url)
+		"env", fmt.Sprintf("SSL_CERT_FILE=%v", certPath), "curl", "-sS", url}
 
 	curlCmd := exec.Command("sudo", args...)
 
