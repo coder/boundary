@@ -2,7 +2,6 @@ package e2e_tests
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -24,12 +23,9 @@ type BoundaryTest struct {
 	binaryPath     string
 	allowedDomains []string
 	logLevel       string
-	ctx            context.Context
-	cancel         context.CancelFunc
 	cmd            *exec.Cmd
 	pid            int
 	startupDelay   time.Duration
-	commandTimeout time.Duration
 }
 
 // BoundaryTestOption is a function that configures BoundaryTest
@@ -47,7 +43,6 @@ func NewBoundaryTest(t *testing.T, opts ...BoundaryTestOption) *BoundaryTest {
 		allowedDomains: []string{},
 		logLevel:       "warn",
 		startupDelay:   2 * time.Second,
-		commandTimeout: 30 * time.Second,
 	}
 
 	// Apply options
@@ -86,13 +81,6 @@ func WithStartupDelay(delay time.Duration) BoundaryTestOption {
 	}
 }
 
-// WithCommandTimeout sets the timeout for the boundary command
-func WithCommandTimeout(timeout time.Duration) BoundaryTestOption {
-	return func(bt *BoundaryTest) {
-		bt.commandTimeout = timeout
-	}
-}
-
 // Build builds the boundary binary
 func (bt *BoundaryTest) Build() *BoundaryTest {
 	buildCmd := exec.Command("go", "build", "-o", bt.binaryPath, "./cmd/...")
@@ -109,8 +97,6 @@ func (bt *BoundaryTest) Start(command ...string) *BoundaryTest {
 		command = []string{"/bin/bash", "-c", "/usr/bin/sleep 100 && /usr/bin/echo 'Root boundary process exited'"}
 	}
 
-	bt.ctx, bt.cancel = context.WithTimeout(context.Background(), bt.commandTimeout)
-
 	// Build command args
 	args := []string{
 		"--log-level", bt.logLevel,
@@ -121,7 +107,7 @@ func (bt *BoundaryTest) Start(command ...string) *BoundaryTest {
 	args = append(args, "--")
 	args = append(args, command...)
 
-	bt.cmd = exec.CommandContext(bt.ctx, bt.binaryPath, args...)
+	bt.cmd = exec.Command(bt.binaryPath, args...)
 	bt.cmd.Stdin = os.Stdin
 
 	stdout, _ := bt.cmd.StdoutPipe()
@@ -136,7 +122,7 @@ func (bt *BoundaryTest) Start(command ...string) *BoundaryTest {
 	time.Sleep(bt.startupDelay)
 
 	// Get the child process PID
-	bt.pid = getChildProcessPID(bt.t)
+	bt.pid = getTargetProcessPID(bt.t)
 
 	return bt
 }
@@ -154,11 +140,6 @@ func (bt *BoundaryTest) Stop() {
 	}
 
 	time.Sleep(1 * time.Second)
-
-	// Cancel context
-	if bt.cancel != nil {
-		bt.cancel()
-	}
 
 	// Wait for process to finish
 	if bt.cmd != nil {
@@ -178,27 +159,27 @@ func (bt *BoundaryTest) Stop() {
 // ExpectAllowed makes an HTTP/HTTPS request and expects it to be allowed with the given response body
 func (bt *BoundaryTest) ExpectAllowed(url string, expectedBody string) {
 	bt.t.Helper()
-	output := bt.makeRequest(url, false)
+	output := bt.makeRequest(url)
 	require.Equal(bt.t, expectedBody, string(output), "Expected response body does not match")
 }
 
 // ExpectAllowedContains makes an HTTP/HTTPS request and expects it to be allowed, checking that response contains the given text
 func (bt *BoundaryTest) ExpectAllowedContains(url string, containsText string) {
 	bt.t.Helper()
-	output := bt.makeRequest(url, false)
+	output := bt.makeRequest(url)
 	require.Contains(bt.t, string(output), containsText, "Response does not contain expected text")
 }
 
 // ExpectDeny makes an HTTP/HTTPS request and expects it to be denied
 func (bt *BoundaryTest) ExpectDeny(url string) {
 	bt.t.Helper()
-	output := bt.makeRequest(url, false)
+	output := bt.makeRequest(url)
 	require.Contains(bt.t, string(output), "Request Blocked by Boundary", "Expected request to be blocked")
 }
 
 // makeRequest makes an HTTP/HTTPS request from inside the namespace
 // Always sets SSL_CERT_FILE for HTTPS support (harmless for HTTP requests)
-func (bt *BoundaryTest) makeRequest(url string, silent bool) []byte {
+func (bt *BoundaryTest) makeRequest(url string) []byte {
 	bt.t.Helper()
 
 	pid := fmt.Sprintf("%v", bt.pid)
@@ -206,11 +187,7 @@ func (bt *BoundaryTest) makeRequest(url string, silent bool) []byte {
 	certPath := fmt.Sprintf("%v/ca-cert.pem", configDir)
 
 	args := []string{"nsenter", "-t", pid, "-n", "--",
-		"env", fmt.Sprintf("SSL_CERT_FILE=%v", certPath), "curl"}
-	if silent {
-		args = append(args, "-s")
-	}
-	args = append(args, url)
+		"env", fmt.Sprintf("SSL_CERT_FILE=%v", certPath), "curl", "-sS", url}
 
 	curlCmd := exec.Command("sudo", args...)
 
@@ -225,8 +202,12 @@ func (bt *BoundaryTest) makeRequest(url string, silent bool) []byte {
 	return output
 }
 
-// getChildProcessPID gets the PID of the boundary child process
-func getChildProcessPID(t *testing.T) int {
+// getTargetProcessPID gets the PID of the boundary target process.
+// Target process is associated with a network namespace, so you can exec into it, using this PID.
+// pgrep -f boundary-test -n is doing two things:
+// -f = match against the full command line
+// -n = return the newest (most recently started) matching process
+func getTargetProcessPID(t *testing.T) int {
 	cmd := exec.Command("pgrep", "-f", "boundary-test", "-n")
 	output, err := cmd.Output()
 	require.NoError(t, err)
