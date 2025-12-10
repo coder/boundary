@@ -73,14 +73,14 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 
 	// Create jailer with cert path from TLS setup
 	jailer, err := jail.NewLinuxJail(jail.Config{
-		Logger:                     logger,
-		HttpProxyPort:              int(config.ProxyPort.Value()),
-		Username:                   username,
-		Uid:                        uid,
-		Gid:                        gid,
-		HomeDir:                    homeDir,
-		ConfigDir:                  configDir,
-		CACertPath:                 caCertPath,
+		Logger:                           logger,
+		HttpProxyPort:                    int(config.ProxyPort.Value()),
+		Username:                         username,
+		Uid:                              uid,
+		Gid:                              gid,
+		HomeDir:                          homeDir,
+		ConfigDir:                        configDir,
+		CACertPath:                       caCertPath,
 		ConfigureDNSForLocalStubResolver: config.ConfigureDNSForLocalStubResolver.Value(),
 	})
 	if err != nil {
