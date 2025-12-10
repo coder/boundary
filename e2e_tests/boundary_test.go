@@ -106,7 +106,7 @@ func (bt *BoundaryTest) Build() *BoundaryTest {
 func (bt *BoundaryTest) Start(command ...string) *BoundaryTest {
 	if len(command) == 0 {
 		// Default: sleep for a long time to keep the process alive
-		command = []string{"/bin/bash", "-c", "/usr/bin/sleep 1000 && /usr/bin/echo 'Root boundary process exited'"}
+		command = []string{"/bin/bash", "-c", "/usr/bin/sleep 100 && /usr/bin/echo 'Root boundary process exited'"}
 	}
 
 	bt.ctx, bt.cancel = context.WithTimeout(context.Background(), bt.commandTimeout)
@@ -123,12 +123,9 @@ func (bt *BoundaryTest) Start(command ...string) *BoundaryTest {
 
 	bt.cmd = exec.CommandContext(bt.ctx, bt.binaryPath, args...)
 	bt.cmd.Stdin = os.Stdin
-	//bt.cmd.Stdout = os.Stdout
-	//bt.cmd.Stderr = os.Stderr
-
+	
 	stdout, _ := bt.cmd.StdoutPipe()
 	stderr, _ := bt.cmd.StderrPipe()
-
 	go io.Copy(os.Stdout, stdout)
 	go io.Copy(os.Stderr, stderr)
 
