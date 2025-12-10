@@ -2,7 +2,6 @@ package e2e_tests
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -24,12 +23,9 @@ type BoundaryTest struct {
 	binaryPath     string
 	allowedDomains []string
 	logLevel       string
-	ctx            context.Context
-	cancel         context.CancelFunc
 	cmd            *exec.Cmd
 	pid            int
 	startupDelay   time.Duration
-	commandTimeout time.Duration
 }
 
 // BoundaryTestOption is a function that configures BoundaryTest
@@ -47,7 +43,6 @@ func NewBoundaryTest(t *testing.T, opts ...BoundaryTestOption) *BoundaryTest {
 		allowedDomains: []string{},
 		logLevel:       "warn",
 		startupDelay:   2 * time.Second,
-		commandTimeout: 30 * time.Second,
 	}
 
 	// Apply options
@@ -86,13 +81,6 @@ func WithStartupDelay(delay time.Duration) BoundaryTestOption {
 	}
 }
 
-// WithCommandTimeout sets the timeout for the boundary command
-func WithCommandTimeout(timeout time.Duration) BoundaryTestOption {
-	return func(bt *BoundaryTest) {
-		bt.commandTimeout = timeout
-	}
-}
-
 // Build builds the boundary binary
 func (bt *BoundaryTest) Build() *BoundaryTest {
 	buildCmd := exec.Command("go", "build", "-o", bt.binaryPath, "./cmd/...")
@@ -109,8 +97,6 @@ func (bt *BoundaryTest) Start(command ...string) *BoundaryTest {
 		command = []string{"/bin/bash", "-c", "/usr/bin/sleep 100 && /usr/bin/echo 'Root boundary process exited'"}
 	}
 
-	bt.ctx, bt.cancel = context.WithTimeout(context.Background(), bt.commandTimeout)
-
 	// Build command args
 	args := []string{
 		"--log-level", bt.logLevel,
@@ -121,7 +107,7 @@ func (bt *BoundaryTest) Start(command ...string) *BoundaryTest {
 	args = append(args, "--")
 	args = append(args, command...)
 
-	bt.cmd = exec.CommandContext(bt.ctx, bt.binaryPath, args...)
+	bt.cmd = exec.Command(bt.binaryPath, args...)
 	bt.cmd.Stdin = os.Stdin
 
 	stdout, _ := bt.cmd.StdoutPipe()
@@ -154,11 +140,6 @@ func (bt *BoundaryTest) Stop() {
 	}
 
 	time.Sleep(1 * time.Second)
-
-	// Cancel context
-	if bt.cancel != nil {
-		bt.cancel()
-	}
 
 	// Wait for process to finish
 	if bt.cmd != nil {
