@@ -18,43 +18,43 @@ type Jailer interface {
 }
 
 type Config struct {
-	Logger                          *slog.Logger
-	HttpProxyPort                   int
-	Username                        string
-	Uid                             int
-	Gid                             int
-	HomeDir                         string
-	ConfigDir                       string
-	CACertPath                      string
+	Logger                           *slog.Logger
+	HttpProxyPort                    int
+	Username                         string
+	Uid                              int
+	Gid                              int
+	HomeDir                          string
+	ConfigDir                        string
+	CACertPath                       string
 	ConfigureDNSForLocalStubResolver bool
 }
 
 // LinuxJail implements Jailer using Linux network namespaces
 type LinuxJail struct {
-	logger                     *slog.Logger
-	vethHostName               string // Host-side veth interface name for iptables rules
-	vethJailName               string // Jail-side veth interface name for iptables rules
-	commandEnv                 []string
-	httpProxyPort              int
-	configDir                  string
-	caCertPath                 string
-	homeDir                    string
-	username                   string
-	uid                        int
-	gid                        int
+	logger                           *slog.Logger
+	vethHostName                     string // Host-side veth interface name for iptables rules
+	vethJailName                     string // Jail-side veth interface name for iptables rules
+	commandEnv                       []string
+	httpProxyPort                    int
+	configDir                        string
+	caCertPath                       string
+	homeDir                          string
+	username                         string
+	uid                              int
+	gid                              int
 	configureDNSForLocalStubResolver bool
 }
 
 func NewLinuxJail(config Config) (*LinuxJail, error) {
 	return &LinuxJail{
-		logger:                     config.Logger,
-		httpProxyPort:              config.HttpProxyPort,
-		configDir:                  config.ConfigDir,
-		caCertPath:                 config.CACertPath,
-		homeDir:                    config.HomeDir,
-		username:                   config.Username,
-		uid:                        config.Uid,
-		gid:                        config.Gid,
+		logger:                           config.Logger,
+		httpProxyPort:                    config.HttpProxyPort,
+		configDir:                        config.ConfigDir,
+		caCertPath:                       config.CACertPath,
+		homeDir:                          config.HomeDir,
+		username:                         config.Username,
+		uid:                              config.Uid,
+		gid:                              config.Gid,
 		configureDNSForLocalStubResolver: config.ConfigureDNSForLocalStubResolver,
 	}, nil
 }
@@ -105,6 +105,7 @@ func (l *LinuxJail) Command(command []string) *exec.Cmd {
 			{ContainerID: currentGid, HostID: currentGid, Size: 1},
 		},
 		AmbientCaps: []uintptr{unix.CAP_NET_ADMIN},
+		Pdeathsig:   syscall.SIGTERM,
 	}
 
 	return cmd
