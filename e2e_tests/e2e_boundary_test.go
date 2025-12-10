@@ -2,8 +2,7 @@ package e2e_tests
 
 import "testing"
 
-// Example: Refactored TestBoundaryIntegration using the framework
-func TestBoundaryIntegrationRefactored(t *testing.T) {
+func TestE2EBoundary(t *testing.T) {
 	// Create and configure boundary test
 	bt := NewBoundaryTest(t,
 		WithAllowedDomain("dev.coder.com"),
@@ -11,7 +10,7 @@ func TestBoundaryIntegrationRefactored(t *testing.T) {
 		WithLogLevel("debug"),
 	).
 		Build().
-		Start("/bin/bash", "-c", "/usr/bin/sleep 10 && /usr/bin/echo 'Test completed'")
+		Start()
 
 	// Ensure cleanup
 	defer bt.Stop()
@@ -39,7 +38,7 @@ func TestBoundaryIntegrationRefactored(t *testing.T) {
 		bt.ExpectDeny("http://example.com")
 	})
 
-	// Test blocked HTTPS request (same method, automatically handles HTTPS)
+	// Test blocked HTTPS request
 	t.Run("HTTPSBlockedDomainTest", func(t *testing.T) {
 		bt.ExpectDeny("https://example.com")
 	})
