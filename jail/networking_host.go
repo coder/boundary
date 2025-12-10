@@ -162,12 +162,11 @@ func (l *LinuxJail) configureIptables() error {
 // cleanupNetworking removes networking configuration
 func (l *LinuxJail) cleanupNetworking() error {
 	runner := newCommandRunner([]*command{
-		// NOTE: seems that command is unnecessary, because device is automatically deleted when boundary exits
-		//{
-		//	"delete veth pair",
-		//	exec.Command("ip", "link", "del", l.vethHostName),
-		//	[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
-		//},
+		{
+			"delete veth pair",
+			exec.Command("ip", "link", "del", l.vethHostName),
+			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		},
 	})
 	if err := runner.runIgnoreErrors(); err != nil {
 		return err

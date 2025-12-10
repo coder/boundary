@@ -105,6 +105,7 @@ func (l *LinuxJail) Command(command []string) *exec.Cmd {
 			{ContainerID: currentGid, HostID: currentGid, Size: 1},
 		},
 		AmbientCaps: []uintptr{unix.CAP_NET_ADMIN},
+		Pdeathsig:   syscall.SIGTERM,
 	}
 
 	return cmd

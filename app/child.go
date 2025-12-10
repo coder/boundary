@@ -82,6 +82,9 @@ func RunChild(logger *slog.Logger, args []string) error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Pdeathsig: syscall.SIGTERM,
+	}
 	err = cmd.Run()
 	if err != nil {
 		// Check if this is a normal exit with non-zero status code
