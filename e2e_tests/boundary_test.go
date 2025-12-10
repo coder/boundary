@@ -136,7 +136,7 @@ func (bt *BoundaryTest) Start(command ...string) *BoundaryTest {
 	time.Sleep(bt.startupDelay)
 
 	// Get the child process PID
-	bt.pid = getChildProcessPID(bt.t)
+	bt.pid = getTargetProcessPID(bt.t)
 
 	return bt
 }
@@ -225,8 +225,12 @@ func (bt *BoundaryTest) makeRequest(url string, silent bool) []byte {
 	return output
 }
 
-// getChildProcessPID gets the PID of the boundary child process
-func getChildProcessPID(t *testing.T) int {
+// getTargetProcessPID gets the PID of the boundary target process.
+// Target process is associated with a network namespace, so you can exec into it, using this PID.
+// pgrep -f boundary-test -n is doing two things:
+// -f = match against the full command line
+// -n = return the newest (most recently started) matching process
+func getTargetProcessPID(t *testing.T) int {
 	cmd := exec.Command("pgrep", "-f", "boundary-test", "-n")
 	output, err := cmd.Output()
 	require.NoError(t, err)
