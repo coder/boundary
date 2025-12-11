@@ -36,6 +36,7 @@ type CliConfig struct {
 	PprofPort                        serpent.Int64          `yaml:"pprof_port"`
 	ConfigureDNSForLocalStubResolver serpent.Bool           `yaml:"configure_dns_for_local_stub_resolver"`
 	JailType                         serpent.String         `yaml:"jail_type"`
+	DisableAuditLogs                 serpent.Bool           `yaml:"disable_audit_logs"`
 }
 
 type AppConfig struct {
@@ -49,6 +50,7 @@ type AppConfig struct {
 	JailType                         JailType
 	TargetCMD                        []string
 	UserInfo                         *UserInfo
+	DisableAuditLogs                 bool
 }
 
 func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) (AppConfig, error) {
@@ -77,5 +79,6 @@ func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) (AppConfig, er
 		JailType:                         jailType,
 		TargetCMD:                        targetCMD,
 		UserInfo:                         userInfo,
+		DisableAuditLogs:                 cfg.DisableAuditLogs.Value(),
 	}, nil
 }
