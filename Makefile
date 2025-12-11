@@ -164,7 +164,7 @@ help:
 .PHONY: proto
 proto:
 	@echo "Generating protobuf code..."
-	protoc --go_out=. --go_opt=paths=source_relative proto/boundary_logs.proto
+	protoc --go_out=. --go_opt=paths=source_relative proto/logs.proto
 	@echo "✓ Protobuf code generated!"
 
 # Run all code generation

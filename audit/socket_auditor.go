@@ -21,8 +21,7 @@ const (
 // workspace agent's boundary log proxy socket. It batches logs using either
 // a 5-second timeout or when 10 logs have accumulated, whichever comes first.
 type SocketAuditor struct {
-	socketPath  string
-	workspaceID []byte
+	socketPath string
 
 	mu         sync.Mutex
 	conn       net.Conn
@@ -32,11 +31,10 @@ type SocketAuditor struct {
 }
 
 // NewSocketAuditor creates a new SocketAuditor that sends logs to the agent's
-// boundary log proxy socket. The workspaceID should be the 16-byte UUID.
-func NewSocketAuditor(socketPath string, workspaceID []byte) *SocketAuditor {
+// boundary log proxy socket.
+func NewSocketAuditor(socketPath string) *SocketAuditor {
 	return &SocketAuditor{
-		socketPath:  socketPath,
-		workspaceID: workspaceID,
+		socketPath: socketPath,
 	}
 }
 
@@ -50,16 +48,19 @@ func (s *SocketAuditor) AuditRequest(req Request) {
 		return
 	}
 
-	log := &boundaryproto.BoundaryLog{
-		WorkspaceId: s.workspaceID,
-		Time:        timestamppb.Now(),
-		Allowed:     req.Allowed,
-		HttpMethod:  req.Method,
-		HttpUrl:     req.URL,
+	httpReq := &boundaryproto.BoundaryLog_HttpRequest{
+		Method: req.Method,
+		Url:    req.URL,
 	}
 	// Only include matched rule for denied requests.
 	if !req.Allowed {
-		log.MatchedRule = req.Rule
+		httpReq.MatchedRule = req.Rule
+	}
+
+	log := &boundaryproto.BoundaryLog{
+		Allowed:  req.Allowed,
+		Time:     timestamppb.Now(),
+		Resource: &boundaryproto.BoundaryLog_HttpRequest_{HttpRequest: httpReq},
 	}
 	s.logs = append(s.logs, log)
 

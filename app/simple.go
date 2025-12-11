@@ -5,25 +5,26 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
 
-	"github.com/coder/boundary/audit"
 	"github.com/coder/boundary/boundary"
+	"github.com/coder/boundary/audit"
 	"github.com/coder/boundary/jail"
 	"github.com/coder/boundary/rulesengine"
 	"github.com/coder/boundary/tls"
 	"github.com/coder/boundary/util"
 )
 
-
-func RunParent(ctx context.Context, logger *slog.Logger, args []string, config Config) error {
+// RunSimple runs boundary in simple mode using HTTP_PROXY environment variables
+// instead of network namespaces. This mode doesn't require elevated privileges
+// but only intercepts traffic from proxy-aware applications.
+func RunSimple(ctx context.Context, logger *slog.Logger, args []string, config Config) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	username, uid, gid, homeDir, configDir := util.GetUserInfo()
+	_, uid, gid, _, configDir := util.GetUserInfo()
 
 	// Get command arguments
 	if len(args) == 0 {
@@ -51,7 +52,7 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 	// Create rule engine
 	ruleEngine := rulesengine.NewRuleEngine(allowRules, logger)
 
-	// Create auditor - check for socket path to forward logs to agent
+	// Create auditor
 	auditor := createAuditor(logger, config)
 
 	// Create TLS certificate manager
@@ -72,20 +73,15 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 		return fmt.Errorf("failed to setup TLS and CA certificate: %v", err)
 	}
 
-	// Create jailer with cert path from TLS setup
-	jailer, err := jail.NewLinuxJail(jail.Config{
-		Logger:                           logger,
-		HttpProxyPort:                    int(config.ProxyPort.Value()),
-		Username:                         username,
-		Uid:                              uid,
-		Gid:                              gid,
-		HomeDir:                          homeDir,
-		ConfigDir:                        configDir,
-		CACertPath:                       caCertPath,
-		ConfigureDNSForLocalStubResolver: config.ConfigureDNSForLocalStubResolver.Value(),
+	// Create simple jailer (uses HTTP_PROXY instead of network namespaces)
+	jailer, err := jail.NewSimpleJail(jail.Config{
+		Logger:        logger,
+		HttpProxyPort: int(config.ProxyPort.Value()),
+		ConfigDir:     configDir,
+		CACertPath:    caCertPath,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create jailer: %v", err)
+		return fmt.Errorf("failed to create simple jailer: %v", err)
 	}
 
 	// Create boundary instance
@@ -107,7 +103,7 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Open boundary (starts network namespace and proxy server)
+	// Open boundary (starts proxy server)
 	err = boundaryInstance.Start()
 	if err != nil {
 		return fmt.Errorf("failed to open boundary: %v", err)
@@ -120,18 +116,22 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 		}
 	}()
 
-	// Execute command in boundary
+	logger.Info("Running in simple mode (HTTP_PROXY based)",
+		"proxy_port", config.ProxyPort.Value())
+
+	// Execute command with proxy environment
 	go func() {
 		defer cancel()
-		cmd := boundaryInstance.Command(os.Args)
+		cmd := boundaryInstance.Command(args)
 
-		logger.Debug("Executing command in boundary", "command", strings.Join(os.Args, " "))
+		logger.Debug("Executing command with proxy environment", "command", strings.Join(args, " "))
 		err := cmd.Start()
 		if err != nil {
 			logger.Error("Command failed to start", "error", err)
 			return
 		}
 
+		// No post-start configuration needed for simple mode
 		err = boundaryInstance.ConfigureAfterCommandExecution(cmd.Process.Pid)
 		if err != nil {
 			logger.Error("configuration after command execution failed", "error", err)
@@ -141,18 +141,9 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 		logger.Debug("waiting on a child process to finish")
 		err = cmd.Wait()
 		if err != nil {
-			// Check if this is a normal exit with non-zero status code
-			if exitError, ok := err.(*exec.ExitError); ok {
-				exitCode := exitError.ExitCode()
-				// Log at debug level for non-zero exits (normal behavior)
-				logger.Debug("Command exited with non-zero status", "exit_code", exitCode)
-			} else {
-				// This is an unexpected error (not just a non-zero exit)
-				logger.Error("Command execution failed", "error", err)
-			}
+			logger.Error("Command execution failed", "error", err)
 			return
 		}
-		logger.Debug("Command completed successfully")
 	}()
 
 	// Wait for signal or context cancellation
@@ -166,21 +157,4 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 	}
 
 	return nil
-}
-
-// createAuditor creates the appropriate auditor based on config.
-// If --audit-socket is set, it creates a MultiAuditor that sends to both
-// the local logger and the agent socket.
-func createAuditor(logger *slog.Logger, config Config) audit.Auditor {
-	logAuditor := audit.NewLogAuditor(logger)
-
-	socketPath := config.AuditSocket.Value()
-	if socketPath == "" {
-		return logAuditor
-	}
-
-	socketAuditor := audit.NewSocketAuditor(socketPath)
-	logger.Info("Boundary log forwarding enabled", "socket_path", socketPath)
-
-	return audit.NewMultiAuditor(logAuditor, socketAuditor)
 }

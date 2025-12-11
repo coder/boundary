@@ -1,0 +1,31 @@
+// NOTE: BoundaryLog and BoundaryLogsRequest must stay wire-compatible with
+// github.com/coder/coder/v2/agent/proto (BoundaryLog and ReportBoundaryLogsRequest)
+// for communication over the Unix socket to the agent.
+
+syntax = "proto3";
+
+package coder.boundary.v1;
+
+option go_package = "github.com/coder/boundary/proto";
+
+import "google/protobuf/timestamp.proto";
+
+message BoundaryLog {
+	message HttpRequest {
+		string method = 1;
+		string url = 2;
+		string matched_rule = 3; // Only populated when allowed = false
+	}
+
+	bool allowed = 1;
+	google.protobuf.Timestamp time = 2;
+	oneof resource {
+		HttpRequest http_request = 3;
+	}
+}
+
+// BoundaryLogsRequest is sent to the agent socket.
+// Field numbers MUST match coder's ReportBoundaryLogsRequest.
+message BoundaryLogsRequest {
+	repeated BoundaryLog logs = 1;
+}

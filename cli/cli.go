@@ -26,6 +26,9 @@ func NewCommand() *serpent.Command {
   # Use allowlist from config file with additional CLI allow rules
   boundary --allow "domain=example.com" -- curl https://example.com
 
+  # Use simple mode (HTTP_PROXY based, no network namespaces)
+  boundary --simple --allow "domain=github.com" -- curl https://github.com
+
   # Block everything by default (implicit)`
 
 	return cmd
@@ -56,6 +59,13 @@ func BaseCommand() *serpent.Command {
 				Description: "Path to YAML config file.",
 				Value:       &config.Config,
 				YAML:        "",
+			},
+			{
+				Flag:        "simple",
+				Env:         "BOUNDARY_SIMPLE",
+				Description: "Use simple mode (HTTP_PROXY based) instead of network namespaces. Does not require elevated privileges but only intercepts traffic from proxy-aware applications.",
+				Value:       &config.SimpleMode,
+				YAML:        "simple",
 			},
 			{
 				Flag:        "allow",
@@ -114,6 +124,13 @@ func BaseCommand() *serpent.Command {
 				Description: "Configure DNS for local stub resolver (e.g., systemd-resolved). Only needed when /etc/resolv.conf contains nameserver 127.0.0.53.",
 				Value:       &config.ConfigureDNSForLocalStubResolver,
 				YAML:        "configure_dns_for_local_stub_resolver",
+			},
+			{
+				Flag:        "audit-socket",
+				Env:         "BOUNDARY_AUDIT_SOCKET",
+				Description: "Path to Unix socket for forwarding audit logs to the Coder agent.",
+				Value:       &config.AuditSocket,
+				YAML:        "audit_socket",
 			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
