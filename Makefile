@@ -160,3 +160,14 @@ help:
 	@echo "  fmt                Format code"
 	@echo "  lint               Lint code"
 	@echo "  help               Show this help message"
+# Generate protobuf code
+.PHONY: proto
+proto:
+	@echo "Generating protobuf code..."
+	protoc --go_out=. --go_opt=paths=source_relative proto/boundary_logs.proto
+	@echo "✓ Protobuf code generated!"
+
+# Run all code generation
+.PHONY: gen
+gen: proto
+	@echo "✓ All code generation complete!"

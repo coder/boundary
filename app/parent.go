@@ -10,12 +10,21 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/coder/boundary/boundary"
 	"github.com/coder/boundary/audit"
+	"github.com/coder/boundary/boundary"
 	"github.com/coder/boundary/jail"
 	"github.com/coder/boundary/rulesengine"
 	"github.com/coder/boundary/tls"
 	"github.com/coder/boundary/util"
+)
+
+// Environment variables for socket auditor integration with Coder agent.
+const (
+	// BoundaryLogSocketEnvVar is the path to the Unix socket where boundary
+	// should send audit logs.
+	BoundaryLogSocketEnvVar = "CODER_BOUNDARY_LOG_SOCKET"
+	// BoundaryWorkspaceIDEnvVar is the workspace ID for boundary audit logs.
+	BoundaryWorkspaceIDEnvVar = "CODER_WORKSPACE_ID"
 )
 
 func RunParent(ctx context.Context, logger *slog.Logger, args []string, config Config) error {
@@ -50,8 +59,8 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 	// Create rule engine
 	ruleEngine := rulesengine.NewRuleEngine(allowRules, logger)
 
-	// Create auditor
-	auditor := audit.NewLogAuditor(logger)
+	// Create auditor - check for socket path to forward logs to agent
+	auditor := createAuditor(logger)
 
 	// Create TLS certificate manager
 	certManager, err := tls.NewCertificateManager(tls.Config{
@@ -165,4 +174,49 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 	}
 
 	return nil
+}
+
+// createAuditor creates the appropriate auditor based on environment variables.
+// If CODER_BOUNDARY_LOG_SOCKET and CODER_WORKSPACE_ID are set, it creates a
+// MultiAuditor that sends to both the local logger and the agent socket.
+func createAuditor(logger *slog.Logger) audit.Auditor {
+	logAuditor := audit.NewLogAuditor(logger)
+
+	socketPath := os.Getenv(BoundaryLogSocketEnvVar)
+	workspaceIDStr := os.Getenv(BoundaryWorkspaceIDEnvVar)
+
+	if socketPath == "" || workspaceIDStr == "" {
+		return logAuditor
+	}
+
+	workspaceID, err := parseUUID(workspaceIDStr)
+	if err != nil {
+		logger.Warn("Invalid workspace ID, using local auditor only", "error", err)
+		return logAuditor
+	}
+
+	socketAuditor := audit.NewSocketAuditor(socketPath, workspaceID)
+	logger.Info("Boundary log forwarding enabled",
+		"socket_path", socketPath,
+		"workspace_id", workspaceIDStr)
+
+	return audit.NewMultiAuditor(logAuditor, socketAuditor)
+}
+
+// parseUUID parses a UUID string into a 16-byte slice.
+func parseUUID(s string) ([]byte, error) {
+	s = strings.ReplaceAll(s, "-", "")
+	if len(s) != 32 {
+		return nil, fmt.Errorf("invalid UUID length: %d", len(s))
+	}
+	b := make([]byte, 16)
+	for i := 0; i < 16; i++ {
+		var v byte
+		_, err := fmt.Sscanf(s[i*2:i*2+2], "%02x", &v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid UUID character at position %d: %v", i*2, err)
+		}
+		b[i] = v
+	}
+	return b, nil
 }

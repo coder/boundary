@@ -7,6 +7,7 @@ require (
 	github.com/coder/serpent v0.10.0
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/sys v0.38.0
+	google.golang.org/protobuf v1.32.0
 )
 
 require (
