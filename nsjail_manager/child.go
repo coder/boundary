@@ -1,4 +1,4 @@
-package app
+package nsjail_manager
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
-	"github.com/coder/boundary/jail"
+	"github.com/coder/boundary/nsjail_manager/nsjail"
 	"golang.org/x/sys/unix"
 )
 
@@ -60,14 +60,14 @@ func RunChild(logger *slog.Logger, args []string) error {
 		return fmt.Errorf("failed to wait for interface %s: %w", vethNetJail, err)
 	}
 
-	err := jail.SetupChildNetworking(vethNetJail)
+	err := nsjail.SetupChildNetworking(vethNetJail)
 	if err != nil {
 		return fmt.Errorf("failed to setup child networking: %v", err)
 	}
 	logger.Info("child networking is successfully configured")
 
 	if os.Getenv("CONFIGURE_DNS_FOR_LOCAL_STUB_RESOLVER") == "true" {
-		err = jail.ConfigureDNSForLocalStubResolver()
+		err = nsjail.ConfigureDNSForLocalStubResolver()
 		if err != nil {
 			return fmt.Errorf("failed to configure DNS in namespace: %v", err)
 		}

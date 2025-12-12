@@ -5,6 +5,7 @@ go 1.24.0
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/coder/serpent v0.10.0
+	github.com/landlock-lsm/go-landlock v0.0.0-20251103212306-430f8e5cd97c
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/sys v0.38.0
 )
@@ -34,4 +35,5 @@ require (
 	golang.org/x/term v0.37.0 // indirect
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	kernel.org/pub/linux/libs/security/libcap/psx v1.2.77 // indirect
 )
