@@ -1,4 +1,4 @@
-package jail
+package nsjail
 
 import (
 	"fmt"
@@ -45,31 +45,6 @@ func (l *LinuxJail) configureHostNetworkBeforeCmdExec() error {
 		{
 			"Activate host-side veth interface",
 			exec.Command("ip", "link", "set", vethHostName, "up"),
-			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
-		},
-	})
-	if err := runner.run(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// configureHostNetworkAfterCmdExec finalizes host-side networking after the target
-// process has started. It moves the jail-side veth into the target process's network
-// namespace using the provided PID. This requires the process to be running so
-// its PID (and thus its netns) are available.
-func (l *LinuxJail) configureHostNetworkAfterCmdExec(pidInt int) error {
-	PID := fmt.Sprintf("%v", pidInt)
-
-	runner := newCommandRunner([]*command{
-		// Move the jail-side veth interface into the target network namespace.
-		// This isolates the interface so that it becomes visible only inside the
-		// jail's netns. From this point on, the jail will configure its end of
-		// the veth pair (IP address, routes, etc.) independently of the host.
-		{
-			"Move jail-side veth into network namespace",
-			exec.Command("ip", "link", "set", l.vethJailName, "netns", PID),
 			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
 		},
 	})

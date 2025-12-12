@@ -1,10 +1,14 @@
 package cli
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 
-	"github.com/coder/boundary/app"
+	"github.com/coder/boundary/config"
+	"github.com/coder/boundary/log"
+	"github.com/coder/boundary/nsjail_manager"
 	"github.com/coder/serpent"
 )
 
@@ -35,13 +39,13 @@ func NewCommand() *serpent.Command {
 // *top level* serpent command. We are creating this split to make it easier to integrate into the coder
 // CLI if needed.
 func BaseCommand() *serpent.Command {
-	config := app.Config{}
+	cliConfig := config.CliConfig{}
 
-	// Set default config path if file exists - serpent will load it automatically
+	// Set default cliConfig path if file exists - serpent will load it automatically
 	if home, err := os.UserHomeDir(); err == nil {
-		defaultPath := filepath.Join(home, ".config", "coder_boundary", "config.yaml")
+		defaultPath := filepath.Join(home, ".cliConfig", "coder_boundary", "cliConfig.yaml")
 		if _, err := os.Stat(defaultPath); err == nil {
-			config.Config = serpent.YAMLConfigPath(defaultPath)
+			cliConfig.Config = serpent.YAMLConfigPath(defaultPath)
 		}
 	}
 
@@ -51,23 +55,23 @@ func BaseCommand() *serpent.Command {
 		Long:  `boundary creates an isolated network environment for target processes, intercepting HTTP/HTTPS traffic through a transparent proxy that enforces user-defined allow rules.`,
 		Options: []serpent.Option{
 			{
-				Flag:        "config",
+				Flag:        "cliConfig",
 				Env:         "BOUNDARY_CONFIG",
-				Description: "Path to YAML config file.",
-				Value:       &config.Config,
+				Description: "Path to YAML cliConfig file.",
+				Value:       &cliConfig.Config,
 				YAML:        "",
 			},
 			{
 				Flag:        "allow",
 				Env:         "BOUNDARY_ALLOW",
-				Description: "Allow rule (repeatable). These are merged with allowlist from config file. Format: \"pattern\" or \"METHOD[,METHOD] pattern\".",
-				Value:       &config.AllowStrings,
+				Description: "Allow rule (repeatable). These are merged with allowlist from cliConfig file. Format: \"pattern\" or \"METHOD[,METHOD] pattern\".",
+				Value:       &cliConfig.AllowStrings,
 				YAML:        "", // CLI only, not loaded from YAML
 			},
 			{
 				Flag:        "", // No CLI flag, YAML only
-				Description: "Allowlist rules from config file (YAML only).",
-				Value:       &config.AllowListStrings,
+				Description: "Allowlist rules from cliConfig file (YAML only).",
+				Value:       &cliConfig.AllowListStrings,
 				YAML:        "allowlist",
 			},
 			{
@@ -75,14 +79,14 @@ func BaseCommand() *serpent.Command {
 				Env:         "BOUNDARY_LOG_LEVEL",
 				Description: "Set log level (error, warn, info, debug).",
 				Default:     "warn",
-				Value:       &config.LogLevel,
+				Value:       &cliConfig.LogLevel,
 				YAML:        "log_level",
 			},
 			{
 				Flag:        "log-dir",
 				Env:         "BOUNDARY_LOG_DIR",
 				Description: "Set a directory to write logs to rather than stderr.",
-				Value:       &config.LogDir,
+				Value:       &cliConfig.LogDir,
 				YAML:        "log_dir",
 			},
 			{
@@ -90,14 +94,14 @@ func BaseCommand() *serpent.Command {
 				Env:         "PROXY_PORT",
 				Description: "Set a port for HTTP proxy.",
 				Default:     "8080",
-				Value:       &config.ProxyPort,
+				Value:       &cliConfig.ProxyPort,
 				YAML:        "proxy_port",
 			},
 			{
 				Flag:        "pprof",
 				Env:         "BOUNDARY_PPROF",
 				Description: "Enable pprof profiling server.",
-				Value:       &config.PprofEnabled,
+				Value:       &cliConfig.PprofEnabled,
 				YAML:        "pprof_enabled",
 			},
 			{
@@ -105,20 +109,32 @@ func BaseCommand() *serpent.Command {
 				Env:         "BOUNDARY_PPROF_PORT",
 				Description: "Set port for pprof profiling server.",
 				Default:     "6060",
-				Value:       &config.PprofPort,
+				Value:       &cliConfig.PprofPort,
 				YAML:        "pprof_port",
 			},
 			{
 				Flag:        "configure-dns-for-local-stub-resolver",
 				Env:         "BOUNDARY_CONFIGURE_DNS_FOR_LOCAL_STUB_RESOLVER",
 				Description: "Configure DNS for local stub resolver (e.g., systemd-resolved). Only needed when /etc/resolv.conf contains nameserver 127.0.0.53.",
-				Value:       &config.ConfigureDNSForLocalStubResolver,
+				Value:       &cliConfig.ConfigureDNSForLocalStubResolver,
 				YAML:        "configure_dns_for_local_stub_resolver",
 			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
-			args := inv.Args
-			return app.Run(inv.Context(), config, args)
+			appConfig := config.NewAppConfigFromCliConfig(cliConfig)
+
+			logger, err := log.SetupLogging(appConfig)
+			if err != nil {
+				return fmt.Errorf("could not set up logging: %v", err)
+			}
+
+			appConfigInJSON, err := json.Marshal(appConfig)
+			if err != nil {
+				return err
+			}
+			logger.Debug("Application config", "config", appConfigInJSON)
+
+			return nsjail_manager.Run(inv.Context(), logger, appConfig, inv.Args)
 		},
 	}
 }
