@@ -120,11 +120,12 @@ func BaseCommand() *serpent.Command {
 				YAML:        "configure_dns_for_local_stub_resolver",
 			},
 			{
-				Flag:        "landjail",
-				Env:         "BOUNDARY_LANDJAIL",
-				Description: "Use landjail instead of nsjail for network isolation.",
-				Value:       &cliConfig.Landjail,
-				YAML:        "landjail",
+				Flag:        "jail-type",
+				Env:         "BOUNDARY_JAIL_TYPE",
+				Description: "Jail type to use for network isolation. Options: nsjail (default), landjail.",
+				Default:     "nsjail",
+				Value:       &cliConfig.JailType,
+				YAML:        "jail_type",
 			},
 		},
 		Handler: func(inv *serpent.Invocation) error {

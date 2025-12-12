@@ -14,7 +14,7 @@ type CliConfig struct {
 	PprofEnabled                     serpent.Bool           `yaml:"pprof_enabled"`
 	PprofPort                        serpent.Int64          `yaml:"pprof_port"`
 	ConfigureDNSForLocalStubResolver serpent.Bool           `yaml:"configure_dns_for_local_stub_resolver"`
-	Landjail                         serpent.Bool           `yaml:"landjail"`
+	JailType                         serpent.String         `yaml:"jail_type"`
 }
 
 type AppConfig struct {
@@ -25,7 +25,7 @@ type AppConfig struct {
 	PprofEnabled                     bool
 	PprofPort                        int64
 	ConfigureDNSForLocalStubResolver bool
-	Landjail                         bool
+	JailType                         string
 	TargetCMD                        []string
 }
 
@@ -45,7 +45,7 @@ func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) AppConfig {
 		PprofEnabled:                     cfg.PprofEnabled.Value(),
 		PprofPort:                        cfg.PprofPort.Value(),
 		ConfigureDNSForLocalStubResolver: cfg.ConfigureDNSForLocalStubResolver.Value(),
-		Landjail:                         cfg.Landjail.Value(),
+		JailType:                         cfg.JailType.Value(),
 		TargetCMD:                        targetCMD,
 	}
 }
