@@ -119,6 +119,13 @@ func BaseCommand() *serpent.Command {
 				Value:       &cliConfig.ConfigureDNSForLocalStubResolver,
 				YAML:        "configure_dns_for_local_stub_resolver",
 			},
+			{
+				Flag:        "landjail",
+				Env:         "BOUNDARY_LANDJAIL",
+				Description: "Use landjail instead of nsjail for network isolation.",
+				Value:       &cliConfig.Landjail,
+				YAML:        "landjail",
+			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
 			appConfig := config.NewAppConfigFromCliConfig(cliConfig, inv.Args)
