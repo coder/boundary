@@ -24,9 +24,10 @@ type AppConfig struct {
 	PprofEnabled                     bool
 	PprofPort                        int64
 	ConfigureDNSForLocalStubResolver bool
+	TargetCMD                        []string
 }
 
-func NewAppConfigFromCliConfig(cfg CliConfig) AppConfig {
+func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) AppConfig {
 	// Merge allowlist from config file with allow from CLI flags
 	allowListStrings := cfg.AllowListStrings.Value()
 	allowStrings := cfg.AllowStrings.Value()
@@ -42,5 +43,6 @@ func NewAppConfigFromCliConfig(cfg CliConfig) AppConfig {
 		PprofEnabled:                     cfg.PprofEnabled.Value(),
 		PprofPort:                        cfg.PprofPort.Value(),
 		ConfigureDNSForLocalStubResolver: cfg.ConfigureDNSForLocalStubResolver.Value(),
+		TargetCMD:                        targetCMD,
 	}
 }

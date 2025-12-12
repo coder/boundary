@@ -1,8 +1,13 @@
 package run
 
-import "context"
+import (
+	"context"
+	"log/slog"
 
-func Run(ctx context.Context, logger *slog.Logger, config config.AppConfig, args []string) error {
+	"github.com/coder/boundary/config"
+)
+
+func Run(ctx context.Context, logger *slog.Logger, config config.AppConfig) error {
 	//if isChild() {
 	//	return RunChild(logger, args)
 	//}

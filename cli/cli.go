@@ -121,7 +121,11 @@ func BaseCommand() *serpent.Command {
 			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
-			appConfig := config.NewAppConfigFromCliConfig(cliConfig)
+			appConfig := config.NewAppConfigFromCliConfig(cliConfig, inv.Args)
+			// Get command arguments
+			if len(appConfig.TargetCMD) == 0 {
+				return fmt.Errorf("no command specified")
+			}
 
 			logger, err := log.SetupLogging(appConfig)
 			if err != nil {
@@ -134,12 +138,7 @@ func BaseCommand() *serpent.Command {
 			}
 			logger.Debug("Application config", "config", appConfigInJSON)
 
-			// Get command arguments
-			if len(inv.Args) == 0 {
-				return fmt.Errorf("no command specified")
-			}
-
-			return nsjail_manager.Run(inv.Context(), logger, appConfig, inv.Args)
+			return nsjail_manager.Run(inv.Context(), logger, appConfig)
 		},
 	}
 }
