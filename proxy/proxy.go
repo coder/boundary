@@ -218,8 +218,79 @@ func (p *Server) handleHTTPConnection(conn net.Conn) {
 		return
 	}
 
-	p.logger.Debug("🌐 HTTP Request: %s %s", req.Method, req.URL.String())
+	p.logger.Debug("🌐 HTTP Request", "method", req.Method, "url", req.URL.String())
+
+	// Handle CONNECT method for HTTPS tunneling (used in simple/proxy mode)
+	if req.Method == http.MethodConnect {
+		p.handleCONNECT(conn, req)
+		return
+	}
+
 	p.processHTTPRequest(conn, req, false)
+}
+
+// handleCONNECT handles HTTP CONNECT requests for HTTPS tunneling.
+// This is used in simple mode where clients send CONNECT through HTTP_PROXY.
+func (p *Server) handleCONNECT(clientConn net.Conn, req *http.Request) {
+	targetHost := req.Host
+	if targetHost == "" {
+		targetHost = req.URL.Host
+	}
+
+	p.logger.Debug("🔗 CONNECT request", "target", targetHost)
+
+	// Check if request should be allowed
+	result := p.ruleEngine.Evaluate(req.Method, targetHost)
+
+	// Audit the request
+	p.auditor.AuditRequest(audit.Request{
+		Method:  req.Method,
+		URL:     targetHost,
+		Host:    targetHost,
+		Allowed: result.Allowed,
+		Rule:    result.Rule,
+	})
+
+	if !result.Allowed {
+		p.logger.Info("DENY", "method", req.Method, "host", targetHost)
+		// Send 403 Forbidden for CONNECT
+		_, _ = clientConn.Write([]byte("HTTP/1.1 403 Forbidden\r\n\r\n"))
+		return
+	}
+
+	p.logger.Info("ALLOW", "method", req.Method, "host", targetHost, "rule", result.Rule)
+
+	// Dial the target server
+	targetConn, err := net.DialTimeout("tcp", targetHost, 10*time.Second)
+	if err != nil {
+		p.logger.Error("Failed to connect to target", "target", targetHost, "error", err)
+		_, _ = clientConn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
+		return
+	}
+	defer targetConn.Close()
+
+	// Send 200 Connection Established to client
+	_, err = clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
+	if err != nil {
+		p.logger.Error("Failed to send connection established", "error", err)
+		return
+	}
+
+	// Proxy data bidirectionally
+	done := make(chan struct{}, 2)
+
+	go func() {
+		_, _ = io.Copy(targetConn, clientConn)
+		done <- struct{}{}
+	}()
+
+	go func() {
+		_, _ = io.Copy(clientConn, targetConn)
+		done <- struct{}{}
+	}()
+
+	// Wait for one direction to finish
+	<-done
 }
 
 func (p *Server) handleTLSConnection(conn net.Conn) {
