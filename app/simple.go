@@ -10,7 +10,6 @@ import (
 	"syscall"
 
 	"github.com/coder/boundary/boundary"
-	"github.com/coder/boundary/audit"
 	"github.com/coder/boundary/jail"
 	"github.com/coder/boundary/rulesengine"
 	"github.com/coder/boundary/tls"
