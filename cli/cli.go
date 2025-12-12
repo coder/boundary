@@ -129,7 +129,11 @@ func BaseCommand() *serpent.Command {
 			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
-			appConfig := config.NewAppConfigFromCliConfig(cliConfig, inv.Args)
+			appConfig, err := config.NewAppConfigFromCliConfig(cliConfig, inv.Args)
+			if err != nil {
+				return fmt.Errorf("failed to parse cli config file: %v", err)
+			}
+
 			// Get command arguments
 			if len(appConfig.TargetCMD) == 0 {
 				return fmt.Errorf("no command specified")
