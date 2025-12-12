@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/boundary/e2e_tests/util"
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,7 +37,7 @@ func TestIPTablesCleanup(t *testing.T) {
 
 	// Step 2: Run Boundary
 	// Find project root by looking for go.mod file
-	projectRoot := findProjectRoot(t)
+	projectRoot := util.FindProjectRoot(t)
 
 	// Build the boundary binary
 	buildCmd := exec.Command("go", "build", "-o", "/tmp/boundary-test", "./cmd/...")

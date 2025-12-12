@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/coder/boundary/config"
 )
 
 type Manager interface {
@@ -61,30 +63,30 @@ func NewCertificateManager(config Config) (*CertificateManager, error) {
 
 // SetupTLSAndWriteCACert sets up TLS config and writes CA certificate to file
 // Returns the TLS config, CA cert path, and config directory
-func (cm *CertificateManager) SetupTLSAndWriteCACert() (*tls.Config, string, string, error) {
+func (cm *CertificateManager) SetupTLSAndWriteCACert() (*tls.Config, error) {
 	// Get TLS config
 	tlsConfig := cm.getTLSConfig()
 
 	// Get CA certificate PEM
 	caCertPEM, err := cm.getCACertPEM()
 	if err != nil {
-		return nil, "", "", fmt.Errorf("failed to get CA certificate: %v", err)
+		return nil, fmt.Errorf("failed to get CA certificate: %v", err)
 	}
 
 	// Write CA certificate to file
-	caCertPath := filepath.Join(cm.configDir, "ca-cert.pem")
+	caCertPath := filepath.Join(cm.configDir, config.CACertName)
 	err = os.WriteFile(caCertPath, caCertPEM, 0644)
 	if err != nil {
-		return nil, "", "", fmt.Errorf("failed to write CA certificate file: %v", err)
+		return nil, fmt.Errorf("failed to write CA certificate file: %v", err)
 	}
 
-	return tlsConfig, caCertPath, cm.configDir, nil
+	return tlsConfig, nil
 }
 
 // loadOrGenerateCA loads existing CA or generates a new one
 func (cm *CertificateManager) loadOrGenerateCA() error {
-	caKeyPath := filepath.Join(cm.configDir, "ca-key.pem")
-	caCertPath := filepath.Join(cm.configDir, "ca-cert.pem")
+	caKeyPath := filepath.Join(cm.configDir, config.CAKeyName)
+	caCertPath := filepath.Join(cm.configDir, config.CACertName)
 
 	cm.logger.Debug("paths", "cm.configDir", cm.configDir, "caCertPath", caCertPath)
 

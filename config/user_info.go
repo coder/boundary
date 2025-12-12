@@ -1,4 +1,4 @@
-package util
+package config
 
 import (
 	"os"
@@ -7,8 +7,21 @@ import (
 	"strconv"
 )
 
+const (
+	CAKeyName  = "ca-key.pem"
+	CACertName = "ca-cert.pem"
+)
+
+type UserInfo struct {
+	SudoUser  string
+	Uid       int
+	Gid       int
+	HomeDir   string
+	ConfigDir string
+}
+
 // GetUserInfo returns information about the current user, handling sudo scenarios
-func GetUserInfo() (string, int, int, string, string) {
+func GetUserInfo() *UserInfo {
 	// Only consider SUDO_USER if we're actually running with elevated privileges
 	// In environments like Coder workspaces, SUDO_USER may be set to 'root'
 	// but we're not actually running under sudo
@@ -36,7 +49,13 @@ func GetUserInfo() (string, int, int, string, string) {
 
 		configDir := getConfigDir(user.HomeDir)
 
-		return sudoUser, uid, gid, user.HomeDir, configDir
+		return &UserInfo{
+			SudoUser:  sudoUser,
+			Uid:       uid,
+			Gid:       gid,
+			HomeDir:   user.HomeDir,
+			ConfigDir: configDir,
+		}
 	}
 
 	// Not actually running under sudo, use current user
@@ -44,11 +63,11 @@ func GetUserInfo() (string, int, int, string, string) {
 }
 
 // getCurrentUserInfo gets information for the current user
-func getCurrentUserInfo() (string, int, int, string, string) {
+func getCurrentUserInfo() *UserInfo {
 	currentUser, err := user.Current()
 	if err != nil {
 		// Fallback with empty values if we can't get user info
-		return "", 0, 0, "", ""
+		return &UserInfo{}
 	}
 
 	uid, _ := strconv.Atoi(currentUser.Uid)
@@ -56,7 +75,13 @@ func getCurrentUserInfo() (string, int, int, string, string) {
 
 	configDir := getConfigDir(currentUser.HomeDir)
 
-	return currentUser.Username, uid, gid, currentUser.HomeDir, configDir
+	return &UserInfo{
+		SudoUser:  currentUser.Username,
+		Uid:       uid,
+		Gid:       gid,
+		HomeDir:   currentUser.HomeDir,
+		ConfigDir: configDir,
+	}
 }
 
 // getConfigDir determines the config directory based on XDG_CONFIG_HOME or fallback
@@ -66,4 +91,12 @@ func getConfigDir(homeDir string) string {
 		return filepath.Join(xdgConfigHome, "coder_boundary")
 	}
 	return filepath.Join(homeDir, ".config", "coder_boundary")
+}
+
+func (u *UserInfo) CAKeyPath() string {
+	return filepath.Join(u.ConfigDir, CAKeyName)
+}
+
+func (u *UserInfo) CACertPath() string {
+	return filepath.Join(u.ConfigDir, CACertName)
 }

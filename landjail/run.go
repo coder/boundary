@@ -1,4 +1,4 @@
-package nsjail_manager
+package landjail
 
 import (
 	"context"
@@ -13,12 +13,12 @@ func isChild() bool {
 }
 
 // Run is the main entry point that determines whether to execute as a parent or child process.
-// If running as a child (CHILD env var is set), it sets up networking in the namespace
-// and executes the target command. Otherwise, it runs as the parent process, setting up the jail,
-// proxy server, and managing the child process lifecycle.
+// If running as a child (CHILD env var is set), it applies landlock restrictions
+// and executes the target command. Otherwise, it runs as the parent process, sets up the proxy server,
+// and manages the child process lifecycle.
 func Run(ctx context.Context, logger *slog.Logger, config config.AppConfig) error {
 	if isChild() {
-		return RunChild(logger, config.TargetCMD)
+		return RunChild(logger, config)
 	}
 
 	return RunParent(ctx, logger, config)

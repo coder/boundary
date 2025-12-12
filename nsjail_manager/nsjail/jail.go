@@ -31,7 +31,6 @@ type LinuxJail struct {
 	logger                           *slog.Logger
 	vethHostName                     string // Host-side veth interface name for iptables rules
 	vethJailName                     string // Jail-side veth interface name for iptables rules
-	commandEnv                       []string
 	httpProxyPort                    int
 	configDir                        string
 	caCertPath                       string
@@ -53,8 +52,6 @@ func NewLinuxJail(config Config) (*LinuxJail, error) {
 // installs iptables rules on the host. At this stage, the target PID and its netns
 // are not yet known.
 func (l *LinuxJail) ConfigureHost() error {
-	l.commandEnv = getEnvs(l.configDir, l.caCertPath)
-
 	if err := l.configureHostNetworkBeforeCmdExec(); err != nil {
 		return err
 	}
@@ -70,7 +67,7 @@ func (l *LinuxJail) Command(command []string) *exec.Cmd {
 	l.logger.Debug("Creating command with namespace")
 
 	cmd := exec.Command(command[0], command[1:]...)
-	cmd.Env = l.commandEnv
+	cmd.Env = getEnvsForTargetProcess(l.configDir, l.caCertPath)
 	cmd.Env = append(cmd.Env, "CHILD=true")
 	cmd.Env = append(cmd.Env, fmt.Sprintf("VETH_JAIL_NAME=%v", l.vethJailName))
 	if l.configureDNSForLocalStubResolver {
