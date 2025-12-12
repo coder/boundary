@@ -13,4 +13,5 @@ func Run(ctx context.Context, logger *slog.Logger, config config.AppConfig) erro
 	//}
 	//
 	//return RunParent(ctx, logger, args, config)
+	return nil
 }
