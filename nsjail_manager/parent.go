@@ -13,13 +13,8 @@ import (
 	"github.com/coder/boundary/util"
 )
 
-func RunParent(ctx context.Context, logger *slog.Logger, args []string, config config.AppConfig) error {
+func RunParent(ctx context.Context, logger *slog.Logger, config config.AppConfig) error {
 	_, uid, gid, homeDir, configDir := util.GetUserInfo()
-
-	// Get command arguments
-	if len(args) == 0 {
-		return fmt.Errorf("no command specified")
-	}
 
 	if len(config.AllowRules) == 0 {
 		logger.Warn("No allow rules specified; all network traffic will be denied by default")

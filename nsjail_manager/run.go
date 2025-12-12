@@ -16,10 +16,10 @@ func isChild() bool {
 // If running as a child (CHILD env var is set), it sets up networking in the namespace
 // and executes the target command. Otherwise, it runs as the parent process, setting up the jail,
 // proxy server, and managing the child process lifecycle.
-func Run(ctx context.Context, logger *slog.Logger, config config.AppConfig, args []string) error {
+func Run(ctx context.Context, logger *slog.Logger, config config.AppConfig) error {
 	if isChild() {
-		return RunChild(logger, args)
+		return RunChild(logger, config.TargetCMD)
 	}
 
-	return RunParent(ctx, logger, args, config)
+	return RunParent(ctx, logger, config)
 }

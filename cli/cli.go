@@ -119,9 +119,25 @@ func BaseCommand() *serpent.Command {
 				Value:       &cliConfig.ConfigureDNSForLocalStubResolver,
 				YAML:        "configure_dns_for_local_stub_resolver",
 			},
+			{
+				Flag:        "jail-type",
+				Env:         "BOUNDARY_JAIL_TYPE",
+				Description: "Jail type to use for network isolation. Options: nsjail (default), landjail.",
+				Default:     "nsjail",
+				Value:       &cliConfig.JailType,
+				YAML:        "jail_type",
+			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
-			appConfig := config.NewAppConfigFromCliConfig(cliConfig)
+			appConfig, err := config.NewAppConfigFromCliConfig(cliConfig, inv.Args)
+			if err != nil {
+				return fmt.Errorf("failed to parse cli config file: %v", err)
+			}
+
+			// Get command arguments
+			if len(appConfig.TargetCMD) == 0 {
+				return fmt.Errorf("no command specified")
+			}
 
 			logger, err := log.SetupLogging(appConfig)
 			if err != nil {
@@ -134,7 +150,7 @@ func BaseCommand() *serpent.Command {
 			}
 			logger.Debug("Application config", "config", appConfigInJSON)
 
-			return nsjail_manager.Run(inv.Context(), logger, appConfig, inv.Args)
+			return nsjail_manager.Run(inv.Context(), logger, appConfig)
 		},
 	}
 }
