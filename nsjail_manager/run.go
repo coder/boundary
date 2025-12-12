@@ -21,5 +21,5 @@ func Run(ctx context.Context, logger *slog.Logger, config config.AppConfig, args
 		return RunChild(logger, args)
 	}
 
-	return RunParent(ctx, logger, args, config)
+	return RunParent(ctx, logger, config)
 }

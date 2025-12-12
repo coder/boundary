@@ -134,6 +134,11 @@ func BaseCommand() *serpent.Command {
 			}
 			logger.Debug("Application config", "config", appConfigInJSON)
 
+			// Get command arguments
+			if len(inv.Args) == 0 {
+				return fmt.Errorf("no command specified")
+			}
+
 			return nsjail_manager.Run(inv.Context(), logger, appConfig, inv.Args)
 		},
 	}
