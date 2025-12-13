@@ -52,7 +52,7 @@ func RunSimple(ctx context.Context, logger *slog.Logger, args []string, config C
 	ruleEngine := rulesengine.NewRuleEngine(allowRules, logger)
 
 	// Create auditor
-	auditor := createAuditor(logger, config)
+	auditor := createAuditor(logger)
 
 	// Create TLS certificate manager
 	certManager, err := tls.NewCertificateManager(tls.Config{

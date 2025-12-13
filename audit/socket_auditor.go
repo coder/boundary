@@ -15,6 +15,9 @@ import (
 const (
 	socketFlushInterval = 5 * time.Second
 	socketBatchSize     = 10
+	// DefaultAuditSocketPath is the well-known path for the boundary audit socket.
+	// The Coder agent listens on this socket to receive audit logs.
+	DefaultAuditSocketPath = "/tmp/boundary-audit.sock"
 )
 
 // SocketAuditor implements the Auditor interface by sending logs to the
@@ -31,13 +34,12 @@ type SocketAuditor struct {
 }
 
 // NewSocketAuditor creates a new SocketAuditor that sends logs to the agent's
-// boundary log proxy socket.
-func NewSocketAuditor(socketPath string) *SocketAuditor {
+// boundary log proxy socket at the default path.
+func NewSocketAuditor() *SocketAuditor {
 	return &SocketAuditor{
-		socketPath: socketPath,
+		socketPath: DefaultAuditSocketPath,
 	}
 }
-
 // AuditRequest implements the Auditor interface. It queues the request and
 // batches sends to the agent socket.
 func (s *SocketAuditor) AuditRequest(req Request) {

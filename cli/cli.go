@@ -125,13 +125,6 @@ func BaseCommand() *serpent.Command {
 				Value:       &config.ConfigureDNSForLocalStubResolver,
 				YAML:        "configure_dns_for_local_stub_resolver",
 			},
-			{
-				Flag:        "audit-socket",
-				Env:         "BOUNDARY_AUDIT_SOCKET",
-				Description: "Path to Unix socket for forwarding audit logs to the Coder agent.",
-				Value:       &config.AuditSocket,
-				YAML:        "audit_socket",
-			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
 			args := inv.Args

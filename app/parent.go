@@ -52,7 +52,7 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 	ruleEngine := rulesengine.NewRuleEngine(allowRules, logger)
 
 	// Create auditor - check for socket path to forward logs to agent
-	auditor := createAuditor(logger, config)
+	auditor := createAuditor(logger)
 
 	// Create TLS certificate manager
 	certManager, err := tls.NewCertificateManager(tls.Config{
@@ -168,19 +168,11 @@ func RunParent(ctx context.Context, logger *slog.Logger, args []string, config C
 	return nil
 }
 
-// createAuditor creates the appropriate auditor based on config.
-// If --audit-socket is set, it creates a MultiAuditor that sends to both
-// the local logger and the agent socket.
-func createAuditor(logger *slog.Logger, config Config) audit.Auditor {
+
+// createAuditor creates a MultiAuditor that logs locally and sends to the agent socket.
+func createAuditor(logger *slog.Logger) audit.Auditor {
 	logAuditor := audit.NewLogAuditor(logger)
-
-	socketPath := config.AuditSocket.Value()
-	if socketPath == "" {
-		return logAuditor
-	}
-
-	socketAuditor := audit.NewSocketAuditor(socketPath)
-	logger.Info("Boundary log forwarding enabled", "socket_path", socketPath)
-
+	socketAuditor := audit.NewSocketAuditor()
+	logger.Info("Boundary audit logging enabled", "socket_path", audit.DefaultAuditSocketPath)
 	return audit.NewMultiAuditor(logAuditor, socketAuditor)
 }
