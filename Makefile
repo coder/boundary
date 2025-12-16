@@ -42,6 +42,19 @@ deps:
 	go mod verify
 	@echo "✓ Dependencies ready!"
 
+# Generate protobuf code. It is expected that code generation is done with the
+# same version of protoc and protoc-gen-go as coder/coder.
+.PHONY: proto
+proto:
+	@echo "Generating protobuf code..."
+	protoc --go_out=. --go_opt=paths=source_relative proto/logs.proto
+	@echo "✓ Protobuf code generated"
+
+# Run all code generation
+.PHONY: gen
+gen: proto
+	@echo "✓ Code generation complete"
+
 # Run unit tests only (no sudo required)
 .PHONY: unit-test
 unit-test:

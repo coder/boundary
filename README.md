@@ -175,6 +175,7 @@ make test-coverage  # Run tests with coverage
 make clean          # Clean build artifacts
 make fmt            # Format code
 make lint           # Lint code
+make gen            # Generate code (e.g. protobuf)
 ```
 
 ## Architecture
