@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/coder/boundary/config"
 	"github.com/coder/boundary/e2e_tests/util"
 	"github.com/stretchr/testify/require"
 )
@@ -210,12 +209,8 @@ func (lt *LandjailTest) makeRequest(url string) []byte {
 		lt.t.Fatalf("landjail pipes not initialized")
 	}
 
-	userInfo := config.GetUserInfo()
-	proxyURL := fmt.Sprintf("http://localhost:%d", 8080) // Default proxy port
-
 	// Build curl command with SSL_CERT_FILE and proxy environment variables
-	curlCmd := fmt.Sprintf("env SSL_CERT_FILE=%s HTTP_PROXY=%s HTTPS_PROXY=%s http_proxy=%s https_proxy=%s curl -sS %s\n",
-		userInfo.CACertPath(), proxyURL, proxyURL, proxyURL, proxyURL, url)
+	curlCmd := fmt.Sprintf("curl -sS %s\n", url)
 
 	// Write command to stdin
 	_, err := lt.bashStdin.Write([]byte(curlCmd))
