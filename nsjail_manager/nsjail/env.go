@@ -6,6 +6,8 @@ import (
 	"github.com/coder/boundary/util"
 )
 
+// Returns environment variables intended to be set on the child process,
+// so they can later be inherited by the target process.
 func getEnvsForTargetProcess(configDir string, caCertPath string) []string {
 	e := os.Environ()
 

@@ -124,6 +124,7 @@ func (b *LandJail) RunChildProcess(command []string) error {
 
 func (b *LandJail) getChildCommand(command []string) *exec.Cmd {
 	cmd := exec.Command(command[0], command[1:]...)
+	// Set env vars for the child process; they will be inherited by the target process.
 	cmd.Env = getEnvsForTargetProcess(b.config.UserInfo.ConfigDir, b.config.UserInfo.CACertPath(), int(b.config.ProxyPort))
 	cmd.Env = append(cmd.Env, "CHILD=true")
 	cmd.Stderr = os.Stderr
