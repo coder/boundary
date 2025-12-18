@@ -41,9 +41,9 @@ func NewCommand() *serpent.Command {
 func BaseCommand() *serpent.Command {
 	cliConfig := config.CliConfig{}
 
-	// Set default cliConfig path if file exists - serpent will load it automatically
+	// Set default config path if file exists - serpent will load it automatically
 	if home, err := os.UserHomeDir(); err == nil {
-		defaultPath := filepath.Join(home, ".cliConfig", "coder_boundary", "cliConfig.yaml")
+		defaultPath := filepath.Join(home, ".config", "coder_boundary", "config.yaml")
 		if _, err := os.Stat(defaultPath); err == nil {
 			cliConfig.Config = serpent.YAMLConfigPath(defaultPath)
 		}
@@ -55,22 +55,22 @@ func BaseCommand() *serpent.Command {
 		Long:  `boundary creates an isolated network environment for target processes, intercepting HTTP/HTTPS traffic through a transparent proxy that enforces user-defined allow rules.`,
 		Options: []serpent.Option{
 			{
-				Flag:        "cliConfig",
+				Flag:        "config",
 				Env:         "BOUNDARY_CONFIG",
-				Description: "Path to YAML cliConfig file.",
+				Description: "Path to YAML config file.",
 				Value:       &cliConfig.Config,
 				YAML:        "",
 			},
 			{
 				Flag:        "allow",
 				Env:         "BOUNDARY_ALLOW",
-				Description: "Allow rule (repeatable). These are merged with allowlist from cliConfig file. Format: \"pattern\" or \"METHOD[,METHOD] pattern\".",
+				Description: "Allow rule (repeatable). These are merged with allowlist from config file. Format: \"pattern\" or \"METHOD[,METHOD] pattern\".",
 				Value:       &cliConfig.AllowStrings,
 				YAML:        "", // CLI only, not loaded from YAML
 			},
 			{
 				Flag:        "", // No CLI flag, YAML only
-				Description: "Allowlist rules from cliConfig file (YAML only).",
+				Description: "Allowlist rules from config file (YAML only).",
 				Value:       &cliConfig.AllowListStrings,
 				YAML:        "allowlist",
 			},
