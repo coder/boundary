@@ -52,7 +52,6 @@ func RunChild(logger *slog.Logger, config config.AppConfig) error {
 
 	// Build command
 	cmd := exec.Command(config.TargetCMD[0], config.TargetCMD[1:]...)
-	cmd.Env = getEnvsForTargetProcess(config.UserInfo.ConfigDir, config.UserInfo.CACertPath(), int(config.ProxyPort))
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
