@@ -1,19 +1,19 @@
-package e2e_tests
+package nsjail
 
 import "testing"
 
-func TestE2EBoundary(t *testing.T) {
-	// Create and configure boundary test
-	bt := NewBoundaryTest(t,
-		WithAllowedDomain("dev.coder.com"),
-		WithAllowedDomain("jsonplaceholder.typicode.com"),
-		WithLogLevel("debug"),
+func TestNamespaceJail(t *testing.T) {
+	// Create and configure nsjail test
+	nt := NewNSJailTest(t,
+		WithNSJailAllowedDomain("dev.coder.com"),
+		WithNSJailAllowedDomain("jsonplaceholder.typicode.com"),
+		WithNSJailLogLevel("debug"),
 	).
 		Build().
 		Start()
 
 	// Ensure cleanup
-	defer bt.Stop()
+	defer nt.Stop()
 
 	// Test allowed HTTP request
 	t.Run("HTTPRequestThroughBoundary", func(t *testing.T) {
@@ -23,23 +23,23 @@ func TestE2EBoundary(t *testing.T) {
   "title": "delectus aut autem",
   "completed": false
 }`
-		bt.ExpectAllowed("http://jsonplaceholder.typicode.com/todos/1", expectedResponse)
+		nt.ExpectAllowed("http://jsonplaceholder.typicode.com/todos/1", expectedResponse)
 	})
 
 	// Test allowed HTTPS request
 	t.Run("HTTPSRequestThroughBoundary", func(t *testing.T) {
 		expectedResponse := `{"message":"👋"}
 `
-		bt.ExpectAllowed("https://dev.coder.com/api/v2", expectedResponse)
+		nt.ExpectAllowed("https://dev.coder.com/api/v2", expectedResponse)
 	})
 
 	// Test blocked HTTP request
 	t.Run("HTTPBlockedDomainTest", func(t *testing.T) {
-		bt.ExpectDeny("http://example.com")
+		nt.ExpectDeny("http://example.com")
 	})
 
 	// Test blocked HTTPS request
 	t.Run("HTTPSBlockedDomainTest", func(t *testing.T) {
-		bt.ExpectDeny("https://example.com")
+		nt.ExpectDeny("https://example.com")
 	})
 }

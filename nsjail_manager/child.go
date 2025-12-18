@@ -47,7 +47,7 @@ func waitForInterface(interfaceName string, timeout time.Duration) error {
 	return nil
 }
 
-func RunChild(logger *slog.Logger, args []string) error {
+func RunChild(logger *slog.Logger, targetCMD []string) error {
 	logger.Info("boundary CHILD process is started")
 
 	vethNetJail := os.Getenv("VETH_JAIL_NAME")
@@ -75,8 +75,8 @@ func RunChild(logger *slog.Logger, args []string) error {
 	}
 
 	// Program to run
-	bin := args[0]
-	args = args[1:]
+	bin := targetCMD[0]
+	args := targetCMD[1:]
 
 	cmd := exec.Command(bin, args...)
 	cmd.Stdin = os.Stdin

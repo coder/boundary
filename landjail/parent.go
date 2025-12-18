@@ -1,4 +1,4 @@
-package nsjail_manager
+package landjail
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 
 	"github.com/coder/boundary/audit"
 	"github.com/coder/boundary/config"
-	"github.com/coder/boundary/nsjail_manager/nsjail"
 	"github.com/coder/boundary/rulesengine"
 	"github.com/coder/boundary/tls"
 )
@@ -48,24 +47,10 @@ func RunParent(ctx context.Context, logger *slog.Logger, config config.AppConfig
 		return fmt.Errorf("failed to setup TLS and CA certificate: %v", err)
 	}
 
-	// Create jailer with cert path from TLS setup
-	jailer, err := nsjail.NewLinuxJail(nsjail.Config{
-		Logger:                           logger,
-		HttpProxyPort:                    int(config.ProxyPort),
-		HomeDir:                          config.UserInfo.HomeDir,
-		ConfigDir:                        config.UserInfo.ConfigDir,
-		CACertPath:                       config.UserInfo.CACertPath(),
-		ConfigureDNSForLocalStubResolver: config.ConfigureDNSForLocalStubResolver,
-	})
+	landjail, err := NewLandJail(ruleEngine, auditor, tlsConfig, logger, config)
 	if err != nil {
-		return fmt.Errorf("failed to create jailer: %v", err)
+		return fmt.Errorf("failed to create landjail: %v", err)
 	}
 
-	// Create boundary instance
-	nsJailMgr, err := NewNSJailManager(ruleEngine, auditor, tlsConfig, jailer, logger, config)
-	if err != nil {
-		return fmt.Errorf("failed to create boundary instance: %v", err)
-	}
-
-	return nsJailMgr.Run(ctx)
+	return landjail.Run(ctx)
 }

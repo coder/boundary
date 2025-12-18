@@ -145,9 +145,8 @@ func TestProxyServerBasicHTTPS(t *testing.T) {
 	require.NoError(t, err)
 
 	// Setup TLS to get cert path for jailer
-	tlsConfig, caCertPath, configDir, err := certManager.SetupTLSAndWriteCACert()
+	tlsConfig, err := certManager.SetupTLSAndWriteCACert()
 	require.NoError(t, err)
-	_, _ = caCertPath, configDir
 
 	// Create proxy server
 	server := NewProxyServer(Config{
@@ -242,9 +241,8 @@ func TestProxyServerCONNECT(t *testing.T) {
 	require.NoError(t, err)
 
 	// Setup TLS to get cert path for proxy
-	tlsConfig, caCertPath, configDir, err := certManager.SetupTLSAndWriteCACert()
+	tlsConfig, err := certManager.SetupTLSAndWriteCACert()
 	require.NoError(t, err)
-	_, _ = caCertPath, configDir
 
 	// Create proxy server
 	server := NewProxyServer(Config{
