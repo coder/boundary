@@ -67,6 +67,7 @@ func (l *LinuxJail) Command(command []string) *exec.Cmd {
 	l.logger.Debug("Creating command with namespace")
 
 	cmd := exec.Command(command[0], command[1:]...)
+	// Set env vars for the child process; they will be inherited by the target process.
 	cmd.Env = getEnvsForTargetProcess(l.configDir, l.caCertPath)
 	cmd.Env = append(cmd.Env, "CHILD=true")
 	cmd.Env = append(cmd.Env, fmt.Sprintf("VETH_JAIL_NAME=%v", l.vethJailName))

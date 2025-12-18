@@ -52,7 +52,6 @@ func RunChild(logger *slog.Logger, config config.AppConfig) error {
 
 	// Build command
 	cmd := exec.Command(config.TargetCMD[0], config.TargetCMD[1:]...)
-	cmd.Env = getEnvsForTargetProcess(config.UserInfo.ConfigDir, config.UserInfo.CACertPath(), int(config.ProxyPort))
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -77,6 +76,8 @@ func RunChild(logger *slog.Logger, config config.AppConfig) error {
 	return nil
 }
 
+// Returns environment variables intended to be set on the child process,
+// so they can later be inherited by the target process.
 func getEnvsForTargetProcess(configDir string, caCertPath string, httpProxyPort int) []string {
 	e := os.Environ()
 
