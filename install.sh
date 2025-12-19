@@ -255,13 +255,13 @@ print_usage() {
     echo -e "${BLUE}Quick Start:${NC}"
     if command -v "boundary-run" &> /dev/null; then
         echo "  boundary-run --help"
-        echo "  boundary-run --allow 'github.com' -- curl https://github.com"
-        echo "  boundary-run --allow '*.npmjs.org' -- npm install"
+        echo "  boundary-run --allow \"domain=github.com\" -- curl https://github.com"
+        echo "  boundary-run --allow \"domain=*.npmjs.org\" -- npm install"
         echo "  boundary-run -- bash"
     else
         echo "  boundary --help"
-        echo "  boundary --allow 'github.com' -- curl https://github.com"
-        echo "  boundary --allow '*.npmjs.org' -- npm install"
+        echo "  boundary --allow \"domain=github.com\" -- curl https://github.com"
+        echo "  boundary --allow \"domain=*.npmjs.org\" -- npm install"
     fi
     echo
     echo -e "${BLUE}Documentation:${NC}"
