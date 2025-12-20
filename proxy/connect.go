@@ -26,25 +26,6 @@ func (p *Server) handleCONNECT(conn net.Conn, req *http.Request) {
 
 	p.logger.Debug("🔌 CONNECT request", "target", target)
 
-	// Check if target is allowed
-	// Use "CONNECT" as method and target as the URL for evaluation
-	result := p.ruleEngine.Evaluate("CONNECT", target)
-
-	// Audit the CONNECT request
-	p.auditor.AuditRequest(audit.Request{
-		Method:  "CONNECT",
-		URL:     target,
-		Host:    target,
-		Allowed: result.Allowed,
-		Rule:    result.Rule,
-	})
-
-	if !result.Allowed {
-		p.logger.Debug("CONNECT request blocked", "target", target)
-		p.writeBlockedCONNECTResponse(conn, target)
-		return
-	}
-
 	// Send 200 Connection established response
 	response := "HTTP/1.1 200 Connection established\r\n\r\n"
 	_, err := conn.Write([]byte(response))
