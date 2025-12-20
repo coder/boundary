@@ -218,6 +218,11 @@ func (p *Server) handleHTTPConnection(conn net.Conn) {
 		return
 	}
 
+	if req.Method == http.MethodConnect {
+		p.handleCONNECT(conn, req)
+		return
+	}
+
 	p.logger.Debug("🌐 HTTP Request: %s %s", req.Method, req.URL.String())
 	p.processHTTPRequest(conn, req, false)
 }

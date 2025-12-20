@@ -29,11 +29,11 @@ func TestLandjail(t *testing.T) {
 	})
 
 	// Test allowed HTTPS request
-	//	t.Run("HTTPSRequestThroughBoundary", func(t *testing.T) {
-	//		expectedResponse := `{"message":"👋"}
-	//`
-	//		lt.ExpectAllowed("https://dev.coder.com/api/v2", expectedResponse)
-	//	})
+	t.Run("HTTPSRequestThroughBoundary", func(t *testing.T) {
+		expectedResponse := `{"message":"👋"}
+`
+		lt.ExpectAllowed("https://dev.coder.com/api/v2", expectedResponse)
+	})
 
 	// Test blocked HTTP request
 	t.Run("HTTPBlockedDomainTest", func(t *testing.T) {
@@ -41,7 +41,7 @@ func TestLandjail(t *testing.T) {
 	})
 
 	// Test blocked HTTPS request
-	//t.Run("HTTPSBlockedDomainTest", func(t *testing.T) {
-	//	lt.ExpectDeny("https://example.com")
-	//})
+	t.Run("HTTPSBlockedDomainTest", func(t *testing.T) {
+		lt.ExpectDeny("https://example.com")
+	})
 }
