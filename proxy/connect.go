@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/tls"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -205,39 +204,4 @@ func (p *Server) forwardTunnelRequest(conn net.Conn, req *http.Request, targetHo
 	}
 
 	p.logger.Debug("Successfully forwarded response in CONNECT tunnel")
-}
-
-// writeBlockedCONNECTResponse writes a blocked response for CONNECT requests
-func (p *Server) writeBlockedCONNECTResponse(conn net.Conn, target string) {
-	resp := &http.Response{
-		Status:        "403 Forbidden",
-		StatusCode:    http.StatusForbidden,
-		Proto:         "HTTP/1.1",
-		ProtoMajor:    1,
-		ProtoMinor:    1,
-		Header:        make(http.Header),
-		Body:          nil,
-		ContentLength: 0,
-	}
-
-	resp.Header.Set("Content-Type", "text/plain")
-
-	body := fmt.Sprintf(`🚫 CONNECT Request Blocked by Boundary
-
-Target: %s
-
-To allow this CONNECT request, restart boundary with:
-  --allow "domain=%s"
-
-For more help: https://github.com/coder/boundary
-`, target, target)
-
-	resp.Body = io.NopCloser(strings.NewReader(body))
-	resp.ContentLength = int64(len(body))
-
-	err := resp.Write(conn)
-	if err != nil {
-		p.logger.Error("Failed to write blocked CONNECT response", "error", err)
-		return
-	}
 }
