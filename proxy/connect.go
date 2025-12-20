@@ -137,10 +137,12 @@ func (p *Server) forwardTunnelRequest(conn net.Conn, req *http.Request, targetHo
 		},
 	}
 
-	// Determine scheme based on port
+	// Extract hostname and port from targetHost
+	hostname := targetHost
 	port := "443" // Default HTTPS port
 	if strings.Contains(targetHost, ":") {
 		parts := strings.Split(targetHost, ":")
+		hostname = parts[0]
 		port = parts[1]
 	}
 
@@ -150,9 +152,10 @@ func (p *Server) forwardTunnelRequest(conn net.Conn, req *http.Request, targetHo
 	}
 
 	// Build target URL using the request's path but the CONNECT target's host
+	// URL.Host can include port for connection, but Host header should not
 	targetURL := &url.URL{
 		Scheme:   scheme,
-		Host:     targetHost,
+		Host:     targetHost, // Include port for connection
 		Path:     req.URL.Path,
 		RawQuery: req.URL.RawQuery,
 	}
@@ -168,10 +171,15 @@ func (p *Server) forwardTunnelRequest(conn net.Conn, req *http.Request, targetHo
 		return
 	}
 
-	// Copy headers
+	// Set Host header to just the hostname (without port)
+	// The Host header should not include the port number for HTTPS
+	newReq.Host = hostname
+
+	// Copy headers (but skip Host since we set it explicitly above)
 	for name, values := range req.Header {
-		// Skip connection-specific headers
-		if strings.ToLower(name) == "connection" || strings.ToLower(name) == "proxy-connection" {
+		// Skip connection-specific headers and Host header
+		lowerName := strings.ToLower(name)
+		if lowerName == "connection" || lowerName == "proxy-connection" || lowerName == "host" {
 			continue
 		}
 		for _, value := range values {
