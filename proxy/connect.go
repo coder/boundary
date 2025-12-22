@@ -2,14 +2,10 @@ package proxy
 
 import (
 	"bufio"
-	"bytes"
 	"crypto/tls"
 	"io"
 	"net"
 	"net/http"
-	"net/url"
-	"strconv"
-	"strings"
 
 	"github.com/coder/boundary/audit"
 )
@@ -18,12 +14,8 @@ import (
 func (p *Server) handleCONNECT(conn net.Conn, req *http.Request) {
 	// Extract target from CONNECT request
 	// CONNECT requests have the target in req.Host (format: hostname:port)
-	target := req.Host
-	if target == "" {
-		target = req.URL.Host
-	}
 
-	p.logger.Debug("🔌 CONNECT request", "target", target)
+	p.logger.Debug("🔌 CONNECT request", "target", req.Host)
 
 	// Send 200 Connection established response
 	response := "HTTP/1.1 200 Connection established\r\n\r\n"
@@ -33,15 +25,15 @@ func (p *Server) handleCONNECT(conn net.Conn, req *http.Request) {
 		return
 	}
 
-	p.logger.Debug("CONNECT tunnel established", "target", target)
+	p.logger.Debug("CONNECT tunnel established", "target", req.Host)
 
 	// Handle the tunnel - decrypt TLS and process each HTTP request
-	p.handleCONNECTTunnel(conn, target)
+	p.handleCONNECTTunnel(conn)
 }
 
 // handleCONNECTTunnel handles the tunnel after CONNECT is established
 // It decrypts TLS traffic and processes each HTTP request separately
-func (p *Server) handleCONNECTTunnel(conn net.Conn, target string) {
+func (p *Server) handleCONNECTTunnel(conn net.Conn) {
 	defer func() {
 		err := conn.Close()
 		if err != nil {
@@ -74,15 +66,15 @@ func (p *Server) handleCONNECTTunnel(conn net.Conn, target string) {
 			break
 		}
 
-		p.logger.Debug("🔒 HTTP Request in CONNECT tunnel", "method", req.Method, "url", req.URL.String(), "target", target)
+		p.logger.Debug("🔒 HTTP Request in CONNECT tunnel", "method", req.Method, "url", req.URL.String(), "target", req.Host)
 
 		// Process this request - check if allowed and forward to target
-		p.processTunnelRequest(tlsConn, req, target)
+		p.processTunnelRequest(tlsConn, req)
 	}
 }
 
 // processTunnelRequest processes a single HTTP request from the CONNECT tunnel
-func (p *Server) processTunnelRequest(conn net.Conn, req *http.Request, targetHost string) {
+func (p *Server) processTunnelRequest(conn net.Conn, req *http.Request) {
 	// Check if request should be allowed
 	// Use the original request URL but evaluate against rules
 	urlStr := req.Host + req.URL.String()
@@ -105,103 +97,5 @@ func (p *Server) processTunnelRequest(conn net.Conn, req *http.Request, targetHo
 
 	// Forward request to target
 	// The target is the original CONNECT target, but we use the request's host/path
-	p.forwardTunnelRequest(conn, req, targetHost)
-}
-
-// forwardTunnelRequest forwards a request from the tunnel to the target
-func (p *Server) forwardTunnelRequest(conn net.Conn, req *http.Request, targetHost string) {
-	// Create HTTP client
-	client := &http.Client{
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse // Don't follow redirects
-		},
-	}
-
-	// Extract hostname and port from targetHost
-	hostname := targetHost
-	port := "443" // Default HTTPS port
-	if strings.Contains(targetHost, ":") {
-		parts := strings.Split(targetHost, ":")
-		hostname = parts[0]
-		port = parts[1]
-	}
-
-	scheme := "https"
-	if port == "80" {
-		scheme = "http"
-	}
-
-	// Build target URL using the request's path but the CONNECT target's host
-	// URL.Host can include port for connection, but Host header should not
-	targetURL := &url.URL{
-		Scheme:   scheme,
-		Host:     targetHost, // Include port for connection
-		Path:     req.URL.Path,
-		RawQuery: req.URL.RawQuery,
-	}
-
-	var body = req.Body
-	if req.Method == http.MethodGet || req.Method == http.MethodHead {
-		body = nil
-	}
-
-	newReq, err := http.NewRequest(req.Method, targetURL.String(), body)
-	if err != nil {
-		p.logger.Error("can't create HTTP request for tunnel", "error", err)
-		return
-	}
-
-	// Set Host header to just the hostname (without port)
-	// The Host header should not include the port number for HTTPS
-	newReq.Host = hostname
-
-	// Copy headers (but skip Host since we set it explicitly above)
-	for name, values := range req.Header {
-		// Skip connection-specific headers and Host header
-		lowerName := strings.ToLower(name)
-		if lowerName == "connection" || lowerName == "proxy-connection" || lowerName == "host" {
-			continue
-		}
-		for _, value := range values {
-			newReq.Header.Add(name, value)
-		}
-	}
-
-	// Make request to destination
-	resp, err := client.Do(newReq)
-	if err != nil {
-		p.logger.Error("Failed to forward request from CONNECT tunnel", "error", err)
-		return
-	}
-
-	p.logger.Debug("Response from target", "status", resp.StatusCode, "target", targetHost)
-
-	// Read the body and set Content-Length
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		p.logger.Error("can't read response body from tunnel", "error", err)
-		return
-	}
-	resp.Header.Set("Content-Length", strconv.Itoa(len(bodyBytes)))
-	resp.ContentLength = int64(len(bodyBytes))
-	err = resp.Body.Close()
-	if err != nil {
-		p.logger.Error("Failed to close response body", "error", err)
-		return
-	}
-	resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-
-	// Normalize to HTTP/1.1
-	resp.Proto = "HTTP/1.1"
-	resp.ProtoMajor = 1
-	resp.ProtoMinor = 1
-
-	// Write response back to tunnel
-	err = resp.Write(conn)
-	if err != nil {
-		p.logger.Error("Failed to write response to CONNECT tunnel", "error", err)
-		return
-	}
-
-	p.logger.Debug("Successfully forwarded response in CONNECT tunnel")
+	p.forwardRequest(conn, req, true)
 }
