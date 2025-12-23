@@ -122,8 +122,8 @@ func BaseCommand() *serpent.Command {
 			{
 				Flag:        "jail-type",
 				Env:         "BOUNDARY_JAIL_TYPE",
-				Description: "Jail type to use for network isolation. Options: nsjail (default), landjail.",
-				Default:     "nsjail",
+				Description: "Jail type to use for network isolation. Options: nsjail, landjail, none (default, no jailing).",
+				Default:     "none",
 				Value:       &cliConfig.JailType,
 				YAML:        "jail_type",
 			},
