@@ -127,6 +127,12 @@ func BaseCommand() *serpent.Command {
 				Value:       &cliConfig.JailType,
 				YAML:        "jail_type",
 			},
+			{
+				Flag:        "disable-audit-logs",
+				Description: "Disable sending of audit logs to the workspace agent when set to true.",
+				Value:       &cliConfig.DisableAuditLogs,
+				YAML:        "disable_audit_logs",
+			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
 			appConfig, err := config.NewAppConfigFromCliConfig(cliConfig, inv.Args)
