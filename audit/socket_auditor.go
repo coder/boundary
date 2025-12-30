@@ -189,8 +189,8 @@ func (s *SocketAuditor) Loop(ctx context.Context) {
 					"error", err, "duration_sec", s.batchTimerDuration.Seconds(),
 					"batch_size", len(batch))
 				closeConn()
-				// Reset the timer so we aren't stuck waiting for the batch to fill
-				// or a new log to arrive before the next attempt.
+				// Reset the timer so we aren't stuck waiting for a new log to
+				// arrive before the next attempt.
 				t.Reset(s.batchTimerDuration)
 			}
 			return
