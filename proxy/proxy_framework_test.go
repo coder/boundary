@@ -155,7 +155,7 @@ func (pt *ProxyTest) ExpectAllowed(proxyURL, hostHeader, expectedBody string) {
 
 	resp, err := pt.client.Do(req)
 	require.NoError(pt.t, err, "Failed to make request")
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(pt.t, err, "Failed to read response body")
@@ -173,7 +173,7 @@ func (pt *ProxyTest) ExpectAllowedContains(proxyURL, hostHeader, containsText st
 
 	resp, err := pt.client.Do(req)
 	require.NoError(pt.t, err, "Failed to make request")
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(pt.t, err, "Failed to read response body")
