@@ -208,8 +208,14 @@ func TestSocketAuditor_Loop_RetriesOnConnectionFailure(t *testing.T) {
 
 	clientConn, serverConn := net.Pipe()
 	t.Cleanup(func() {
-		clientConn.Close()
-		serverConn.Close()
+		err := clientConn.Close()
+		if err != nil {
+			t.Errorf("close client connection: %v", err)
+		}
+		err = serverConn.Close()
+		if err != nil {
+			t.Errorf("close server connection: %v", err)
+		}
 	})
 
 	var dialCount atomic.Int32
