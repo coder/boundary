@@ -346,7 +346,7 @@ func readFromConn(t *testing.T, conn net.Conn, received chan<- *agentproto.Repor
 
 	buf := make([]byte, 1<<10)
 	for {
-		tag, data, err := codec.ReadFrame(conn, codec.MaxMessageSize, buf)
+		tag, data, err := codec.ReadFrame(conn, buf)
 		if err != nil {
 			return // connection closed
 		}
