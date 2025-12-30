@@ -2,24 +2,33 @@ package audit
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
 	"time"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/coder/coder/v2/agent/boundarylogproxy/codec"
 	agentproto "github.com/coder/coder/v2/agent/proto"
 )
 
 const (
+	// The batch size and timer duration are chosen to provide reasonable responsiveness
+	// for consumers of the aggregated logs while still minimizing the agent <-> coderd
+	// network I/O when an AI agent is actively making network requests.
 	defaultBatchSize          = 10
 	defaultBatchTimerDuration = 5 * time.Second
-	// DefaultAuditSocketPath is the well-known path for the boundary audit socket.
-	// The expectation is the Coder agent listens on this socket to receive audit logs.
-	DefaultAuditSocketPath = "/tmp/boundary-audit.sock"
+
+	// defaultAuditSocketPath is the default path for the boundary log proxy server
+	// socket. Important: this is the same default path used by the Coder agent.
+	defaultAuditSocketPath = "/tmp/boundary-audit.sock"
+
+	// EnvAuditSocketPath is the environment variable that overrides the default socket path.
+	// Important: this is the same variable name used by the Coder agent.
+	EnvAuditSocketPath = "CODER_AGENT_BOUNDARY_LOG_PROXY_SOCKET_PATH"
 )
 
 // SocketAuditor implements the Auditor interface. It sends logs to the
@@ -27,14 +36,8 @@ const (
 // them in batches using a batch size and timer. The internal queue operates
 // as a FIFO i.e., logs are sent in the order they are received and dropped
 // if the queue is full.
-//
-// The proto messages sent to the agent are framed as follows:
-// [4 bit tag][28 bit length][length bytes of encoded protobuf]
-//
-// The tag is currently always 1, but may be extended in the future (e.g.
-// to support compression).
 type SocketAuditor struct {
-	socketPath         string
+	dial               func() (net.Conn, error)
 	logger             *slog.Logger
 	logCh              chan *agentproto.BoundaryLog
 	batchSize          int
@@ -45,11 +48,18 @@ type SocketAuditor struct {
 }
 
 // NewSocketAuditor creates a new SocketAuditor that sends logs to the agent's
-// boundary log proxy socket at DefaultAuditSocketPath after SocketAuditor.Loop
-// is called.
+// boundary log proxy socket after SocketAuditor.Loop is called. The socket path
+// is read from EnvAuditSocketPath, falling back to defaultAuditSocketPath.
 func NewSocketAuditor(logger *slog.Logger) *SocketAuditor {
+	socketPath := os.Getenv(EnvAuditSocketPath)
+	if socketPath == "" {
+		socketPath = defaultAuditSocketPath
+	}
+
 	return &SocketAuditor{
-		socketPath:         DefaultAuditSocketPath,
+		dial: func() (net.Conn, error) {
+			return net.Dial("unix", socketPath)
+		},
 		logger:             logger,
 		logCh:              make(chan *agentproto.BoundaryLog, 2*defaultBatchSize),
 		batchSize:          defaultBatchSize,
@@ -107,19 +117,9 @@ func flush(conn net.Conn, logs []*agentproto.BoundaryLog) *flushErr {
 		return &flushErr{err: err, permanent: true}
 	}
 
-	if len(data) > 1<<28 {
-		return &flushErr{err: fmt.Errorf("data too large: %d bytes", len(data)), permanent: true}
-	}
-
-	var header uint32
-	header |= uint32(len(data))
-	header |= 1 << 28
-
-	if err := binary.Write(conn, binary.BigEndian, header); err != nil {
-		return &flushErr{err: err}
-	}
-	if _, err := conn.Write(data); err != nil {
-		return &flushErr{err: err}
+	err = codec.WriteFrame(conn, codec.TagV1, data)
+	if err != nil {
+		return &flushErr{err: fmt.Errorf("write frame: %x", err)}
 	}
 	return nil
 }
@@ -137,9 +137,9 @@ func (s *SocketAuditor) Loop(ctx context.Context) {
 			return
 		}
 		var err error
-		conn, err = net.Dial("unix", s.socketPath)
+		conn, err = s.dial()
 		if err != nil {
-			s.logger.Warn("failed to connect to audit socket", "path", s.socketPath, "error", err)
+			s.logger.Warn("failed to connect to audit socket", "error", err)
 			conn = nil
 		}
 	}
@@ -175,16 +175,21 @@ func (s *SocketAuditor) Loop(ctx context.Context) {
 		connect()
 		if conn == nil {
 			// No connection: logs will be retried on next flush.
+			s.logger.Warn("no connection to flush; resetting batch timer")
+			// Reset the timer so we aren't stuck waiting for the batch to fill
+			// before the next attempt.
+			t.Reset(s.batchTimerDuration)
 			return
 		}
 
 		if err := flush(conn, batch); err != nil {
-			s.logger.Warn("failed to flush audit logs", "error", err)
 			if err.permanent {
+				s.logger.Warn("dropping batch due to data error on flush attempt", "error", err)
 				// Data error: discard batch to avoid infinite retries.
 				clearBatch()
 			} else {
 				// Network error: close connection but keep batch for a future retry.
+				s.logger.Warn("failed to flush audit logs; will retry", "error", err)
 				closeConn()
 			}
 			return
