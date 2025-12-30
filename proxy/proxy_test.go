@@ -29,176 +29,34 @@ func (m *mockAuditor) AuditRequest(req audit.Request) {
 
 // TestProxyServerBasicHTTP tests basic HTTP request handling
 func TestProxyServerBasicHTTP(t *testing.T) {
-	// Create test logger
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelError,
-	}))
+	pt := NewProxyTest(t).
+		Start()
+	defer pt.Stop()
 
-	// Create test rules (allow all for testing)
-	testRules, err := rulesengine.ParseAllowSpecs([]string{"method=*"})
-	if err != nil {
-		t.Fatalf("Failed to parse test rules: %v", err)
-	}
-
-	// Create rule engine
-	ruleEngine := rulesengine.NewRuleEngine(testRules, logger)
-
-	// Create mock auditor
-	auditor := &mockAuditor{}
-
-	// Create TLS config (minimal for testing)
-	tlsConfig := &tls.Config{
-		MinVersion: tls.VersionTLS12,
-	}
-
-	// Create proxy server
-	server := NewProxyServer(Config{
-		HTTPPort:   8080,
-		RuleEngine: ruleEngine,
-		Auditor:    auditor,
-		Logger:     logger,
-		TLSConfig:  tlsConfig,
-	})
-
-	// Start server
-	err = server.Start()
-	require.NoError(t, err)
-
-	// Give server time to start
-	time.Sleep(100 * time.Millisecond)
-
-	// Test basic HTTP request
 	t.Run("BasicHTTPRequest", func(t *testing.T) {
-		// Create HTTP client
-		client := &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: true, // Skip cert verification for testing
-				},
-			},
-			Timeout: 5 * time.Second,
-		}
-
-		// Make request to proxy
-		req, err := http.NewRequest("GET", "http://localhost:8080/todos/1", nil)
-		if err != nil {
-			t.Fatalf("Failed to create request: %v", err)
-		}
-		// Override the Host header
-		req.Host = "jsonplaceholder.typicode.com"
-
-		// Make the request
-		resp, err := client.Do(req)
-		require.NoError(t, err)
-
-		body, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-		require.NoError(t, resp.Body.Close())
-
 		expectedResponse := `{
   "userId": 1,
   "id": 1,
   "title": "delectus aut autem",
   "completed": false
 }`
-		require.Equal(t, expectedResponse, string(body))
+		pt.ExpectAllowed("http://localhost:8080/todos/1", "jsonplaceholder.typicode.com", expectedResponse)
 	})
-
-	err = server.Stop()
-	require.NoError(t, err)
 }
 
 // TestProxyServerBasicHTTPS tests basic HTTPS request handling
 func TestProxyServerBasicHTTPS(t *testing.T) {
-	// Create test logger
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelError,
-	}))
+	pt := NewProxyTest(t,
+		WithCertManager("/tmp/boundary"),
+	).
+		Start()
+	defer pt.Stop()
 
-	// Create test rules (allow all for testing)
-	testRules, err := rulesengine.ParseAllowSpecs([]string{"method=*"})
-	if err != nil {
-		t.Fatalf("Failed to parse test rules: %v", err)
-	}
-
-	// Create rule engine
-	ruleEngine := rulesengine.NewRuleEngine(testRules, logger)
-
-	// Create mock auditor
-	auditor := &mockAuditor{}
-
-	currentUser, err := user.Current()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	uid, _ := strconv.Atoi(currentUser.Uid)
-	gid, _ := strconv.Atoi(currentUser.Gid)
-
-	// Create TLS certificate manager
-	certManager, err := boundary_tls.NewCertificateManager(boundary_tls.Config{
-		Logger:    logger,
-		ConfigDir: "/tmp/boundary",
-		Uid:       uid,
-		Gid:       gid,
-	})
-	require.NoError(t, err)
-
-	// Setup TLS to get cert path for jailer
-	tlsConfig, err := certManager.SetupTLSAndWriteCACert()
-	require.NoError(t, err)
-
-	// Create proxy server
-	server := NewProxyServer(Config{
-		HTTPPort:   8080,
-		RuleEngine: ruleEngine,
-		Auditor:    auditor,
-		Logger:     logger,
-		TLSConfig:  tlsConfig,
-	})
-
-	// Start server
-	err = server.Start()
-	require.NoError(t, err)
-
-	// Give server time to start
-	time.Sleep(100 * time.Millisecond)
-
-	// Test basic HTTPS request
 	t.Run("BasicHTTPSRequest", func(t *testing.T) {
-		// Create HTTP client
-		client := &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: true, // Skip cert verification for testing
-				},
-			},
-			Timeout: 5 * time.Second,
-		}
-
-		// Make request to proxy
-		req, err := http.NewRequest("GET", "https://localhost:8080/api/v2", nil)
-		if err != nil {
-			t.Fatalf("Failed to create request: %v", err)
-		}
-		// Override the Host header
-		req.Host = "dev.coder.com"
-
-		// Make the request
-		resp, err := client.Do(req)
-		require.NoError(t, err)
-
-		body, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-		require.NoError(t, resp.Body.Close())
-
 		expectedResponse := `{"message":"👋"}
 `
-		require.Equal(t, expectedResponse, string(body))
+		pt.ExpectAllowed("https://localhost:8080/api/v2", "dev.coder.com", expectedResponse)
 	})
-
-	err = server.Stop()
-	require.NoError(t, err)
 }
 
 // TestProxyServerCONNECT tests HTTP CONNECT method for HTTPS tunneling
