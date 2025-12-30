@@ -5,22 +5,32 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/user"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/coder/boundary/audit"
 	"github.com/coder/boundary/rulesengine"
 	boundary_tls "github.com/coder/boundary/tls"
 	"github.com/stretchr/testify/require"
 )
+
+// mockAuditor is a simple mock auditor for testing
+type mockAuditor struct{}
+
+func (m *mockAuditor) AuditRequest(req audit.Request) {
+	// No-op for testing
+}
 
 // ProxyTest is a high-level test framework for proxy tests
 type ProxyTest struct {
 	t              *testing.T
 	server         *Server
 	client         *http.Client
+	proxyClient    *http.Client
 	port           int
 	useCertManager bool
 	configDir      string
@@ -122,7 +132,7 @@ func (pt *ProxyTest) Start() *ProxyTest {
 	// Give server time to start
 	time.Sleep(pt.startupDelay)
 
-	// Create HTTP client
+	// Create HTTP client for direct proxy requests
 	pt.client = &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
@@ -130,6 +140,20 @@ func (pt *ProxyTest) Start() *ProxyTest {
 			},
 		},
 		Timeout: 5 * time.Second,
+	}
+
+	// Create HTTP client for proxy transport (implicit CONNECT)
+	proxyURL, err := url.Parse("http://localhost:" + strconv.Itoa(pt.port))
+	require.NoError(pt.t, err, "Failed to parse proxy URL")
+
+	pt.proxyClient = &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true, // Skip cert verification for testing
+			},
+		},
+		Timeout: 10 * time.Second,
 	}
 
 	return pt
@@ -173,6 +197,36 @@ func (pt *ProxyTest) ExpectAllowedContains(proxyURL, hostHeader, containsText st
 
 	resp, err := pt.client.Do(req)
 	require.NoError(pt.t, err, "Failed to make request")
+	defer resp.Body.Close() //nolint:errcheck
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(pt.t, err, "Failed to read response body")
+
+	require.Contains(pt.t, string(body), containsText, "Response does not contain expected text")
+}
+
+// ExpectAllowedViaProxy makes a request through the proxy using proxy transport (implicit CONNECT for HTTPS)
+// and expects it to be allowed with the given response body
+func (pt *ProxyTest) ExpectAllowedViaProxy(targetURL, expectedBody string) {
+	pt.t.Helper()
+
+	resp, err := pt.proxyClient.Get(targetURL)
+	require.NoError(pt.t, err, "Failed to make request via proxy")
+	defer resp.Body.Close() //nolint:errcheck
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(pt.t, err, "Failed to read response body")
+
+	require.Equal(pt.t, expectedBody, string(body), "Expected response body does not match")
+}
+
+// ExpectAllowedContainsViaProxy makes a request through the proxy using proxy transport (implicit CONNECT for HTTPS)
+// and expects it to be allowed, checking that response contains the given text
+func (pt *ProxyTest) ExpectAllowedContainsViaProxy(targetURL, containsText string) {
+	pt.t.Helper()
+
+	resp, err := pt.proxyClient.Get(targetURL)
+	require.NoError(pt.t, err, "Failed to make request via proxy")
 	defer resp.Body.Close() //nolint:errcheck
 
 	body, err := io.ReadAll(resp.Body)
