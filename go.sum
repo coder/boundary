@@ -30,6 +30,8 @@ github.com/coder/coder/v2 v2.10.1-0.20251229233131-7394ce04c8f6 h1:WwXxZpoUGXe5a
 github.com/coder/coder/v2 v2.10.1-0.20251229233131-7394ce04c8f6/go.mod h1:iA65DcJXRzXp6WWq6o7uqM3/f4cWbiPNgbbYE6v8gmU=
 github.com/coder/coder/v2 v2.10.1-0.20251230005801-d3d84126f2ef h1:6QnKfxXLred66Y6z1VjybkRL+kt85vFBlrvBZJ3qSE0=
 github.com/coder/coder/v2 v2.10.1-0.20251230005801-d3d84126f2ef/go.mod h1:iA65DcJXRzXp6WWq6o7uqM3/f4cWbiPNgbbYE6v8gmU=
+github.com/coder/coder/v2 v2.10.1-0.20251230181248-bd386fadbbf4 h1:DNpsI6U1bykBMPDIvau0k3wBRdYicr3ainhokdpEDLk=
+github.com/coder/coder/v2 v2.10.1-0.20251230181248-bd386fadbbf4/go.mod h1:iA65DcJXRzXp6WWq6o7uqM3/f4cWbiPNgbbYE6v8gmU=
 github.com/coder/pretty v0.0.0-20230908205945-e89ba86370e0 h1:3A0ES21Ke+FxEM8CXx9n47SZOKOpgSE1bbJzlE4qPVs=
 github.com/coder/pretty v0.0.0-20230908205945-e89ba86370e0/go.mod h1:5UuS2Ts+nTToAMeOjNlnHFkPahrtDkmpydBen/3wgZc=
 github.com/coder/serpent v0.12.0 h1:fUu3qVjeRvVy3DB/C2EFFvOctm+f2HKyckyfA86O63Q=
