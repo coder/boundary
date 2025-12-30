@@ -30,9 +30,15 @@ func RunParent(ctx context.Context, logger *slog.Logger, config config.AppConfig
 	stderrAuditor := audit.NewLogAuditor(logger)
 	auditors := []audit.Auditor{stderrAuditor}
 	if !config.DisableAuditLogs {
-		socketAuditor := audit.NewSocketAuditor(logger)
-		go socketAuditor.Loop(ctx)
-		auditors = append(auditors, socketAuditor)
+		if config.LogProxySocketPath != "" {
+			socketAuditor := audit.NewSocketAuditor(logger, config.LogProxySocketPath)
+			go socketAuditor.Loop(ctx)
+			auditors = append(auditors, socketAuditor)
+		} else {
+			logger.Error("Log proxy socket path undefined; audit logs will not be sent to agent")
+		}
+	} else {
+		logger.Warn("Audit logs are disabled")
 	}
 	auditor := audit.NewMultiAuditor(auditors...)
 

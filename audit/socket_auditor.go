@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"os"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -21,14 +20,6 @@ const (
 	// network I/O when an AI agent is actively making network requests.
 	defaultBatchSize          = 10
 	defaultBatchTimerDuration = 5 * time.Second
-
-	// defaultAuditSocketPath is the default path for the boundary log proxy server
-	// socket. Important: this is the same default path used by the Coder agent.
-	defaultAuditSocketPath = "/tmp/boundary-audit.sock"
-
-	// EnvAuditSocketPath is the environment variable that overrides the default socket path.
-	// Important: this is the same variable name used by the Coder agent.
-	EnvAuditSocketPath = "CODER_AGENT_BOUNDARY_LOG_PROXY_SOCKET_PATH"
 )
 
 // SocketAuditor implements the Auditor interface. It sends logs to the
@@ -42,6 +33,7 @@ type SocketAuditor struct {
 	logCh              chan *agentproto.BoundaryLog
 	batchSize          int
 	batchTimerDuration time.Duration
+	socketPath         string
 
 	// onFlushAttempt is called after each flush attempt (intended for testing).
 	onFlushAttempt func()
@@ -50,20 +42,21 @@ type SocketAuditor struct {
 // NewSocketAuditor creates a new SocketAuditor that sends logs to the agent's
 // boundary log proxy socket after SocketAuditor.Loop is called. The socket path
 // is read from EnvAuditSocketPath, falling back to defaultAuditSocketPath.
-func NewSocketAuditor(logger *slog.Logger) *SocketAuditor {
-	socketPath := os.Getenv(EnvAuditSocketPath)
-	if socketPath == "" {
-		socketPath = defaultAuditSocketPath
-	}
+func NewSocketAuditor(logger *slog.Logger, socketPath string) *SocketAuditor {
+	// This channel buffer size intends to allow enough buffering for bursty
+	// AI agent network requests while a batch is being sent to the workspace
+	// agent.
+	const logChBufSize = 2 * defaultBatchSize
 
 	return &SocketAuditor{
 		dial: func() (net.Conn, error) {
 			return net.Dial("unix", socketPath)
 		},
 		logger:             logger,
-		logCh:              make(chan *agentproto.BoundaryLog, 2*defaultBatchSize),
+		logCh:              make(chan *agentproto.BoundaryLog, logChBufSize),
 		batchSize:          defaultBatchSize,
 		batchTimerDuration: defaultBatchTimerDuration,
+		socketPath:         socketPath,
 	}
 }
 
@@ -139,7 +132,7 @@ func (s *SocketAuditor) Loop(ctx context.Context) {
 		var err error
 		conn, err = s.dial()
 		if err != nil {
-			s.logger.Warn("failed to connect to audit socket", "error", err)
+			s.logger.Warn("failed to connect to audit socket", "path", s.socketPath, "error", err)
 			conn = nil
 		}
 	}
@@ -175,22 +168,30 @@ func (s *SocketAuditor) Loop(ctx context.Context) {
 		connect()
 		if conn == nil {
 			// No connection: logs will be retried on next flush.
-			s.logger.Warn("no connection to flush; resetting batch timer")
+			s.logger.Warn("no connection to flush; resetting batch timer",
+				"duration_sec", s.batchTimerDuration.Seconds(),
+				"batch_size", len(batch))
 			// Reset the timer so we aren't stuck waiting for the batch to fill
-			// before the next attempt.
+			// or a new log to arrive before the next attempt.
 			t.Reset(s.batchTimerDuration)
 			return
 		}
 
 		if err := flush(conn, batch); err != nil {
 			if err.permanent {
-				s.logger.Warn("dropping batch due to data error on flush attempt", "error", err)
 				// Data error: discard batch to avoid infinite retries.
+				s.logger.Warn("dropping batch due to data error on flush attempt",
+					"error", err, "batch_size", len(batch))
 				clearBatch()
 			} else {
-				// Network error: close connection but keep batch for a future retry.
-				s.logger.Warn("failed to flush audit logs; will retry", "error", err)
+				// Network error: close connection but keep batch and retry.
+				s.logger.Warn("failed to flush audit logs; resetting batch timer to reconnect and retry",
+					"error", err, "duration_sec", s.batchTimerDuration.Seconds(),
+					"batch_size", len(batch))
 				closeConn()
+				// Reset the timer so we aren't stuck waiting for the batch to fill
+				// or a new log to arrive before the next attempt.
+				t.Reset(s.batchTimerDuration)
 			}
 			return
 		}
