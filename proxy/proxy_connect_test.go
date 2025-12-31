@@ -74,5 +74,17 @@ func TestProxyServerExplicitCONNECT(t *testing.T) {
   "completed": false
 }`
 		require.Equal(t, expectedResponse2, string(body2), "Second response does not match")
+
+		// Negative test: Try to send request to a blocked domain over the same tunnel
+		t.Run("BlockedDomainOverSameTunnel", func(t *testing.T) {
+			err := tunnel.sendRequestAndExpectDeny("example.com", "/")
+			require.NoError(t, err, "Expected request to be blocked")
+		})
+
+		// Negative test: Try to send request to another blocked domain
+		t.Run("AnotherBlockedDomainOverSameTunnel", func(t *testing.T) {
+			err := tunnel.sendRequestAndExpectDeny("github.com", "/")
+			require.NoError(t, err, "Expected request to be blocked")
+		})
 	})
 }
