@@ -318,7 +318,7 @@ func (tunnel *explicitCONNECTTunnel) sendRequest(targetHost, path string) ([]byt
 	if err != nil {
 		return nil, err
 	}
-	defer httpResp.Body.Close()
+	defer httpResp.Body.Close() //nolint:errcheck
 
 	body, err := io.ReadAll(httpResp.Body)
 	if err != nil {
