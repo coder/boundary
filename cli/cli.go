@@ -9,6 +9,7 @@ import (
 	"github.com/coder/boundary/config"
 	"github.com/coder/boundary/log"
 	"github.com/coder/boundary/run"
+	"github.com/coder/coder/v2/agent/boundarylogproxy"
 	"github.com/coder/serpent"
 )
 
@@ -136,10 +137,16 @@ func BaseCommand() *serpent.Command {
 			{
 				Flag:        "log-proxy-socket-path",
 				Description: "Path to the socket where the boundary log proxy server listens for audit logs.",
-				Default:     "/tmp/boundary-audit.sock",                   // Important: this is the same default path used by the workspace agent.
-				Env:         "CODER_AGENT_BOUNDARY_LOG_PROXY_SOCKET_PATH", // Important: this is the same variable name used by the workspace agent.
-				Value:       &cliConfig.LogProxySocketPath,
-				YAML:        "", // CLI only, not loaded from YAML
+				// Important: this default must be the same default path used by the
+				// workspace agent to ensure agreement of the default socket path without
+				// explicit configuration.
+				Default: boundarylogproxy.DefaultSocketPath(),
+				// Important: this must be the same variable name used by the workspace agent
+				// to allow a single environment variable to configure both boundary and the
+				// workspace agent.
+				Env:   "CODER_AGENT_BOUNDARY_LOG_PROXY_SOCKET_PATH",
+				Value: &cliConfig.LogProxySocketPath,
+				YAML:  "", // CLI only, not loaded from YAML
 			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
