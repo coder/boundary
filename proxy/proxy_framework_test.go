@@ -39,6 +39,7 @@ type ProxyTest struct {
 	useCertManager bool
 	configDir      string
 	startupDelay   time.Duration
+	allowedRules   []string
 }
 
 // ProxyTestOption is a function that configures ProxyTest
@@ -52,6 +53,7 @@ func NewProxyTest(t *testing.T, opts ...ProxyTestOption) *ProxyTest {
 		useCertManager: false,
 		configDir:      "/tmp/boundary",
 		startupDelay:   100 * time.Millisecond,
+		allowedRules:   []string{}, // Default: deny all (no rules = deny by default)
 	}
 
 	// Apply options
@@ -84,6 +86,20 @@ func WithStartupDelay(delay time.Duration) ProxyTestOption {
 	}
 }
 
+// WithAllowedDomain adds an allowed domain rule
+func WithAllowedDomain(domain string) ProxyTestOption {
+	return func(pt *ProxyTest) {
+		pt.allowedRules = append(pt.allowedRules, fmt.Sprintf("domain=%s", domain))
+	}
+}
+
+// WithAllowedRule adds a full allow rule (e.g., "method=GET domain=example.com path=/api/*")
+func WithAllowedRule(rule string) ProxyTestOption {
+	return func(pt *ProxyTest) {
+		pt.allowedRules = append(pt.allowedRules, rule)
+	}
+}
+
 // Start starts the proxy server
 func (pt *ProxyTest) Start() *ProxyTest {
 	pt.t.Helper()
@@ -92,7 +108,7 @@ func (pt *ProxyTest) Start() *ProxyTest {
 		Level: slog.LevelError,
 	}))
 
-	testRules, err := rulesengine.ParseAllowSpecs([]string{"method=*"})
+	testRules, err := rulesengine.ParseAllowSpecs(pt.allowedRules)
 	require.NoError(pt.t, err, "Failed to parse test rules")
 
 	ruleEngine := rulesengine.NewRuleEngine(testRules, logger)
@@ -207,6 +223,43 @@ func (pt *ProxyTest) ExpectAllowedContains(proxyURL, hostHeader, containsText st
 	require.NoError(pt.t, err, "Failed to read response body")
 
 	require.Contains(pt.t, string(body), containsText, "Response does not contain expected text")
+}
+
+// ExpectDeny makes a request through the proxy and expects it to be denied
+func (pt *ProxyTest) ExpectDeny(proxyURL, hostHeader string) {
+	pt.t.Helper()
+
+	req, err := http.NewRequest("GET", proxyURL, nil)
+	require.NoError(pt.t, err, "Failed to create request")
+	req.Host = hostHeader
+
+	resp, err := pt.client.Do(req)
+	require.NoError(pt.t, err, "Failed to make request")
+	defer resp.Body.Close() //nolint:errcheck
+
+	require.Equal(pt.t, http.StatusForbidden, resp.StatusCode, "Expected 403 Forbidden status")
+	
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(pt.t, err, "Failed to read response body")
+
+	require.Contains(pt.t, string(body), "Request Blocked by Boundary", "Expected request to be blocked")
+}
+
+// ExpectDenyViaProxy makes a request through the proxy using proxy transport (implicit CONNECT for HTTPS)
+// and expects it to be denied
+func (pt *ProxyTest) ExpectDenyViaProxy(targetURL string) {
+	pt.t.Helper()
+
+	resp, err := pt.proxyClient.Get(targetURL)
+	require.NoError(pt.t, err, "Failed to make request via proxy")
+	defer resp.Body.Close() //nolint:errcheck
+
+	require.Equal(pt.t, http.StatusForbidden, resp.StatusCode, "Expected 403 Forbidden status")
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(pt.t, err, "Failed to read response body")
+
+	require.Contains(pt.t, string(body), "Request Blocked by Boundary", "Expected request to be blocked")
 }
 
 // ExpectAllowedViaProxy makes a request through the proxy using proxy transport (implicit CONNECT for HTTPS)
@@ -326,6 +379,41 @@ func (tunnel *explicitCONNECTTunnel) sendRequest(targetHost, path string) ([]byt
 	}
 
 	return body, nil
+}
+
+// sendRequestAndExpectDeny sends an HTTP request over the tunnel and expects it to be denied
+func (tunnel *explicitCONNECTTunnel) sendRequestAndExpectDeny(targetHost, path string) error {
+	// Send HTTP request over the tunnel
+	httpReq := "GET " + path + " HTTP/1.1\r\n" +
+		"Host: " + targetHost + "\r\n" +
+		"Connection: keep-alive\r\n" +
+		"\r\n"
+	_, err := tunnel.tlsConn.Write([]byte(httpReq))
+	if err != nil {
+		return err
+	}
+
+	// Read HTTP response
+	httpResp, err := http.ReadResponse(tunnel.reader, nil)
+	if err != nil {
+		return err
+	}
+	defer httpResp.Body.Close() //nolint:errcheck
+
+	if httpResp.StatusCode != http.StatusForbidden {
+		return fmt.Errorf("expected 403 Forbidden, got %d", httpResp.StatusCode)
+	}
+
+	body, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return err
+	}
+
+	if !strings.Contains(string(body), "Request Blocked by Boundary") {
+		return fmt.Errorf("expected blocked response, got: %s", string(body))
+	}
+
+	return nil
 }
 
 // close closes the tunnel connection
