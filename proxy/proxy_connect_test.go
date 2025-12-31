@@ -47,25 +47,28 @@ func TestProxyServerExplicitCONNECT(t *testing.T) {
 
 	t.Run("MultipleRequestsOverExplicitCONNECT", func(t *testing.T) {
 		// Establish explicit CONNECT tunnel
+		// Note: The CONNECT target is just the tunnel endpoint. The actual destination
+		// for each request is determined by the Host header in the HTTP request inside the tunnel.
 		tunnel, err := pt.establishExplicitCONNECT("dev.coder.com:443")
 		require.NoError(t, err, "Failed to establish CONNECT tunnel")
 		defer tunnel.close()
 
-		// Send first request over the tunnel
+		// Send first request to dev.coder.com over the tunnel
 		body1, err := tunnel.sendRequest("dev.coder.com", "/api/v2")
 		require.NoError(t, err, "Failed to send first request")
 		expectedResponse1 := `{"message":"👋"}
 `
 		require.Equal(t, expectedResponse1, string(body1), "First response does not match")
 
-		// Send second request over the same tunnel
-		body2, err := tunnel.sendRequest("dev.coder.com", "/api/v2")
+		// Send second request to a different domain (jsonplaceholder.typicode.com) over the same tunnel
+		body2, err := tunnel.sendRequest("jsonplaceholder.typicode.com", "/todos/1")
 		require.NoError(t, err, "Failed to send second request")
-		require.Equal(t, expectedResponse1, string(body2), "Second response does not match")
-
-		// Send third request over the same tunnel
-		body3, err := tunnel.sendRequest("dev.coder.com", "/api/v2")
-		require.NoError(t, err, "Failed to send third request")
-		require.Equal(t, expectedResponse1, string(body3), "Third response does not match")
+		expectedResponse2 := `{
+  "userId": 1,
+  "id": 1,
+  "title": "delectus aut autem",
+  "completed": false
+}`
+		require.Equal(t, expectedResponse2, string(body2), "Second response does not match")
 	})
 }
