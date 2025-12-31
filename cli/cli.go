@@ -130,6 +130,7 @@ func BaseCommand() *serpent.Command {
 			},
 			{
 				Flag:        "disable-audit-logs",
+				Env:         "DISABLE_AUDIT_LOGS",
 				Description: "Disable sending of audit logs to the workspace agent when set to true.",
 				Value:       &cliConfig.DisableAuditLogs,
 				YAML:        "disable_audit_logs",
