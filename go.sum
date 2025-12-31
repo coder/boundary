@@ -32,6 +32,8 @@ github.com/coder/coder/v2 v2.10.1-0.20251230005801-d3d84126f2ef h1:6QnKfxXLred66
 github.com/coder/coder/v2 v2.10.1-0.20251230005801-d3d84126f2ef/go.mod h1:iA65DcJXRzXp6WWq6o7uqM3/f4cWbiPNgbbYE6v8gmU=
 github.com/coder/coder/v2 v2.10.1-0.20251230181248-bd386fadbbf4 h1:DNpsI6U1bykBMPDIvau0k3wBRdYicr3ainhokdpEDLk=
 github.com/coder/coder/v2 v2.10.1-0.20251230181248-bd386fadbbf4/go.mod h1:iA65DcJXRzXp6WWq6o7uqM3/f4cWbiPNgbbYE6v8gmU=
+github.com/coder/coder/v2 v2.10.1-0.20251231172511-ca02d7924150 h1:2ItVHMbGyVYpUEGtbTJn7USz2RoB90MW1B66cmfadWY=
+github.com/coder/coder/v2 v2.10.1-0.20251231172511-ca02d7924150/go.mod h1:iA65DcJXRzXp6WWq6o7uqM3/f4cWbiPNgbbYE6v8gmU=
 github.com/coder/pretty v0.0.0-20230908205945-e89ba86370e0 h1:3A0ES21Ke+FxEM8CXx9n47SZOKOpgSE1bbJzlE4qPVs=
 github.com/coder/pretty v0.0.0-20230908205945-e89ba86370e0/go.mod h1:5UuS2Ts+nTToAMeOjNlnHFkPahrtDkmpydBen/3wgZc=
 github.com/coder/serpent v0.12.0 h1:fUu3qVjeRvVy3DB/C2EFFvOctm+f2HKyckyfA86O63Q=
