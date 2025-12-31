@@ -127,6 +127,20 @@ func BaseCommand() *serpent.Command {
 				Value:       &cliConfig.JailType,
 				YAML:        "jail_type",
 			},
+			{
+				Flag:        "disable-audit-logs",
+				Description: "Disable sending of audit logs to the workspace agent when set to true.",
+				Value:       &cliConfig.DisableAuditLogs,
+				YAML:        "disable_audit_logs",
+			},
+			{
+				Flag:        "log-proxy-socket-path",
+				Description: "Path to the socket where the boundary log proxy server listens for audit logs.",
+				Default:     "/tmp/boundary-audit.sock",                   // Important: this is the same default path used by the workspace agent.
+				Env:         "CODER_AGENT_BOUNDARY_LOG_PROXY_SOCKET_PATH", // Important: this is the same variable name used by the workspace agent.
+				Value:       &cliConfig.LogProxySocketPath,
+				YAML:        "", // CLI only, not loaded from YAML
+			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
 			appConfig, err := config.NewAppConfigFromCliConfig(cliConfig, inv.Args)

@@ -26,8 +26,20 @@ func RunParent(ctx context.Context, logger *slog.Logger, config config.AppConfig
 	// Create rule engine
 	ruleEngine := rulesengine.NewRuleEngine(allowRules, logger)
 
-	// Create auditor
-	auditor := audit.NewLogAuditor(logger)
+	// Create auditors
+	stderrAuditor := audit.NewLogAuditor(logger)
+	auditors := []audit.Auditor{stderrAuditor}
+	if !config.DisableAuditLogs {
+		if config.LogProxySocketPath == "" {
+			return fmt.Errorf("log proxy socket path is undefined")
+		}
+		socketAuditor := audit.NewSocketAuditor(logger, config.LogProxySocketPath)
+		go socketAuditor.Loop(ctx)
+		auditors = append(auditors, socketAuditor)
+	} else {
+		logger.Warn("Audit logs are disabled")
+	}
+	auditor := audit.NewMultiAuditor(auditors...)
 
 	// Create TLS certificate manager
 	certManager, err := tls.NewCertificateManager(tls.Config{
