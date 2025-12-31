@@ -1,14 +1,18 @@
 package proxy
 
 import (
+	"bufio"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/user"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -233,4 +237,98 @@ func (pt *ProxyTest) ExpectAllowedContainsViaProxy(targetURL, containsText strin
 	require.NoError(pt.t, err, "Failed to read response body")
 
 	require.Contains(pt.t, string(body), containsText, "Response does not contain expected text")
+}
+
+// explicitCONNECTTunnel represents an established CONNECT tunnel
+type explicitCONNECTTunnel struct {
+	tlsConn *tls.Conn
+	reader  *bufio.Reader
+}
+
+// establishExplicitCONNECT establishes a CONNECT tunnel and returns a tunnel object
+// targetHost should be in format "hostname:port" (e.g., "dev.coder.com:443")
+func (pt *ProxyTest) establishExplicitCONNECT(targetHost string) (*explicitCONNECTTunnel, error) {
+	pt.t.Helper()
+
+	// Extract hostname for TLS ServerName (remove port if present)
+	hostParts := strings.Split(targetHost, ":")
+	serverName := hostParts[0]
+
+	// Connect to proxy
+	conn, err := net.Dial("tcp", "localhost:"+strconv.Itoa(pt.port))
+	if err != nil {
+		return nil, err
+	}
+
+	// Send explicit CONNECT request
+	connectReq := "CONNECT " + targetHost + " HTTP/1.1\r\n" +
+		"Host: " + targetHost + "\r\n" +
+		"\r\n"
+	_, err = conn.Write([]byte(connectReq))
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+
+	// Read CONNECT response
+	reader := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(reader, nil)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	if resp.StatusCode != 200 {
+		conn.Close()
+		return nil, fmt.Errorf("CONNECT failed with status: %d", resp.StatusCode)
+	}
+
+	// Wrap connection with TLS client
+	tlsConn := tls.Client(conn, &tls.Config{
+		InsecureSkipVerify: true,
+		ServerName:         serverName,
+	})
+
+	// Perform TLS handshake
+	err = tlsConn.Handshake()
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+
+	return &explicitCONNECTTunnel{
+		tlsConn: tlsConn,
+		reader:  bufio.NewReader(tlsConn),
+	}, nil
+}
+
+// sendRequest sends an HTTP request over the tunnel and returns the response body
+func (tunnel *explicitCONNECTTunnel) sendRequest(targetHost, path string) ([]byte, error) {
+	// Send HTTP request over the tunnel
+	httpReq := "GET " + path + " HTTP/1.1\r\n" +
+		"Host: " + targetHost + "\r\n" +
+		"Connection: keep-alive\r\n" +
+		"\r\n"
+	_, err := tunnel.tlsConn.Write([]byte(httpReq))
+	if err != nil {
+		return nil, err
+	}
+
+	// Read HTTP response
+	httpResp, err := http.ReadResponse(tunnel.reader, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer httpResp.Body.Close()
+
+	body, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return body, nil
+}
+
+// close closes the tunnel connection
+func (tunnel *explicitCONNECTTunnel) close() error {
+	return tunnel.tlsConn.Close()
 }
