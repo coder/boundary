@@ -51,7 +51,7 @@ func TestProxyServerExplicitCONNECT(t *testing.T) {
 		// for each request is determined by the Host header in the HTTP request inside the tunnel.
 		tunnel, err := pt.establishExplicitCONNECT("dev.coder.com:443")
 		require.NoError(t, err, "Failed to establish CONNECT tunnel")
-		defer tunnel.close()
+		defer tunnel.close() //nolint:errcheck
 
 		// Send first request to dev.coder.com over the tunnel
 		body1, err := tunnel.sendRequest("dev.coder.com", "/api/v2")

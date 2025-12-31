@@ -266,7 +266,7 @@ func (pt *ProxyTest) establishExplicitCONNECT(targetHost string) (*explicitCONNE
 		"\r\n"
 	_, err = conn.Write([]byte(connectReq))
 	if err != nil {
-		conn.Close()
+		conn.Close() //nolint:errcheck
 		return nil, err
 	}
 
@@ -274,11 +274,11 @@ func (pt *ProxyTest) establishExplicitCONNECT(targetHost string) (*explicitCONNE
 	reader := bufio.NewReader(conn)
 	resp, err := http.ReadResponse(reader, nil)
 	if err != nil {
-		conn.Close()
+		conn.Close() //nolint:errcheck
 		return nil, err
 	}
 	if resp.StatusCode != 200 {
-		conn.Close()
+		conn.Close() //nolint:errcheck
 		return nil, fmt.Errorf("CONNECT failed with status: %d", resp.StatusCode)
 	}
 
@@ -291,7 +291,7 @@ func (pt *ProxyTest) establishExplicitCONNECT(targetHost string) (*explicitCONNE
 	// Perform TLS handshake
 	err = tlsConn.Handshake()
 	if err != nil {
-		conn.Close()
+		conn.Close() //nolint:errcheck
 		return nil, err
 	}
 
