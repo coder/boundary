@@ -11,6 +11,8 @@ import (
 func TestProxyServerImplicitCONNECT(t *testing.T) {
 	pt := NewProxyTest(t,
 		WithCertManager("/tmp/boundary_connect_test"),
+		WithAllowedDomain("dev.coder.com"),
+		WithAllowedDomain("jsonplaceholder.typicode.com"),
 	).
 		Start()
 	defer pt.Stop()
@@ -41,6 +43,8 @@ func TestProxyServerImplicitCONNECT(t *testing.T) {
 func TestProxyServerExplicitCONNECT(t *testing.T) {
 	pt := NewProxyTest(t,
 		WithCertManager("/tmp/boundary_explicit_connect_test"),
+		WithAllowedDomain("dev.coder.com"),
+		WithAllowedDomain("jsonplaceholder.typicode.com"),
 	).
 		Start()
 	defer pt.Stop()

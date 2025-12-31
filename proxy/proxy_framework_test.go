@@ -53,7 +53,7 @@ func NewProxyTest(t *testing.T, opts ...ProxyTestOption) *ProxyTest {
 		useCertManager: false,
 		configDir:      "/tmp/boundary",
 		startupDelay:   100 * time.Millisecond,
-		allowedRules:   []string{"method=*"}, // Default: allow all methods, all domains, all paths
+		allowedRules:   []string{}, // Default: deny all (no rules = deny by default)
 	}
 
 	// Apply options

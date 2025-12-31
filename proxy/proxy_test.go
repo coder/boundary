@@ -6,7 +6,9 @@ import (
 
 // TestProxyServerBasicHTTP tests basic HTTP request handling
 func TestProxyServerBasicHTTP(t *testing.T) {
-	pt := NewProxyTest(t).
+	pt := NewProxyTest(t,
+		WithAllowedDomain("jsonplaceholder.typicode.com"),
+	).
 		Start()
 	defer pt.Stop()
 
@@ -25,6 +27,7 @@ func TestProxyServerBasicHTTP(t *testing.T) {
 func TestProxyServerBasicHTTPS(t *testing.T) {
 	pt := NewProxyTest(t,
 		WithCertManager("/tmp/boundary"),
+		WithAllowedDomain("dev.coder.com"),
 	).
 		Start()
 	defer pt.Stop()
