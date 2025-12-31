@@ -39,6 +39,7 @@ type ProxyTest struct {
 	useCertManager bool
 	configDir      string
 	startupDelay   time.Duration
+	allowedRules   []string
 }
 
 // ProxyTestOption is a function that configures ProxyTest
@@ -52,6 +53,7 @@ func NewProxyTest(t *testing.T, opts ...ProxyTestOption) *ProxyTest {
 		useCertManager: false,
 		configDir:      "/tmp/boundary",
 		startupDelay:   100 * time.Millisecond,
+		allowedRules:   []string{"method=*"}, // Default: allow all methods, all domains, all paths
 	}
 
 	// Apply options
@@ -84,6 +86,20 @@ func WithStartupDelay(delay time.Duration) ProxyTestOption {
 	}
 }
 
+// WithAllowedDomain adds an allowed domain rule
+func WithAllowedDomain(domain string) ProxyTestOption {
+	return func(pt *ProxyTest) {
+		pt.allowedRules = append(pt.allowedRules, fmt.Sprintf("domain=%s", domain))
+	}
+}
+
+// WithAllowedRule adds a full allow rule (e.g., "method=GET domain=example.com path=/api/*")
+func WithAllowedRule(rule string) ProxyTestOption {
+	return func(pt *ProxyTest) {
+		pt.allowedRules = append(pt.allowedRules, rule)
+	}
+}
+
 // Start starts the proxy server
 func (pt *ProxyTest) Start() *ProxyTest {
 	pt.t.Helper()
@@ -92,7 +108,7 @@ func (pt *ProxyTest) Start() *ProxyTest {
 		Level: slog.LevelError,
 	}))
 
-	testRules, err := rulesengine.ParseAllowSpecs([]string{"method=*"})
+	testRules, err := rulesengine.ParseAllowSpecs(pt.allowedRules)
 	require.NoError(pt.t, err, "Failed to parse test rules")
 
 	ruleEngine := rulesengine.NewRuleEngine(testRules, logger)
