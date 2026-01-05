@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 
 	"github.com/coder/boundary/audit"
 	"github.com/coder/boundary/config"
@@ -33,11 +34,27 @@ func RunParent(ctx context.Context, logger *slog.Logger, config config.AppConfig
 		if config.LogProxySocketPath == "" {
 			return fmt.Errorf("log proxy socket path is undefined")
 		}
-		socketAuditor := audit.NewSocketAuditor(logger, config.LogProxySocketPath)
-		go socketAuditor.Loop(ctx)
-		auditors = append(auditors, socketAuditor)
+		// Since boundary is separately versioned from a Coder deployment, it's possible
+		// Coder is on an older version that will not create the socket and listen for
+		// the audit logs. Here we check for the socket to determine if the workspace
+		// agent is on a new enough version to prevent boundary application log spam from
+		// trying to connect to the agent. This assumes the agent will run and start the
+		// log proxy server before boundary runs.
+		_, err := os.Stat(config.LogProxySocketPath)
+		if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to stat log proxy socket: %v", err)
+		}
+		agentWillProxy := !os.IsNotExist(err)
+		if agentWillProxy {
+			socketAuditor := audit.NewSocketAuditor(logger, config.LogProxySocketPath)
+			go socketAuditor.Loop(ctx)
+			auditors = append(auditors, socketAuditor)
+		} else {
+			logger.Warn("Audit logs are disabled; workspace agent has not created log proxy socket",
+				"socket", config.LogProxySocketPath)
+		}
 	} else {
-		logger.Warn("Audit logs are disabled")
+		logger.Warn("Audit logs are disabled by configuration")
 	}
 	auditor := audit.NewMultiAuditor(auditors...)
 
