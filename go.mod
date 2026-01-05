@@ -4,7 +4,7 @@ go 1.24.10
 
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3
-	github.com/coder/coder/v2 v2.10.1-0.20251231181010-05049cdc1b61
+	github.com/coder/coder/v2 v2.10.1-0.20260105154308-e10fceb23c25
 	github.com/coder/serpent v0.12.0
 	github.com/landlock-lsm/go-landlock v0.0.0-20251103212306-430f8e5cd97c
 	github.com/stretchr/testify v1.11.1
