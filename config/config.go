@@ -12,6 +12,7 @@ type JailType string
 const (
 	NSJailType   JailType = "nsjail"
 	LandjailType JailType = "landjail"
+	NoJailType   JailType = "nojail"
 )
 
 func NewJailTypeFromString(str string) (JailType, error) {
@@ -20,6 +21,8 @@ func NewJailTypeFromString(str string) (JailType, error) {
 		return NSJailType, nil
 	case "landjail":
 		return LandjailType, nil
+	case "nojail":
+		return NoJailType, nil
 	default:
 		return NSJailType, fmt.Errorf("invalid JailType: %s", str)
 	}
