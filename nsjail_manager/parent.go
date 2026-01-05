@@ -28,7 +28,10 @@ func RunParent(ctx context.Context, logger *slog.Logger, config config.AppConfig
 	ruleEngine := rulesengine.NewRuleEngine(allowRules, logger)
 
 	// Create auditor
-	auditor := audit.NewLogAuditor(logger)
+	auditor, err := audit.SetupAuditor(ctx, logger, config.DisableAuditLogs, config.LogProxySocketPath)
+	if err != nil {
+		return fmt.Errorf("failed to setup auditor: %v", err)
+	}
 
 	// Create TLS certificate manager
 	certManager, err := tls.NewCertificateManager(tls.Config{
