@@ -28,14 +28,8 @@ func (p *Server) handleCONNECT(conn net.Conn, req *http.Request) {
 
 // handleCONNECTTunnel handles the tunnel after CONNECT is established
 // It decrypts TLS traffic and processes each HTTP request separately
+// Note: The connection is closed by handleHTTPConnection's defer, so we don't close it here
 func (p *Server) handleCONNECTTunnel(conn net.Conn) {
-	defer func() {
-		err := conn.Close()
-		if err != nil {
-			p.logger.Error("Failed to close CONNECT tunnel", "error", err)
-		}
-	}()
-
 	// Wrap connection with TLS server to decrypt traffic
 	tlsConn := tls.Server(conn, p.tlsConfig)
 
