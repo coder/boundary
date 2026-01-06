@@ -110,11 +110,11 @@ func (l *LinuxJail) ConfigureHostNsCommunication(pidInt int) error {
 		// This isolates the interface so that it becomes visible only inside the
 		// jail's netns. From this point on, the jail will configure its end of
 		// the veth pair (IP address, routes, etc.) independently of the host.
-		{
+		newCommand(
 			"Move jail-side veth into network namespace",
 			exec.Command("ip", "link", "set", l.vethJailName, "netns", PID),
 			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
-		},
+		),
 	})
 	if err := runner.run(); err != nil {
 		return err
