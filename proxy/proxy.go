@@ -223,7 +223,7 @@ func (p *Server) handleHTTPConnection(conn net.Conn) {
 		return
 	}
 
-	p.logger.Debug("🌐 HTTP Request: %s %s", req.Method, req.URL.String())
+	p.logger.Debug("🌐 HTTP Request", "method", req.Method, "url", req.URL.String())
 	p.processHTTPRequest(conn, req, false)
 }
 
@@ -261,13 +261,24 @@ func (p *Server) processHTTPRequest(conn net.Conn, req *http.Request, https bool
 	p.logger.Debug("   Host", "host", req.Host)
 	p.logger.Debug("   User-Agent", "user-agent", req.Header.Get("User-Agent"))
 
-	// Check if request should be allowed
-	result := p.ruleEngine.Evaluate(req.Method, req.Host+req.URL.String())
+	// Construct fully qualified URL for rule evaluation and auditing.
+	// In boundary's normal transparent proxy operation, req.URL only contains
+	// the path since clients don't know they're going through a proxy.
+	// When clients explicitly configure a proxy, req.URL contains the full URL.
+	fullURL := req.URL.String()
+	if req.URL.Scheme == "" {
+		scheme := "http"
+		if https {
+			scheme = "https"
+		}
+		fullURL = scheme + "://" + req.Host + fullURL
+	}
 
-	// Audit the request
+	result := p.ruleEngine.Evaluate(req.Method, fullURL)
+
 	p.auditor.AuditRequest(audit.Request{
 		Method:  req.Method,
-		URL:     req.URL.String(),
+		URL:     fullURL,
 		Host:    req.Host,
 		Allowed: result.Allowed,
 		Rule:    result.Rule,
