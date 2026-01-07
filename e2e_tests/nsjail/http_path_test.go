@@ -97,3 +97,41 @@ func TestHTTPPathWildCardSymbol(t *testing.T) {
 		nt.ExpectDeny("https://dev.coder.com/api")
 	})
 }
+
+func TestHTTPMultiPath(t *testing.T) {
+	// Create and configure nsjail test
+	nt := NewNSJailTest(t,
+		WithNSJailAllowedRule("domain=jsonplaceholder.typicode.com path=/todos/1,/todos/2"),
+		WithNSJailLogLevel("debug"),
+	).
+		Build().
+		Start()
+
+	// Ensure cleanup
+	defer nt.Stop()
+
+	// Test allowed HTTP request
+	t.Run("HTTPRequestThroughBoundary", func(t *testing.T) {
+		expectedResponse := `{
+  "userId": 1,
+  "id": 1,
+  "title": "delectus aut autem",
+  "completed": false
+}`
+		nt.ExpectAllowed("http://jsonplaceholder.typicode.com/todos/1", expectedResponse)
+	})
+
+	t.Run("HTTPRequestThroughBoundary", func(t *testing.T) {
+		expectedResponse := `{
+  "userId": 1,
+  "id": 2,
+  "title": "quis ut nam facilis et officia qui",
+  "completed": false
+}`
+		nt.ExpectAllowed("http://jsonplaceholder.typicode.com/todos/2", expectedResponse)
+	})
+
+	t.Run("HTTPRequestThroughBoundary", func(t *testing.T) {
+		nt.ExpectDeny("http://jsonplaceholder.typicode.com/todos/3")
+	})
+}

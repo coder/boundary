@@ -997,6 +997,16 @@ func TestParseAllowRule(t *testing.T) {
 			expectedRule: Rule{},
 			expectError:  true,
 		},
+		{
+			name:  "multipath",
+			input: "domain=jsonplaceholder.typicode.com path=/api/v1,/api/v2",
+			expectedRule: Rule{
+				Raw:         "domain=jsonplaceholder.typicode.com path=/api/v1,/api/v2",
+				PathPattern: [][]string{{"api", "v1"}, {"api", "v2"}},
+				HostPattern: []string{"jsonplaceholder", "typicode", "com"},
+			},
+			expectError: false,
+		},
 	}
 
 	for _, tt := range tests {

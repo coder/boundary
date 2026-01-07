@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/coder/serpent"
+	"github.com/spf13/pflag"
 )
 
 // JailType represents the type of jail to use for network isolation
@@ -25,10 +27,38 @@ func NewJailTypeFromString(str string) (JailType, error) {
 	}
 }
 
+// AllowStringsArray is a custom type that implements pflag.Value to support
+// repeatable --allow flags without splitting on commas. This allows comma-separated
+// paths within a single allow rule (e.g., "path=/todos/1,/todos/2").
+type AllowStringsArray []string
+
+var _ pflag.Value = (*AllowStringsArray)(nil)
+
+// Set implements pflag.Value. It appends the value to the slice without splitting on commas.
+func (a *AllowStringsArray) Set(value string) error {
+	*a = append(*a, value)
+	return nil
+}
+
+// String implements pflag.Value.
+func (a AllowStringsArray) String() string {
+	return strings.Join(a, ",")
+}
+
+// Type implements pflag.Value.
+func (a AllowStringsArray) Type() string {
+	return "string"
+}
+
+// Value returns the underlying slice of strings.
+func (a AllowStringsArray) Value() []string {
+	return []string(a)
+}
+
 type CliConfig struct {
 	Config                           serpent.YAMLConfigPath `yaml:"-"`
 	AllowListStrings                 serpent.StringArray    `yaml:"allowlist"` // From config file
-	AllowStrings                     serpent.StringArray    `yaml:"-"`         // From CLI flags only
+	AllowStrings                     AllowStringsArray      `yaml:"-"`         // From CLI flags only
 	LogLevel                         serpent.String         `yaml:"log_level"`
 	LogDir                           serpent.String         `yaml:"log_dir"`
 	ProxyPort                        serpent.Int64          `yaml:"proxy_port"`
