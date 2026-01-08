@@ -40,6 +40,7 @@ type ProxyTest struct {
 	configDir      string
 	startupDelay   time.Duration
 	allowedRules   []string
+	auditor        audit.Auditor
 }
 
 // ProxyTestOption is a function that configures ProxyTest
@@ -100,6 +101,13 @@ func WithAllowedRule(rule string) ProxyTestOption {
 	}
 }
 
+// WithAuditor sets a custom auditor for capturing audit requests
+func WithAuditor(auditor audit.Auditor) ProxyTestOption {
+	return func(pt *ProxyTest) {
+		pt.auditor = auditor
+	}
+}
+
 // Start starts the proxy server
 func (pt *ProxyTest) Start() *ProxyTest {
 	pt.t.Helper()
@@ -112,7 +120,12 @@ func (pt *ProxyTest) Start() *ProxyTest {
 	require.NoError(pt.t, err, "Failed to parse test rules")
 
 	ruleEngine := rulesengine.NewRuleEngine(testRules, logger)
-	auditor := &mockAuditor{}
+
+	// Use custom auditor if provided, otherwise use no-op mock
+	auditor := pt.auditor
+	if auditor == nil {
+		auditor = &mockAuditor{}
+	}
 
 	var tlsConfig *tls.Config
 	if pt.useCertManager {
