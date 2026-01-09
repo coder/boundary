@@ -265,12 +265,36 @@ func TestRoundTripExtraRules(t *testing.T) {
 			expectMatch: true,
 		},
 		{
-			name:        "complex scenario 1",
+			name:        "wildcard symbol at the end of path",
 			rules:       []string{"method=GET,POST,PUT domain=github.com path=/api/issues/*"},
-			url:         "https://github.com:8080/api/issues/123/edit",
+			url:         "https://github.com/api/issues/123/edit",
 			method:      "POST",
 			expectParse: true,
 			expectMatch: true,
+		},
+		{
+			name:        "wildcard symbol at the end of path doesn't match base path",
+			rules:       []string{"method=GET domain=github.com path=/api/issues/*"},
+			url:         "https://github.com/api/issues",
+			method:      "GET",
+			expectParse: true,
+			expectMatch: false,
+		},
+		{
+			name:        "includes all subdomains by default",
+			rules:       []string{"domain=github.com"},
+			url:         "https://x.users.api.github.com",
+			method:      "GET",
+			expectParse: true,
+			expectMatch: true,
+		},
+		{
+			name:        "domain wildcard in the middle matches exactly one label",
+			rules:       []string{"domain=api.*.com"},
+			url:         "https://api.v1.github.com",
+			method:      "POST",
+			expectParse: true,
+			expectMatch: false,
 		},
 	}
 
