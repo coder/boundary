@@ -13,10 +13,15 @@ import (
 	"github.com/coder/serpent"
 )
 
+// printVersion prints version information.
+func printVersion(version string) {
+	fmt.Println(version)
+}
+
 // NewCommand creates and returns the root serpent command
-func NewCommand() *serpent.Command {
+func NewCommand(version string) *serpent.Command {
 	// To make the top level boundary command, we just make some minor changes to the base command
-	cmd := BaseCommand()
+	cmd := BaseCommand(version)
 	cmd.Use = "boundary [flags] -- command [args...]" // Add the flags and args pieces to usage.
 
 	// Add example usage to the long description. This is different from usage as a subcommand because it
@@ -39,8 +44,9 @@ func NewCommand() *serpent.Command {
 // Base command returns the boundary serpent command without the information involved in making it the
 // *top level* serpent command. We are creating this split to make it easier to integrate into the coder
 // CLI if needed.
-func BaseCommand() *serpent.Command {
+func BaseCommand(version string) *serpent.Command {
 	cliConfig := config.CliConfig{}
+	var showVersion serpent.Bool
 
 	// Set default config path if file exists - serpent will load it automatically
 	if home, err := os.UserHomeDir(); err == nil {
@@ -149,8 +155,19 @@ func BaseCommand() *serpent.Command {
 				Value: &cliConfig.LogProxySocketPath,
 				YAML:  "", // CLI only, not loaded from YAML
 			},
+			{
+				Flag:        "version",
+				Description: "Print version information and exit.",
+				Value:       &showVersion,
+				YAML:        "", // CLI only
+			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
+			// Handle --version flag early
+			if showVersion.Value() {
+				printVersion(version)
+				return nil
+			}
 			appConfig, err := config.NewAppConfigFromCliConfig(cliConfig, inv.Args)
 			if err != nil {
 				return fmt.Errorf("failed to parse cli config file: %v", err)
