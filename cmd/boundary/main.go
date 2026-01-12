@@ -9,12 +9,11 @@ import (
 
 // Version information injected at build time
 var (
-	//nolint:unused
 	version = "dev" // Set via -ldflags "-X main.version=v1.0.0"
 )
 
 func main() {
-	cmd := cli.NewCommand()
+	cmd := cli.NewCommand(version)
 
 	err := cmd.Invoke().WithOS().Run()
 	if err != nil {
