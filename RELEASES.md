@@ -48,6 +48,9 @@ curl -fsSL https://raw.githubusercontent.com/coder/boundary/main/install.sh | ba
 
 **Custom Installation Options**
 ```bash
+# Install latest version (explicit)
+curl -fsSL https://raw.githubusercontent.com/coder/boundary/main/install.sh | bash -s -- --version latest
+
 # Install specific version
 curl -fsSL https://raw.githubusercontent.com/coder/boundary/main/install.sh | bash -s -- --version v1.0.0
 
