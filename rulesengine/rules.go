@@ -20,7 +20,8 @@ type Rule struct {
 	// The labels of the host, i.e. ["google", "com"].
 	// - nil means all hosts allowed
 	// - A label of `*` acts as a wild card.
-	// - subdomains automatically match
+	// - Exact domain patterns (e.g., "github.com") match ONLY the exact domain (no subdomains)
+	// - Wildcard patterns starting with "*" (e.g., "*.github.com") match ONLY subdomains (not the base domain)
 	HostPattern []string
 
 	// The allowed http methods.

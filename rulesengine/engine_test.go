@@ -74,13 +74,31 @@ func TestEngineMatches(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "subdomain matches",
+			name: "subdomain does not match exact domain pattern",
 			rule: Rule{
 				HostPattern: []string{"example", "com"},
 			},
 			method:   "GET",
 			url:      "https://api.example.com/users",
+			expected: false,
+		},
+		{
+			name: "wildcard subdomain pattern matches subdomain",
+			rule: Rule{
+				HostPattern: []string{"*", "example", "com"},
+			},
+			method:   "GET",
+			url:      "https://api.example.com/users",
 			expected: true,
+		},
+		{
+			name: "wildcard subdomain pattern does not match base domain",
+			rule: Rule{
+				HostPattern: []string{"*", "example", "com"},
+			},
+			method:   "GET",
+			url:      "https://example.com/users",
+			expected: false,
 		},
 		{
 			name: "host pattern too long",

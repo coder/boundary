@@ -77,9 +77,10 @@ func (re *Engine) matches(r Rule, method, url string) bool {
 
 	if r.HostPattern != nil {
 		// For a host pattern to match, every label has to match or be an `*`.
-		// Subdomains also match automatically, meaning if the pattern is "example.com"
-		// and the real is "api.example.com", it should match. We check this by comparing
-		// from the end of the actual hostname with the pattern (which is in normal order).
+		// Host matching is strict:
+		// - "github.com" matches ONLY "github.com" (exact match, no subdomains)
+		// - "*.github.com" matches ONLY subdomains like "api.github.com" (not the base domain)
+		// - To allow both, specify: "github.com, *.github.com"
 
 		labels := strings.Split(parsedUrl.Hostname(), ".")
 
@@ -97,6 +98,10 @@ func (re *Engine) matches(r Rule, method, url string) bool {
 				re.logger.Debug("rule does not match", "reason", "host pattern label mismatch", "rule", r.Raw, "method", method, "url", url, "expected", string(lp), "actual", labels[labelIndex])
 				return false
 			}
+		}
+
+		if len(labels) > len(r.HostPattern) && r.HostPattern[0] != "*" {
+			return false
 		}
 	}
 
