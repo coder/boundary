@@ -111,6 +111,7 @@ boundary-run -- curl https://example.com
 ```bash
 boundary-run --allow "domain=github.com" -- git pull
 boundary-run --allow "domain=*.github.com" -- npm install           # GitHub subdomains
+boundary-run --allow "domain=github.com" --allow "domain=*.github.com" -- git pull  # Both base domain and subdomains
 boundary-run --allow "method=GET,HEAD domain=api.github.com" -- curl https://api.github.com
 boundary-run --allow "method=POST domain=api.example.com path=/users,/posts" -- ./app  # Multiple paths
 boundary-run --allow "path=/api/v1/*,/api/v2/*" -- curl https://api.example.com/api/v1/users
