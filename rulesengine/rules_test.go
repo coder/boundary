@@ -1103,7 +1103,7 @@ func TestReadmeExamples(t *testing.T) {
 			}{
 				{"GET", "https://github.com", true},
 				{"POST", "https://github.com/user/repo", true},
-				{"GET", "https://api.github.com", true}, // subdomain match
+				{"GET", "https://api.github.com", false}, // subdomain does not match exact domain
 				{"GET", "https://example.com", false},
 			},
 		},
