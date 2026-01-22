@@ -1,3 +1,5 @@
+//go:build linux
+
 package run
 
 import (
@@ -20,3 +22,4 @@ func Run(ctx context.Context, logger *slog.Logger, cfg config.AppConfig) error {
 		return fmt.Errorf("unknown jail type: %s", cfg.JailType)
 	}
 }
+

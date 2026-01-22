@@ -8,6 +8,7 @@ import (
 
 	"github.com/coder/boundary/config"
 	"github.com/coder/boundary/log"
+	"github.com/coder/boundary/privilege"
 	"github.com/coder/boundary/run"
 	"github.com/coder/coder/v2/agent/boundarylogproxy"
 	"github.com/coder/serpent"
@@ -171,6 +172,14 @@ func BaseCommand(version string) *serpent.Command {
 			appConfig, err := config.NewAppConfigFromCliConfig(cliConfig, inv.Args)
 			if err != nil {
 				return fmt.Errorf("failed to parse cli config file: %v", err)
+			}
+
+			// Ensure we have the necessary privileges only if using nsjail
+			// (landjail doesn't require the same privileges)
+			if appConfig.JailType == config.NSJailType {
+				if err := privilege.EnsurePrivileges(); err != nil {
+					return fmt.Errorf("failed to ensure privileges: %v", err)
+				}
 			}
 
 			// Get command arguments
