@@ -35,10 +35,8 @@ cd boundary
 # Build the binary
 make build
 
-# Install binary and wrapper script (optional)
+# Install binary
 sudo cp boundary /usr/local/bin/
-sudo cp scripts/boundary-wrapper.sh /usr/local/bin/boundary-run
-sudo chmod +x /usr/local/bin/boundary-run
 ```
 
 **Requirements:**
@@ -47,52 +45,31 @@ sudo chmod +x /usr/local/bin/boundary-run
 
 ## Usage
 
-### Quick Start with Shortcut
+### Quick Start
 
-The recommended way to run `boundary` is using the `boundary-run` shortcut, which handles privilege escalation automatically. The `boundary-run` wrapper is installed automatically when you use the installation script:
-
-```bash
-# After installation, use the shortcut:
-boundary-run --allow "domain=github.com" -- curl https://github.com
-boundary-run -- bash
-```
-
-> **Note:** If you installed `boundary` manually, you can install the wrapper script separately:
-> ```bash
-> sudo cp scripts/boundary-wrapper.sh /usr/local/bin/boundary-run
-> sudo chmod +x /usr/local/bin/boundary-run
-> ```
-
-### Direct Usage
-
-If you prefer to run `boundary` directly, you'll need to handle privilege escalation:
+When using the default nsjail backend, boundary escalates privileges automatically (via `sudo` and `setpriv`) to acquire the necessary capabilities:
 
 ```bash
-# Note: sys_admin is only needed in restricted environments (e.g., Docker with seccomp).
-# If boundary works without it on your system, you can remove +sys_admin from both flags.
-sudo -E env PATH=$PATH setpriv \
-  --reuid=$(id -u) \
-  --regid=$(id -g) \
-  --clear-groups \
-  --inh-caps=+net_admin,+sys_admin \
-  --ambient-caps=+net_admin,+sys_admin \
-  boundary --allow "domain=github.com" -- curl https://github.com
+boundary --allow "domain=github.com" -- curl https://github.com
+boundary -- bash
 ```
+
+Privilege escalation runs only when jail type is `nsjail` (the default). With `landjail`, no escalation is performed.
 
 ### Examples
 
 ```bash
 # Allow only requests to github.com
-boundary-run --allow "domain=github.com" -- curl https://github.com
+boundary --allow "domain=github.com" -- curl https://github.com
 
 # Allow full access to GitHub issues API, but only GET/HEAD elsewhere on GitHub
-boundary-run \
+boundary \
   --allow "domain=github.com path=/api/issues/*" \
   --allow "method=GET,HEAD domain=github.com" \
   -- npm install
 
 # Default deny-all: everything is blocked unless explicitly allowed
-boundary-run -- curl https://example.com
+boundary -- curl https://example.com
 ```
 
 ## Allow Rules
@@ -109,12 +86,12 @@ boundary-run -- curl https://example.com
 
 ### Examples
 ```bash
-boundary-run --allow "domain=github.com" -- git pull
-boundary-run --allow "domain=*.github.com" -- npm install           # GitHub subdomains
-boundary-run --allow "domain=github.com" --allow "domain=*.github.com" -- git pull  # Both base domain and subdomains
-boundary-run --allow "method=GET,HEAD domain=api.github.com" -- curl https://api.github.com
-boundary-run --allow "method=POST domain=api.example.com path=/users,/posts" -- ./app  # Multiple paths
-boundary-run --allow "path=/api/v1/*,/api/v2/*" -- curl https://api.example.com/api/v1/users
+boundary --allow "domain=github.com" -- git pull
+boundary --allow "domain=*.github.com" -- npm install           # GitHub subdomains
+boundary --allow "domain=github.com" --allow "domain=*.github.com" -- git pull  # Both base domain and subdomains
+boundary --allow "method=GET,HEAD domain=api.github.com" -- curl https://api.github.com
+boundary --allow "method=POST domain=api.example.com path=/users,/posts" -- ./app  # Multiple paths
+boundary --allow "path=/api/v1/*,/api/v2/*" -- curl https://api.example.com/api/v1/users
 ```
 
 Wildcards: `*` matches any characters. All traffic is denied unless explicitly allowed.
@@ -122,9 +99,9 @@ Wildcards: `*` matches any characters. All traffic is denied unless explicitly a
 ## Logging
 
 ```bash
-boundary-run --log-level warn --allow "domain=github.com" -- git pull  # Default: only logs denied requests
-boundary-run --log-level info --allow "method=*" -- npm install     # Show all requests
-boundary-run --log-level debug --allow "domain=github.com" -- git pull  # Debug info
+boundary --log-level warn --allow "domain=github.com" -- git pull  # Default: only logs denied requests
+boundary --log-level info --allow "method=*" -- npm install     # Show all requests
+boundary --log-level debug --allow "domain=github.com" -- git pull  # Debug info
 ```
 
 **Log Levels:** `error`, `warn` (default), `info`, `debug`
@@ -142,7 +119,7 @@ When running inside a Coder workspace, boundary can forward audit logs to the wo
 agent, which then sends them to coderd for centralized logging. The intention is for
 these logs to work out of the box when an AI agent runs in a workspace using a module
 that has boundary enabled (e.g. the [Claude Code](https://registry.coder.com/modules/coder/claude-code)
-module), and when `boundary-run` is used directly.
+module), and when `boundary` is used directly.
 
 **How it works:**
 
@@ -172,14 +149,12 @@ module), and when `boundary-run` is used directly.
 - **boundary-child**: The child process created within the network namespace
 - **target/agent process**: The command you're running (e.g., `curl`, `npm`, `bash`)
 
-The `boundary-run` wrapper script handles privilege escalation automatically using `setpriv` to drop privileges before launching boundary. This ensures all processes run with the minimum required capabilities (`CAP_NET_ADMIN` and optionally `CAP_SYS_ADMIN` for restricted environments) while executing as your regular user account.
-
-If you run `boundary` directly with `sudo` (without `setpriv`), all processes will run as root, which is **not recommended** for security reasons. Always use `boundary-run` or the equivalent `setpriv` command shown in the [Direct Usage](#direct-usage) section.
+When using the nsjail backend (default), boundary escalates privileges itself: it re-executes via `sudo` and `setpriv` so that it runs with the minimum required capabilities (`CAP_NET_ADMIN` and optionally `CAP_SYS_ADMIN` for restricted environments) while still executing as your regular user.
 
 ## Command-Line Options
 
 ```text
-boundary-run [flags] -- command [args...]
+boundary [flags] -- command [args...]
 
  --config <PATH>                  Path to YAML config file (default: ~/.config/coder_boundary/config.yaml)
  --allow <SPEC>                   Allow rule (repeatable). Merged with allowlist from config file
