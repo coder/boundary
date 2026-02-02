@@ -14,6 +14,7 @@ type command struct {
 	ambientCaps []uintptr
 
 	// If ignoreErr isn't empty and this specific error occurs, suppress it (don’t log it, don’t return it).
+	// If ignoreErr is "*" - ignore any error;
 	ignoreErr string
 }
 
@@ -40,7 +41,13 @@ func newCommandWithIgnoreErr(
 }
 
 func (cmd *command) isIgnorableError(err string) bool {
-	return cmd.ignoreErr != "" && strings.Contains(err, cmd.ignoreErr)
+	if cmd.ignoreErr == "" {
+		return false
+	}
+	if cmd.ignoreErr == "*" {
+		return true
+	}
+	return strings.Contains(err, cmd.ignoreErr)
 }
 
 type commandRunner struct {

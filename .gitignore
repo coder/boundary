@@ -1,4 +1,5 @@
 .DS_Store
 .idea
 
-./boundary # Compiled binary from makefile
+# Compiled binary from makefile
+/boundary

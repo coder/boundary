@@ -121,19 +121,19 @@ func BaseCommand(version string) *serpent.Command {
 				YAML:        "pprof_port",
 			},
 			{
-				Flag:        "configure-dns-for-local-stub-resolver",
-				Env:         "BOUNDARY_CONFIGURE_DNS_FOR_LOCAL_STUB_RESOLVER",
-				Description: "Configure DNS for local stub resolver (e.g., systemd-resolved). Only needed when /etc/resolv.conf contains nameserver 127.0.0.53.",
-				Value:       &cliConfig.ConfigureDNSForLocalStubResolver,
-				YAML:        "configure_dns_for_local_stub_resolver",
-			},
-			{
 				Flag:        "jail-type",
 				Env:         "BOUNDARY_JAIL_TYPE",
 				Description: "Jail type to use for network isolation. Options: nsjail (default), landjail.",
 				Default:     "nsjail",
 				Value:       &cliConfig.JailType,
 				YAML:        "jail_type",
+			},
+			{
+				Flag:        "use-real-dns",
+				Env:         "BOUNDARY_USE_REAL_DNS",
+				Description: "Use real DNS in the jail instead of the dummy DNS (allows DNS exfiltration). Default: false.",
+				Value:       &cliConfig.UseRealDNS,
+				YAML:        "use_real_dns",
 			},
 			{
 				Flag:        "disable-audit-logs",

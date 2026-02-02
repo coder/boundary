@@ -18,12 +18,12 @@ type Jailer interface {
 }
 
 type Config struct {
-	Logger                           *slog.Logger
-	HttpProxyPort                    int
-	HomeDir                          string
-	ConfigDir                        string
-	CACertPath                       string
-	ConfigureDNSForLocalStubResolver bool
+	Logger        *slog.Logger
+	HttpProxyPort int
+	HomeDir       string
+	ConfigDir     string
+	CACertPath    string
+	UseRealDNS    bool
 }
 
 // LinuxJail implements Jailer using Linux network namespaces
@@ -31,19 +31,19 @@ type LinuxJail struct {
 	logger                           *slog.Logger
 	vethHostName                     string // Host-side veth interface name for iptables rules
 	vethJailName                     string // Jail-side veth interface name for iptables rules
-	httpProxyPort                    int
-	configDir                        string
-	caCertPath                       string
-	configureDNSForLocalStubResolver bool
+	httpProxyPort int
+	configDir     string
+	caCertPath    string
+	useRealDNS    bool
 }
 
 func NewLinuxJail(config Config) (*LinuxJail, error) {
 	return &LinuxJail{
-		logger:                           config.Logger,
-		httpProxyPort:                    config.HttpProxyPort,
-		configDir:                        config.ConfigDir,
-		caCertPath:                       config.CACertPath,
-		configureDNSForLocalStubResolver: config.ConfigureDNSForLocalStubResolver,
+		logger:        config.Logger,
+		httpProxyPort: config.HttpProxyPort,
+		configDir:     config.ConfigDir,
+		caCertPath:    config.CACertPath,
+		useRealDNS:   config.UseRealDNS,
 	}, nil
 }
 
@@ -71,8 +71,8 @@ func (l *LinuxJail) Command(command []string) *exec.Cmd {
 	cmd.Env = getEnvsForTargetProcess(l.configDir, l.caCertPath)
 	cmd.Env = append(cmd.Env, "CHILD=true")
 	cmd.Env = append(cmd.Env, fmt.Sprintf("VETH_JAIL_NAME=%v", l.vethJailName))
-	if l.configureDNSForLocalStubResolver {
-		cmd.Env = append(cmd.Env, "CONFIGURE_DNS_FOR_LOCAL_STUB_RESOLVER=true")
+	if l.useRealDNS {
+		cmd.Env = append(cmd.Env, "USE_REAL_DNS=true")
 	}
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
