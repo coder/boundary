@@ -209,6 +209,18 @@ func (nt *NSJailTest) ExpectDenyContains(url string, containsText string) {
 	require.Contains(nt.t, string(output), containsText, "Response does not contain expected denial text")
 }
 
+// sendUDP sends a UDP packet from inside the namespace to the given address:port
+func (nt *NSJailTest) sendUDP(addr string, port int, message string) error {
+	nt.t.Helper()
+
+	pid := fmt.Sprintf("%v", nt.pid)
+	args := []string{"nsenter", "-t", pid, "-n", "--",
+		"sh", "-c", fmt.Sprintf("echo '%s' | nc -u -w 1 %s %d", message, addr, port)}
+
+	cmd := exec.Command("sudo", args...)
+	return cmd.Run()
+}
+
 // getTargetProcessPID gets the PID of the boundary target process.
 // Target process is associated with a network namespace, so you can exec into it, using this PID.
 // pgrep -f boundary-test -n is doing two things:
