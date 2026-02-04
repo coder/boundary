@@ -95,4 +95,3 @@ func reExecWithPrivileges() error {
 	// Execute and replace current process
 	return syscall.Exec(cmd.Path, cmd.Args, cmd.Env)
 }
-

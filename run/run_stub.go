@@ -14,4 +14,3 @@ import (
 func Run(ctx context.Context, logger *slog.Logger, cfg config.AppConfig) error {
 	return fmt.Errorf("boundary is only supported on Linux, current platform: %s", runtime.GOOS)
 }
-
