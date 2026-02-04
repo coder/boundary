@@ -145,6 +145,18 @@ fmt:
 	go fmt ./...
 	@echo "✓ Code formatted!"
 
+# Check formatting (for CI)
+.PHONY: fmt-check
+fmt-check:
+	@echo "Checking code formatting..."
+	@if [ -n "$$(gofmt -l .)" ]; then \
+		echo "The following files are not formatted:"; \
+		gofmt -l .; \
+		echo "Run 'make fmt' to fix formatting."; \
+		exit 1; \
+	fi
+	@echo "✓ All code is properly formatted!"
+
 # Lint code
 .PHONY: lint
 lint:

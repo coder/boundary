@@ -34,6 +34,9 @@ jobs:
     - name: Download and verify dependencies
       run: make deps
 
+    - name: Check formatting
+      run: make fmt-check
+
     - name: Install golangci-lint
       run: |
         # binary will be $(go env GOPATH)/bin/golangci-lint
