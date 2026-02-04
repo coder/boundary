@@ -64,8 +64,8 @@ type CliConfig struct {
 	ProxyPort                        serpent.Int64          `yaml:"proxy_port"`
 	PprofEnabled                     serpent.Bool           `yaml:"pprof_enabled"`
 	PprofPort                        serpent.Int64          `yaml:"pprof_port"`
-	ConfigureDNSForLocalStubResolver serpent.Bool           `yaml:"configure_dns_for_local_stub_resolver"`
 	JailType                         serpent.String         `yaml:"jail_type"`
+	UseRealDNS                       serpent.Bool           `yaml:"use_real_dns"`
 	DisableAuditLogs                 serpent.Bool           `yaml:"disable_audit_logs"`
 	LogProxySocketPath               serpent.String         `yaml:"log_proxy_socket_path"`
 }
@@ -77,8 +77,8 @@ type AppConfig struct {
 	ProxyPort                        int64
 	PprofEnabled                     bool
 	PprofPort                        int64
-	ConfigureDNSForLocalStubResolver bool
 	JailType                         JailType
+	UseRealDNS                       bool
 	TargetCMD                        []string
 	UserInfo                         *UserInfo
 	DisableAuditLogs                 bool
@@ -107,8 +107,8 @@ func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) (AppConfig, er
 		ProxyPort:                        cfg.ProxyPort.Value(),
 		PprofEnabled:                     cfg.PprofEnabled.Value(),
 		PprofPort:                        cfg.PprofPort.Value(),
-		ConfigureDNSForLocalStubResolver: cfg.ConfigureDNSForLocalStubResolver.Value(),
 		JailType:                         jailType,
+		UseRealDNS:                       cfg.UseRealDNS.Value(),
 		TargetCMD:                        targetCMD,
 		UserInfo:                         userInfo,
 		DisableAuditLogs:                 cfg.DisableAuditLogs.Value(),

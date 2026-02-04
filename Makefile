@@ -3,6 +3,7 @@
 # Variables
 BINARY_NAME := boundary
 BUILD_DIR := build
+INSTALL_PATH ?= /usr/local/bin
 VERSION := $(shell git describe --tags --exact-match 2>/dev/null || echo "dev-$(shell git rev-parse --short HEAD)")
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
@@ -17,6 +18,13 @@ build:
 	@echo "Version: $(VERSION)"
 	go build -ldflags="$(LDFLAGS)" -o $(BINARY_NAME) ./cmd/boundary
 	@echo "✓ Built $(BINARY_NAME)"
+
+# Install binary to $(INSTALL_PATH) (default: /usr/local/bin).
+.PHONY: install
+install: build
+	@echo "Installing $(BINARY_NAME) to $(INSTALL_PATH)..."
+	sudo install -m 755 $(BINARY_NAME) $(INSTALL_PATH)/$(BINARY_NAME)
+	@echo "✓ Installed $(INSTALL_PATH)/$(BINARY_NAME)"
 
 # Build for all supported platforms
 .PHONY: build-all
@@ -150,6 +158,7 @@ help:
 	@echo "Available targets:"
 	@echo "  build              Build for current platform"
 	@echo "  build-all          Build for all supported platforms"
+	@echo "  install            Install binary to $(INSTALL_PATH) (may need sudo)"
 	@echo "  deps               Download and verify dependencies"
 	@echo "  test               Run tests"
 	@echo "  test-coverage      Run tests with coverage report"

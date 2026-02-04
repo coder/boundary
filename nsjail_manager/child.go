@@ -66,12 +66,15 @@ func RunChild(logger *slog.Logger, targetCMD []string) error {
 	}
 	logger.Info("child networking is successfully configured")
 
-	if os.Getenv("CONFIGURE_DNS_FOR_LOCAL_STUB_RESOLVER") == "true" {
-		err = nsjail.ConfigureDNSForLocalStubResolver()
+	if os.Getenv("USE_REAL_DNS") == "true" {
+		logger.Info("using real DNS in namespace (--use-real-dns)")
+	} else {
+		// Run dummy DNS server in namespace and redirect all DNS to it to prevent DNS exfiltration
+		err = nsjail.StartDummyDNSAndRedirect(logger)
 		if err != nil {
-			return fmt.Errorf("failed to configure DNS in namespace: %v", err)
+			return fmt.Errorf("failed to start dummy DNS in namespace: %v", err)
 		}
-		logger.Info("DNS in namespace is configured successfully")
+		logger.Info("dummy DNS server started in namespace")
 	}
 
 	// Program to run
