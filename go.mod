@@ -4,9 +4,11 @@ go 1.24.10
 
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3
-	github.com/coder/coder/v2 v2.10.1-0.20260105154308-e10fceb23c25
+	github.com/coder/coder/v2 v2.26.5
 	github.com/coder/serpent v0.12.0
 	github.com/landlock-lsm/go-landlock v0.0.0-20251103212306-430f8e5cd97c
+	github.com/miekg/dns v1.1.72
+	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/sys v0.39.0
 	google.golang.org/protobuf v1.36.11
@@ -21,14 +23,12 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/miekg/dns v1.1.72 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/pion/transport/v2 v2.2.10 // indirect
 	github.com/pion/udp v0.1.4 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/xhit/go-str2duration/v2 v2.1.0 // indirect
 	github.com/zeebo/errs v1.4.0 // indirect
 	go.opentelemetry.io/otel v1.38.0 // indirect
