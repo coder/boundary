@@ -12,6 +12,10 @@ const DummyA = "6.6.6.6"
 // DummyAAAA is the IPv6 address returned for every AAAA record query (documentation prefix).
 const DummyAAAA = "2001:db8::1"
 
+// DefaultDummyDNSPort is the port the dummy DNS server listens on (high port to avoid CAP_NET_BIND_SERVICE).
+// Traffic to port 53 is DNAT'd to this port in the namespace.
+const DefaultDummyDNSPort = "5353"
+
 // Server is a minimal DNS server that responds to every query with a dummy A record.
 // Used inside the network namespace to prevent DNS exfiltration.
 type Server struct {
@@ -89,7 +93,3 @@ func (s *Server) Shutdown() {
 		s.logger.Error("dummy DNS TCP server shutdown failed", "error", err)
 	}
 }
-
-// DefaultDummyDNSPort is the port the dummy DNS server listens on (high port to avoid CAP_NET_BIND_SERVICE).
-// Traffic to port 53 is DNAT'd to this port in the namespace.
-const DefaultDummyDNSPort = "5353"
