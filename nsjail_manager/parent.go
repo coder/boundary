@@ -58,7 +58,6 @@ func RunParent(ctx context.Context, logger *slog.Logger, config config.AppConfig
 		HomeDir:       config.UserInfo.HomeDir,
 		ConfigDir:     config.UserInfo.ConfigDir,
 		CACertPath:    config.UserInfo.CACertPath(),
-		UseRealDNS:    config.UseRealDNS,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create jailer: %v", err)
