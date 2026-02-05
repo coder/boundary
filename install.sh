@@ -165,7 +165,7 @@ download_wrapper() {
     local wrapper_url="https://raw.githubusercontent.com/$REPO/main/scripts/boundary-wrapper.sh"
     WRAPPER_PATH="$TMP_DIR/boundary-wrapper.sh"
     
-    log_info "Downloading boundary-run wrapper script..."
+    log_info "Downloading boundary-run wrapper (for backward compatibility)..."
     
     if command -v curl &> /dev/null; then
         if ! curl -fsSL "$wrapper_url" -o "$WRAPPER_PATH"; then
@@ -208,10 +208,10 @@ install_binary() {
     
     log_success "boundary installed successfully!"
     
-    # Install wrapper script if available
+    # Install wrapper script if available (backward compatibility)
     if [[ -n "$WRAPPER_PATH" && -f "$WRAPPER_PATH" ]]; then
         local wrapper_target="$INSTALL_DIR/boundary-run"
-        log_info "Installing boundary-run wrapper to $wrapper_target..."
+        log_info "Installing boundary-run wrapper to $wrapper_target (backward compatibility)..."
         
         if [[ "$NEED_SUDO" == "true" ]]; then
             sudo cp "$WRAPPER_PATH" "$wrapper_target"
@@ -221,7 +221,7 @@ install_binary() {
             chmod +x "$wrapper_target"
         fi
         
-        log_success "boundary-run wrapper installed successfully!"
+        log_success "boundary-run installed (backward compatibility)."
     fi
 }
 
@@ -239,11 +239,8 @@ verify_installation() {
         log_info "You can run boundary using the full path: $INSTALL_DIR/$BINARY_NAME"
     fi
     
-    if command -v "boundary-run" &> /dev/null; then
-        log_success "boundary-run wrapper is available in PATH"
-    elif [[ -f "$INSTALL_DIR/boundary-run" ]]; then
-        log_info "boundary-run is installed at $INSTALL_DIR/boundary-run"
-        log_info "You can use it directly: $INSTALL_DIR/boundary-run"
+    if command -v "boundary-run" &> /dev/null || [[ -f "$INSTALL_DIR/boundary-run" ]]; then
+        log_info "boundary-run is also available for backward compatibility."
     fi
 }
 
@@ -253,16 +250,10 @@ print_usage() {
     echo -e "${GREEN}🎉 Installation complete!${NC}"
     echo
     echo -e "${BLUE}Quick Start:${NC}"
-    if command -v "boundary-run" &> /dev/null; then
-        echo "  boundary-run --help"
-        echo "  boundary-run --allow \"domain=github.com\" -- curl https://github.com"
-        echo "  boundary-run --allow \"domain=*.npmjs.org\" -- npm install"
-        echo "  boundary-run -- bash"
-    else
-        echo "  boundary --help"
-        echo "  boundary --allow \"domain=github.com\" -- curl https://github.com"
-        echo "  boundary --allow \"domain=*.npmjs.org\" -- npm install"
-    fi
+    echo "  boundary --help"
+    echo "  boundary --allow \"domain=github.com\" -- curl https://github.com"
+    echo "  boundary --allow \"domain=*.npmjs.org\" -- npm install"
+    echo "  boundary -- bash"
     echo
     echo -e "${BLUE}Documentation:${NC}"
     echo "  https://github.com/$REPO"
