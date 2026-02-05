@@ -18,7 +18,7 @@ func isChild() bool {
 // proxy server, and managing the child process lifecycle.
 func Run(ctx context.Context, logger *slog.Logger, config config.AppConfig) error {
 	if isChild() {
-		return RunChild(logger, config.TargetCMD)
+		return RunChild(logger, config)
 	}
 
 	return RunParent(ctx, logger, config)

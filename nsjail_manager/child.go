@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
+	"github.com/coder/boundary/config"
 	"github.com/coder/boundary/nsjail_manager/nsjail"
 	"golang.org/x/sys/unix"
 )
@@ -47,7 +48,7 @@ func waitForInterface(interfaceName string, timeout time.Duration) error {
 	return nil
 }
 
-func RunChild(logger *slog.Logger, targetCMD []string) error {
+func RunChild(logger *slog.Logger, cfg config.AppConfig) error {
 	logger.Info("boundary CHILD process is started")
 
 	vethNetJail := os.Getenv("VETH_JAIL_NAME")
@@ -66,7 +67,7 @@ func RunChild(logger *slog.Logger, targetCMD []string) error {
 	}
 	logger.Info("child networking is successfully configured")
 
-	if os.Getenv("USE_REAL_DNS") == "true" {
+	if cfg.UseRealDNS {
 		logger.Info("using real DNS in namespace (--use-real-dns)")
 	} else {
 		// Run dummy DNS server in namespace and redirect all DNS to it to prevent DNS exfiltration
@@ -78,6 +79,7 @@ func RunChild(logger *slog.Logger, targetCMD []string) error {
 	}
 
 	// Program to run
+	targetCMD := cfg.TargetCMD
 	bin := targetCMD[0]
 	args := targetCMD[1:]
 

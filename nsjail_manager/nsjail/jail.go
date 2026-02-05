@@ -23,7 +23,6 @@ type Config struct {
 	HomeDir       string
 	ConfigDir     string
 	CACertPath    string
-	UseRealDNS    bool
 }
 
 // LinuxJail implements Jailer using Linux network namespaces
@@ -34,7 +33,6 @@ type LinuxJail struct {
 	httpProxyPort int
 	configDir     string
 	caCertPath    string
-	useRealDNS    bool
 }
 
 func NewLinuxJail(config Config) (*LinuxJail, error) {
@@ -43,7 +41,6 @@ func NewLinuxJail(config Config) (*LinuxJail, error) {
 		httpProxyPort: config.HttpProxyPort,
 		configDir:     config.ConfigDir,
 		caCertPath:    config.CACertPath,
-		useRealDNS:    config.UseRealDNS,
 	}, nil
 }
 
@@ -71,9 +68,6 @@ func (l *LinuxJail) Command(command []string) *exec.Cmd {
 	cmd.Env = getEnvsForTargetProcess(l.configDir, l.caCertPath)
 	cmd.Env = append(cmd.Env, "CHILD=true")
 	cmd.Env = append(cmd.Env, fmt.Sprintf("VETH_JAIL_NAME=%v", l.vethJailName))
-	if l.useRealDNS {
-		cmd.Env = append(cmd.Env, "USE_REAL_DNS=true")
-	}
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	cmd.Stdin = os.Stdin
