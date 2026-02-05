@@ -11,4 +11,3 @@ import (
 func EnsurePrivileges() error {
 	return fmt.Errorf("boundary is only supported on Linux, current platform: %s", runtime.GOOS)
 }
-

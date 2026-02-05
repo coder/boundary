@@ -56,33 +56,33 @@ func (a AllowStringsArray) Value() []string {
 }
 
 type CliConfig struct {
-	Config                           serpent.YAMLConfigPath `yaml:"-"`
-	AllowListStrings                 serpent.StringArray    `yaml:"allowlist"` // From config file
-	AllowStrings                     AllowStringsArray      `yaml:"-"`         // From CLI flags only
-	LogLevel                         serpent.String         `yaml:"log_level"`
-	LogDir                           serpent.String         `yaml:"log_dir"`
-	ProxyPort                        serpent.Int64          `yaml:"proxy_port"`
-	PprofEnabled                     serpent.Bool           `yaml:"pprof_enabled"`
-	PprofPort                        serpent.Int64          `yaml:"pprof_port"`
-	JailType                         serpent.String         `yaml:"jail_type"`
-	UseRealDNS                       serpent.Bool           `yaml:"use_real_dns"`
-	DisableAuditLogs                 serpent.Bool           `yaml:"disable_audit_logs"`
-	LogProxySocketPath               serpent.String         `yaml:"log_proxy_socket_path"`
+	Config             serpent.YAMLConfigPath `yaml:"-"`
+	AllowListStrings   serpent.StringArray    `yaml:"allowlist"` // From config file
+	AllowStrings       AllowStringsArray      `yaml:"-"`         // From CLI flags only
+	LogLevel           serpent.String         `yaml:"log_level"`
+	LogDir             serpent.String         `yaml:"log_dir"`
+	ProxyPort          serpent.Int64          `yaml:"proxy_port"`
+	PprofEnabled       serpent.Bool           `yaml:"pprof_enabled"`
+	PprofPort          serpent.Int64          `yaml:"pprof_port"`
+	JailType           serpent.String         `yaml:"jail_type"`
+	UseRealDNS         serpent.Bool           `yaml:"use_real_dns"`
+	DisableAuditLogs   serpent.Bool           `yaml:"disable_audit_logs"`
+	LogProxySocketPath serpent.String         `yaml:"log_proxy_socket_path"`
 }
 
 type AppConfig struct {
-	AllowRules                       []string
-	LogLevel                         string
-	LogDir                           string
-	ProxyPort                        int64
-	PprofEnabled                     bool
-	PprofPort                        int64
-	JailType                         JailType
-	UseRealDNS                       bool
-	TargetCMD                        []string
-	UserInfo                         *UserInfo
-	DisableAuditLogs                 bool
-	LogProxySocketPath               string
+	AllowRules         []string
+	LogLevel           string
+	LogDir             string
+	ProxyPort          int64
+	PprofEnabled       bool
+	PprofPort          int64
+	JailType           JailType
+	UseRealDNS         bool
+	TargetCMD          []string
+	UserInfo           *UserInfo
+	DisableAuditLogs   bool
+	LogProxySocketPath string
 }
 
 func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) (AppConfig, error) {
@@ -101,17 +101,17 @@ func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) (AppConfig, er
 	userInfo := GetUserInfo()
 
 	return AppConfig{
-		AllowRules:                       allAllowStrings,
-		LogLevel:                         cfg.LogLevel.Value(),
-		LogDir:                           cfg.LogDir.Value(),
-		ProxyPort:                        cfg.ProxyPort.Value(),
-		PprofEnabled:                     cfg.PprofEnabled.Value(),
-		PprofPort:                        cfg.PprofPort.Value(),
-		JailType:                         jailType,
-		UseRealDNS:                       cfg.UseRealDNS.Value(),
-		TargetCMD:                        targetCMD,
-		UserInfo:                         userInfo,
-		DisableAuditLogs:                 cfg.DisableAuditLogs.Value(),
-		LogProxySocketPath:               cfg.LogProxySocketPath.Value(),
+		AllowRules:         allAllowStrings,
+		LogLevel:           cfg.LogLevel.Value(),
+		LogDir:             cfg.LogDir.Value(),
+		ProxyPort:          cfg.ProxyPort.Value(),
+		PprofEnabled:       cfg.PprofEnabled.Value(),
+		PprofPort:          cfg.PprofPort.Value(),
+		JailType:           jailType,
+		UseRealDNS:         cfg.UseRealDNS.Value(),
+		TargetCMD:          targetCMD,
+		UserInfo:           userInfo,
+		DisableAuditLogs:   cfg.DisableAuditLogs.Value(),
+		LogProxySocketPath: cfg.LogProxySocketPath.Value(),
 	}, nil
 }

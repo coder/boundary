@@ -1,6 +1,6 @@
 // Package proxy implements HTTP CONNECT method for tunneling HTTPS traffic through a proxy.
 //
-// HTTP CONNECT Method Overview
+// # HTTP CONNECT Method Overview
 //
 // The HTTP CONNECT method is used to establish a tunnel through a proxy server.
 // This is essential for HTTPS proxying because HTTPS requires end-to-end encryption
@@ -19,7 +19,7 @@
 //     to establish a tunnel, then performs the TLS handshake and sends HTTPS
 //     requests through that tunnel.
 //
-// Non-Transparent Proxy
+// # Non-Transparent Proxy
 //
 // This proxy is "non-transparent" because:
 //   - Clients must be explicitly configured to use it (via HTTP_PROXY)
@@ -27,7 +27,7 @@
 //   - The proxy terminates TLS, inspects requests, and re-encrypts to the destination
 //   - Each HTTP request inside the tunnel is processed separately with rule evaluation
 //
-// CONNECT Request Flow
+// # CONNECT Request Flow
 //
 // The following diagram illustrates how CONNECT works:
 //

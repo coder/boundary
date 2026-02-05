@@ -251,7 +251,7 @@ func (pt *ProxyTest) ExpectDeny(proxyURL, hostHeader string) {
 	defer resp.Body.Close() //nolint:errcheck
 
 	require.Equal(pt.t, http.StatusForbidden, resp.StatusCode, "Expected 403 Forbidden status")
-	
+
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(pt.t, err, "Failed to read response body")
 
