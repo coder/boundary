@@ -39,6 +39,23 @@ func StartDummyDNSAndRedirect(logger *slog.Logger) error {
 			exec.Command("iptables", "-t", "nat", "-A", "OUTPUT", "-p", "tcp", "--dport", "53", "-j", "DNAT", "--to-destination", addr),
 			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
 		),
+		// Restrict all other UDP: allow only UDP to/from loopback (dummy DNS); drop everything else.
+		// Allow UDP to 127.0.0.1 (query to dummy DNS) and UDP from 127.0.0.1 (reply from dummy DNS to client).
+		newCommand(
+			"Allow UDP to loopback (dummy DNS query)",
+			exec.Command("iptables", "-A", "OUTPUT", "-p", "udp", "-d", "127.0.0.1", "-j", "ACCEPT"),
+			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		),
+		newCommand(
+			"Allow UDP from loopback (dummy DNS reply to client)",
+			exec.Command("iptables", "-A", "OUTPUT", "-p", "udp", "-s", "127.0.0.1", "-j", "ACCEPT"),
+			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		),
+		newCommand(
+			"Drop all other UDP",
+			exec.Command("iptables", "-A", "OUTPUT", "-p", "udp", "-j", "DROP"),
+			[]uintptr{uintptr(unix.CAP_NET_ADMIN)},
+		),
 	})
 	if err := runner.run(); err != nil {
 		return err
