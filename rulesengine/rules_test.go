@@ -1007,6 +1007,15 @@ func TestParseAllowRule(t *testing.T) {
 			},
 			expectError: false,
 		},
+		{
+			name:  "multipath with wildcards",
+			input: "path=/api/v1/*,/api/v2/*",
+			expectedRule: Rule{
+				Raw:         "path=/api/v1/*,/api/v2/*",
+				PathPattern: [][]string{{"api", "v1", "*"}, {"api", "v2", "*"}},
+			},
+			expectError: false,
+		},
 	}
 
 	for _, tt := range tests {
