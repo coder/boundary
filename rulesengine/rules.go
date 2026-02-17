@@ -326,7 +326,7 @@ func parsePathSegmentPattern(input string) (string, string, error) {
 	}
 
 	if len(input) > 0 && input[0] == '*' {
-		if len(input) > 1 && input[1] != '/' {
+		if len(input) > 1 && !isPathSegmentTerminator(input[1]) {
 			return "", "", fmt.Errorf("path segment wildcards must be for the entire segment, got: %s", input)
 		}
 
@@ -353,6 +353,13 @@ func parsePathSegmentPattern(input string) (string, string, error) {
 	}
 
 	return input[:i], input[i:], nil
+}
+
+// isPathSegmentTerminator returns true if the character terminates a path segment
+// in our rule grammar: '/' separates segments, ',' separates paths, and
+// whitespace separates key=value pairs.
+func isPathSegmentTerminator(c byte) bool {
+	return c == '/' || c == ',' || c == ' ' || c == '\t' || c == '\n'
 }
 
 // isUnreserved returns true if the character is unreserved per RFC 3986
