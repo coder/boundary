@@ -61,11 +61,13 @@ func (l *LinuxJail) configureIptables() error {
 		// Enable IPv4 packet forwarding so the host can route packets between
 		// the jail's veth interface and the outside network. Without this,
 		// NAT and forwarding rules would have no effect because the kernel
-		// would drop transit packets.
-		newCommand(
+		// would drop transit packets. Best-effort: in restricted environments
+		// (e.g. read-only sysctl) we continue; TCP through the proxy may still work.
+		newCommandWithIgnoreErr(
 			"enable IP forwarding",
 			exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1"),
 			[]uintptr{},
+			"*",
 		),
 		// Apply source NAT (MASQUERADE) for all traffic leaving the jail’s
 		// private subnet. This rewrites the source IP of packets originating
