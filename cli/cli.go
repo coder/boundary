@@ -138,7 +138,7 @@ func BaseCommand(version string) *serpent.Command {
 			{
 				Flag:        "no-user-namespace",
 				Env:         "BOUNDARY_NO_USER_NAMESPACE",
-				Description: "Do not create a user namespace (only network namespace). Use in restricted environments that disallow user NS (e.g. Bottlerocket).",
+				Description: "Do not create a user namespace. Use in restricted environments that disallow user NS (e.g. Bottlerocket in EKS auto-mode).",
 				Value:       &cliConfig.NoUserNamespace,
 				YAML:        "no_user_namespace",
 			},
