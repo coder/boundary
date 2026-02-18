@@ -66,6 +66,7 @@ type CliConfig struct {
 	PprofPort          serpent.Int64          `yaml:"pprof_port"`
 	JailType           serpent.String         `yaml:"jail_type"`
 	UseRealDNS         serpent.Bool           `yaml:"use_real_dns"`
+	NoUserNamespace    serpent.Bool           `yaml:"no_user_namespace"`
 	DisableAuditLogs   serpent.Bool           `yaml:"disable_audit_logs"`
 	LogProxySocketPath serpent.String         `yaml:"log_proxy_socket_path"`
 }
@@ -79,6 +80,7 @@ type AppConfig struct {
 	PprofPort          int64
 	JailType           JailType
 	UseRealDNS         bool
+	NoUserNamespace    bool
 	TargetCMD          []string
 	UserInfo           *UserInfo
 	DisableAuditLogs   bool
@@ -109,6 +111,7 @@ func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) (AppConfig, er
 		PprofPort:          cfg.PprofPort.Value(),
 		JailType:           jailType,
 		UseRealDNS:         cfg.UseRealDNS.Value(),
+		NoUserNamespace:    cfg.NoUserNamespace.Value(),
 		TargetCMD:          targetCMD,
 		UserInfo:           userInfo,
 		DisableAuditLogs:   cfg.DisableAuditLogs.Value(),

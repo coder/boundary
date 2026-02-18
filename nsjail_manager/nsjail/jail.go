@@ -18,29 +18,32 @@ type Jailer interface {
 }
 
 type Config struct {
-	Logger        *slog.Logger
-	HttpProxyPort int
-	HomeDir       string
-	ConfigDir     string
-	CACertPath    string
+	Logger           *slog.Logger
+	HttpProxyPort    int
+	HomeDir          string
+	ConfigDir        string
+	CACertPath       string
+	NoUserNamespace bool
 }
 
 // LinuxJail implements Jailer using Linux network namespaces
 type LinuxJail struct {
-	logger        *slog.Logger
-	vethHostName  string // Host-side veth interface name for iptables rules
-	vethJailName  string // Jail-side veth interface name for iptables rules
-	httpProxyPort int
-	configDir     string
-	caCertPath    string
+	logger           *slog.Logger
+	vethHostName     string // Host-side veth interface name for iptables rules
+	vethJailName     string // Jail-side veth interface name for iptables rules
+	httpProxyPort    int
+	configDir        string
+	caCertPath       string
+	noUserNamespace  bool
 }
 
 func NewLinuxJail(config Config) (*LinuxJail, error) {
 	return &LinuxJail{
-		logger:        config.Logger,
-		httpProxyPort: config.HttpProxyPort,
-		configDir:     config.ConfigDir,
-		caCertPath:    config.CACertPath,
+		logger:          config.Logger,
+		httpProxyPort:   config.HttpProxyPort,
+		configDir:       config.ConfigDir,
+		caCertPath:      config.CACertPath,
+		noUserNamespace: config.NoUserNamespace,
 	}, nil
 }
 
@@ -72,22 +75,25 @@ func (l *LinuxJail) Command(command []string) *exec.Cmd {
 	cmd.Stdout = os.Stdout
 	cmd.Stdin = os.Stdin
 
-	l.logger.Debug("os.Getuid()", "os.Getuid()", os.Getuid())
-	l.logger.Debug("os.Getgid()", "os.Getgid()", os.Getgid())
-	currentUid := os.Getuid()
-	currentGid := os.Getgid()
-
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Cloneflags: syscall.CLONE_NEWUSER | syscall.CLONE_NEWNET,
-		UidMappings: []syscall.SysProcIDMap{
-			{ContainerID: currentUid, HostID: currentUid, Size: 1},
-		},
-		GidMappings: []syscall.SysProcIDMap{
-			{ContainerID: currentGid, HostID: currentGid, Size: 1},
-		},
+	cloneFlags := uintptr(syscall.CLONE_NEWNET)
+	sysProcAttr := &syscall.SysProcAttr{
+		Cloneflags:  cloneFlags,
 		AmbientCaps: []uintptr{unix.CAP_NET_ADMIN},
 		Pdeathsig:   syscall.SIGTERM,
 	}
+	if !l.noUserNamespace {
+		cloneFlags |= uintptr(syscall.CLONE_NEWUSER)
+		sysProcAttr.Cloneflags = cloneFlags
+		currentUid := os.Getuid()
+		currentGid := os.Getgid()
+		sysProcAttr.UidMappings = []syscall.SysProcIDMap{
+			{ContainerID: currentUid, HostID: currentUid, Size: 1},
+		}
+		sysProcAttr.GidMappings = []syscall.SysProcIDMap{
+			{ContainerID: currentGid, HostID: currentGid, Size: 1},
+		}
+	}
+	cmd.SysProcAttr = sysProcAttr
 
 	return cmd
 }

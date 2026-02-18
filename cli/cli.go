@@ -136,6 +136,13 @@ func BaseCommand(version string) *serpent.Command {
 				YAML:        "use_real_dns",
 			},
 			{
+				Flag:        "no-user-namespace",
+				Env:         "BOUNDARY_NO_USER_NAMESPACE",
+				Description: "Do not create a user namespace (only network namespace). Use in restricted environments that disallow user NS (e.g. Bottlerocket).",
+				Value:       &cliConfig.NoUserNamespace,
+				YAML:        "no_user_namespace",
+			},
+			{
 				Flag:        "disable-audit-logs",
 				Env:         "DISABLE_AUDIT_LOGS",
 				Description: "Disable sending of audit logs to the workspace agent when set to true.",
