@@ -54,6 +54,35 @@ func TestNamespaceJail(t *testing.T) {
 	})
 }
 
+// TestNamespaceJailNoUserNamespace runs boundary with --no-user-namespace and verifies
+// that the jail still works (network isolation, allow/deny). Used for environments that
+// disallow user namespaces (e.g. Bottlerocket).
+func TestNamespaceJailNoUserNamespace(t *testing.T) {
+	nt := NewNSJailTest(t,
+		WithNSJailAllowedDomain("jsonplaceholder.typicode.com"),
+		WithNSJailNoUserNamespace(),
+		WithNSJailLogLevel("debug"),
+	).
+		Build().
+		Start()
+
+	defer nt.Stop()
+
+	t.Run("AllowedHTTPWithNoUserNS", func(t *testing.T) {
+		expected := `{
+  "userId": 1,
+  "id": 1,
+  "title": "delectus aut autem",
+  "completed": false
+}`
+		nt.ExpectAllowed("http://jsonplaceholder.typicode.com/todos/1", expected)
+	})
+
+	t.Run("DeniedHTTPWithNoUserNS", func(t *testing.T) {
+		nt.ExpectDeny("http://example.com")
+	})
+}
+
 func TestUDPBlocking(t *testing.T) {
 	// Create and configure nsjail test
 	nt := NewNSJailTest(t,

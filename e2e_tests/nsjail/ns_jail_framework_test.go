@@ -18,14 +18,15 @@ import (
 
 // NSJailTest is a high-level test framework for boundary e2e tests using nsjail
 type NSJailTest struct {
-	t              *testing.T
-	projectRoot    string
-	binaryPath     string
-	allowedDomains []string
-	logLevel       string
-	cmd            *exec.Cmd
-	pid            int
-	startupDelay   time.Duration
+	t               *testing.T
+	projectRoot     string
+	binaryPath      string
+	allowedDomains  []string
+	logLevel        string
+	noUserNamespace bool
+	cmd             *exec.Cmd
+	pid             int
+	startupDelay    time.Duration
 }
 
 // NSJailTestOption is a function that configures NSJailTest
@@ -81,6 +82,13 @@ func WithNSJailStartupDelay(delay time.Duration) NSJailTestOption {
 	}
 }
 
+// WithNSJailNoUserNamespace runs boundary with --no-user-namespace (network NS only, no user NS).
+func WithNSJailNoUserNamespace() NSJailTestOption {
+	return func(nt *NSJailTest) {
+		nt.noUserNamespace = true
+	}
+}
+
 // Build builds the boundary binary
 func (nt *NSJailTest) Build() *NSJailTest {
 	buildCmd := exec.Command("go", "build", "-o", nt.binaryPath, "./cmd/...")
@@ -101,6 +109,9 @@ func (nt *NSJailTest) Start(command ...string) *NSJailTest {
 	args := []string{
 		"--log-level", nt.logLevel,
 		"--jail-type", "nsjail",
+	}
+	if nt.noUserNamespace {
+		args = append(args, "--no-user-namespace")
 	}
 	for _, domain := range nt.allowedDomains {
 		args = append(args, "--allow", domain)
