@@ -53,11 +53,12 @@ func RunParent(ctx context.Context, logger *slog.Logger, config config.AppConfig
 
 	// Create jailer with cert path from TLS setup
 	jailer, err := nsjail.NewLinuxJail(nsjail.Config{
-		Logger:        logger,
-		HttpProxyPort: int(config.ProxyPort),
-		HomeDir:       config.UserInfo.HomeDir,
-		ConfigDir:     config.UserInfo.ConfigDir,
-		CACertPath:    config.UserInfo.CACertPath(),
+		Logger:          logger,
+		HttpProxyPort:   int(config.ProxyPort),
+		HomeDir:         config.UserInfo.HomeDir,
+		ConfigDir:       config.UserInfo.ConfigDir,
+		CACertPath:      config.UserInfo.CACertPath(),
+		NoUserNamespace: config.NoUserNamespace,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create jailer: %v", err)
