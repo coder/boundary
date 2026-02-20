@@ -96,6 +96,12 @@ func getEnvsForTargetProcess(configDir string, caCertPath string, httpProxyPort 
 		"HTTPS_PROXY": proxyAddr,
 		"http_proxy":  proxyAddr,
 		"https_proxy": proxyAddr,
+
+		// Clear proxy-bypass lists so the target never bypasses Boundary's proxy.
+		// Corporate envs often set no_proxy=.internal.cloud; if we leave it, the
+		// target tries direct connections for those hosts and Landlock blocks them.
+		"no_proxy": "",
+		"NO_PROXY": "",
 	})
 
 	return e
