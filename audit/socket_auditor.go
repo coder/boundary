@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -34,6 +35,9 @@ type SocketAuditor struct {
 	batchSize          int
 	batchTimerDuration time.Duration
 	socketPath         string
+
+	droppedChannelFull atomic.Int64
+	droppedBatchFull   atomic.Int64
 
 	// onFlushAttempt is called after each flush attempt (intended for testing).
 	onFlushAttempt func()
@@ -82,6 +86,7 @@ func (s *SocketAuditor) AuditRequest(req Request) {
 	select {
 	case s.logCh <- log:
 	default:
+		s.droppedChannelFull.Add(1)
 		s.logger.Warn("audit log dropped, channel full")
 	}
 }
@@ -95,14 +100,16 @@ type flushErr struct {
 
 func (e *flushErr) Error() string { return e.err.Error() }
 
-// flush sends the current batch of logs to the given connection.
-func flush(conn net.Conn, logs []*agentproto.BoundaryLog) *flushErr {
+// flush sends the current batch of logs to the given connection. If
+// metadata is non-nil it is attached to the request.
+func flush(conn net.Conn, logs []*agentproto.BoundaryLog, metadata *agentproto.ReportBoundaryLogsRequest_Metadata) *flushErr {
 	if len(logs) == 0 {
 		return nil
 	}
 
 	req := &agentproto.ReportBoundaryLogsRequest{
-		Logs: logs,
+		Logs:     logs,
+		Metadata: metadata,
 	}
 
 	data, err := proto.Marshal(req)
@@ -177,7 +184,21 @@ func (s *SocketAuditor) Loop(ctx context.Context) {
 			return
 		}
 
-		if err := flush(conn, batch); err != nil {
+		// Snapshot and reset drop counters for this flush.
+		chFull := s.droppedChannelFull.Swap(0)
+		bFull := s.droppedBatchFull.Swap(0)
+		var meta *agentproto.ReportBoundaryLogsRequest_Metadata
+		if chFull > 0 || bFull > 0 {
+			meta = &agentproto.ReportBoundaryLogsRequest_Metadata{
+				DroppedChannelFull: chFull,
+				DroppedBatchFull:   bFull,
+			}
+		}
+
+		if err := flush(conn, batch, meta); err != nil {
+			// Restore drop counts so they aren't lost on failed flush.
+			s.droppedChannelFull.Add(chFull)
+			s.droppedBatchFull.Add(bFull)
 			if err.permanent {
 				// Data error: discard batch to avoid infinite retries.
 				s.logger.Warn("dropping batch due to data error on flush attempt",
@@ -227,6 +248,7 @@ func (s *SocketAuditor) Loop(ctx context.Context) {
 			if len(batch) >= s.batchSize {
 				doFlush()
 				if len(batch) >= s.batchSize {
+					s.droppedBatchFull.Add(1)
 					s.logger.Warn("audit log dropped, batch full")
 					continue
 				}

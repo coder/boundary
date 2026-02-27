@@ -284,15 +284,173 @@ func TestSocketAuditor_Loop_RetriesOnConnectionFailure(t *testing.T) {
 	}
 }
 
+func TestSocketAuditor_Loop_ReportsChannelFullDrops(t *testing.T) {
+	t.Parallel()
+
+	auditor, serverConn := setupTestAuditor(t)
+	auditor.batchTimerDuration = time.Hour
+
+	received := make(chan *agentproto.ReportBoundaryLogsRequest, 2)
+	go readFromConn(t, serverConn, received)
+
+	// Fill the channel to capacity before starting the loop so the
+	// drop is deterministic.
+	for i := 0; i < 2*auditor.batchSize; i++ {
+		auditor.AuditRequest(Request{Method: "GET", URL: "https://example.com", Allowed: true})
+	}
+
+	// This one should be dropped (channel full).
+	auditor.AuditRequest(Request{Method: "GET", URL: "https://dropped.com", Allowed: true})
+
+	// Start the loop. The drop counter is already set, so the first
+	// flush will include the metadata.
+	go auditor.Loop(t.Context())
+
+	var gotMeta *agentproto.ReportBoundaryLogsRequest_Metadata
+	for i := 0; i < 2; i++ {
+		select {
+		case req := <-received:
+			if req.Metadata != nil {
+				gotMeta = req.Metadata
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("timeout waiting for flush")
+		}
+	}
+
+	if gotMeta == nil {
+		t.Fatal("expected Metadata with drop counts, got nil")
+	}
+	if gotMeta.DroppedChannelFull != 1 {
+		t.Errorf("expected DroppedChannelFull=1, got %d", gotMeta.DroppedChannelFull)
+	}
+}
+
+func TestSocketAuditor_Loop_ReportsBatchFullDrops(t *testing.T) {
+	t.Parallel()
+
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() {
+		_ = clientConn.Close()
+		_ = serverConn.Close()
+	})
+
+	var dialCount atomic.Int32
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	auditor := &SocketAuditor{
+		dial: func() (net.Conn, error) {
+			// First 3 dials fail: initial connect, first doFlush
+			// (batch full), second doFlush (causes batch-full drop).
+			// Dial 4 succeeds and carries the drop metadata.
+			if dialCount.Add(1) <= 3 {
+				return nil, errors.New("connection refused")
+			}
+			return clientConn, nil
+		},
+		logger:             logger,
+		logCh:              make(chan *agentproto.BoundaryLog, 2*defaultBatchSize),
+		batchSize:          defaultBatchSize,
+		batchTimerDuration: time.Hour,
+	}
+
+	flushed := make(chan struct{}, 4)
+	auditor.onFlushAttempt = func() {
+		select {
+		case flushed <- struct{}{}:
+		default:
+		}
+	}
+
+	received := make(chan *agentproto.ReportBoundaryLogsRequest, 2)
+	go readFromConn(t, serverConn, received)
+
+	go auditor.Loop(t.Context())
+
+	// Send batchSize+1 logs. The batch fills and doFlush fails (dial 2).
+	// The +1 log triggers another doFlush that also fails (dial 3),
+	// so the log is dropped as batch-full.
+	for i := 0; i < auditor.batchSize+1; i++ {
+		auditor.AuditRequest(Request{Method: "GET", URL: "https://example.com", Allowed: true})
+	}
+
+	// Wait for 2 failed flush attempts.
+	for i := 0; i < 2; i++ {
+		select {
+		case <-flushed:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("timeout waiting for flush attempt %d", i+1)
+		}
+	}
+
+	// Send another log to trigger a successful flush (dial 4).
+	auditor.AuditRequest(Request{Method: "GET", URL: "https://retry.com", Allowed: true})
+
+	select {
+	case req := <-received:
+		if req.Metadata == nil {
+			t.Fatal("expected Metadata with drop counts, got nil")
+		}
+		if req.Metadata.DroppedBatchFull != 1 {
+			t.Errorf("expected DroppedBatchFull=1, got %d", req.Metadata.DroppedBatchFull)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for retry flush")
+	}
+}
+
+func TestSocketAuditor_Loop_ShutdownFlushIncludesDrops(t *testing.T) {
+	t.Parallel()
+
+	auditor, serverConn := setupTestAuditor(t)
+	auditor.batchTimerDuration = time.Hour
+
+	received := make(chan *agentproto.ReportBoundaryLogsRequest, 1)
+	go readFromConn(t, serverConn, received)
+
+	ctx, cancel := context.WithCancel(t.Context())
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		auditor.Loop(ctx)
+	}()
+
+	// Simulate drops that haven't been flushed yet.
+	auditor.droppedChannelFull.Store(3)
+	auditor.droppedBatchFull.Store(2)
+
+	// Send one log so the shutdown flush has something to send.
+	auditor.AuditRequest(Request{Method: "GET", URL: "https://example.com", Allowed: true})
+
+	cancel()
+	wg.Wait()
+
+	select {
+	case req := <-received:
+		if req.Metadata == nil {
+			t.Fatal("expected Metadata in shutdown flush, got nil")
+		}
+		if req.Metadata.DroppedChannelFull != 3 {
+			t.Errorf("expected DroppedChannelFull=3, got %d", req.Metadata.DroppedChannelFull)
+		}
+		if req.Metadata.DroppedBatchFull != 2 {
+			t.Errorf("expected DroppedBatchFull=2, got %d", req.Metadata.DroppedBatchFull)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for shutdown flush")
+	}
+}
+
 func TestFlush_EmptyBatch(t *testing.T) {
 	t.Parallel()
 
-	err := flush(nil, nil)
+	err := flush(nil, nil, nil)
 	if err != nil {
 		t.Errorf("expected nil error for empty batch, got %v", err)
 	}
 
-	err = flush(nil, []*agentproto.BoundaryLog{})
+	err = flush(nil, []*agentproto.BoundaryLog{}, nil)
 	if err != nil {
 		t.Errorf("expected nil error for empty slice, got %v", err)
 	}
