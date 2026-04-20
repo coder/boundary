@@ -33,13 +33,15 @@ func NewLandJail(
 ) (*LandJail, error) {
 	// Create proxy server
 	proxyServer := proxy.NewProxyServer(proxy.Config{
-		HTTPPort:     int(config.ProxyPort),
-		RuleEngine:   ruleEngine,
-		Auditor:      auditor,
-		Logger:       logger,
-		TLSConfig:    tlsConfig,
-		PprofEnabled: config.PprofEnabled,
-		PprofPort:    int(config.PprofPort),
+		HTTPPort:        int(config.ProxyPort),
+		RuleEngine:      ruleEngine,
+		Auditor:         auditor,
+		Logger:          logger,
+		TLSConfig:       tlsConfig,
+		PprofEnabled:    config.PprofEnabled,
+		PprofPort:       int(config.PprofPort),
+		SessionID:       config.SessionID,
+		SessionIDHeader: config.SessionIDHeader,
 	})
 
 	return &LandJail{

@@ -5,8 +5,13 @@ import (
 	"strings"
 
 	"github.com/coder/serpent"
+	"github.com/google/uuid"
 	"github.com/spf13/pflag"
 )
+
+// DefaultSessionIDHeader is the HTTP header injected by boundary on every
+// outgoing forwarded request.
+const DefaultSessionIDHeader = "X-Agent-Firewall-Session-Id"
 
 // JailType represents the type of jail to use for network isolation
 type JailType string
@@ -56,35 +61,45 @@ func (a AllowStringsArray) Value() []string {
 }
 
 type CliConfig struct {
-	Config             serpent.YAMLConfigPath `yaml:"-"`
-	AllowListStrings   serpent.StringArray    `yaml:"allowlist"` // From config file
-	AllowStrings       AllowStringsArray      `yaml:"-"`         // From CLI flags only
-	LogLevel           serpent.String         `yaml:"log_level"`
-	LogDir             serpent.String         `yaml:"log_dir"`
-	ProxyPort          serpent.Int64          `yaml:"proxy_port"`
-	PprofEnabled       serpent.Bool           `yaml:"pprof_enabled"`
-	PprofPort          serpent.Int64          `yaml:"pprof_port"`
-	JailType           serpent.String         `yaml:"jail_type"`
-	UseRealDNS         serpent.Bool           `yaml:"use_real_dns"`
-	NoUserNamespace    serpent.Bool           `yaml:"no_user_namespace"`
-	DisableAuditLogs   serpent.Bool           `yaml:"disable_audit_logs"`
-	LogProxySocketPath serpent.String         `yaml:"log_proxy_socket_path"`
+	Config                    serpent.YAMLConfigPath `yaml:"-"`
+	AllowListStrings          serpent.StringArray    `yaml:"allowlist"` // From config file
+	AllowStrings              AllowStringsArray      `yaml:"-"`         // From CLI flags only
+	LogLevel                  serpent.String         `yaml:"log_level"`
+	LogDir                    serpent.String         `yaml:"log_dir"`
+	ProxyPort                 serpent.Int64          `yaml:"proxy_port"`
+	PprofEnabled              serpent.Bool           `yaml:"pprof_enabled"`
+	PprofPort                 serpent.Int64          `yaml:"pprof_port"`
+	JailType                  serpent.String         `yaml:"jail_type"`
+	UseRealDNS                serpent.Bool           `yaml:"use_real_dns"`
+	NoUserNamespace           serpent.Bool           `yaml:"no_user_namespace"`
+	DisableAuditLogs          serpent.Bool           `yaml:"disable_audit_logs"`
+	LogProxySocketPath        serpent.String         `yaml:"log_proxy_socket_path"`
+	SessionID                 serpent.String         `yaml:"-"` // CLI only; generated if empty
+	SessionIDHeader           serpent.String         `yaml:"session_id_header"`
+	DisableSessionIDHeader    serpent.Bool           `yaml:"disable_session_id_header"`
 }
 
 type AppConfig struct {
-	AllowRules         []string
-	LogLevel           string
-	LogDir             string
-	ProxyPort          int64
-	PprofEnabled       bool
-	PprofPort          int64
-	JailType           JailType
-	UseRealDNS         bool
-	NoUserNamespace    bool
-	TargetCMD          []string
-	UserInfo           *UserInfo
-	DisableAuditLogs   bool
-	LogProxySocketPath string
+	AllowRules              []string
+	LogLevel                string
+	LogDir                  string
+	ProxyPort               int64
+	PprofEnabled            bool
+	PprofPort               int64
+	JailType                JailType
+	UseRealDNS              bool
+	NoUserNamespace         bool
+	TargetCMD               []string
+	UserInfo                *UserInfo
+	DisableAuditLogs        bool
+	LogProxySocketPath      string
+	// SessionID is a UUID generated at startup that identifies this boundary
+	// invocation. It is injected as a header on all outgoing HTTP requests and
+	// included in audit batches sent to the workspace agent.
+	SessionID               string
+	// SessionIDHeader is the HTTP header name used to carry the session ID.
+	// An empty value means the header is disabled.
+	SessionIDHeader         string
 }
 
 func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) (AppConfig, error) {
@@ -102,6 +117,19 @@ func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) (AppConfig, er
 
 	userInfo := GetUserInfo()
 
+	sessionID := cfg.SessionID.Value()
+	if sessionID == "" {
+		sessionID = uuid.NewString()
+	}
+
+	sessionIDHeader := ""
+	if !cfg.DisableSessionIDHeader.Value() {
+		sessionIDHeader = cfg.SessionIDHeader.Value()
+		if sessionIDHeader == "" {
+			sessionIDHeader = DefaultSessionIDHeader
+		}
+	}
+
 	return AppConfig{
 		AllowRules:         allAllowStrings,
 		LogLevel:           cfg.LogLevel.Value(),
@@ -116,5 +144,7 @@ func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) (AppConfig, er
 		UserInfo:           userInfo,
 		DisableAuditLogs:   cfg.DisableAuditLogs.Value(),
 		LogProxySocketPath: cfg.LogProxySocketPath.Value(),
+		SessionID:          sessionID,
+		SessionIDHeader:    sessionIDHeader,
 	}, nil
 }

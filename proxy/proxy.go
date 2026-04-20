@@ -24,12 +24,14 @@ import (
 
 // Server handles HTTP and HTTPS requests with rule-based filtering
 type Server struct {
-	ruleEngine rulesengine.Engine
-	auditor    audit.Auditor
-	logger     *slog.Logger
-	tlsConfig  *tls.Config
-	httpPort   int
-	started    atomic.Bool
+	ruleEngine      rulesengine.Engine
+	auditor         audit.Auditor
+	logger          *slog.Logger
+	tlsConfig       *tls.Config
+	httpPort        int
+	started         atomic.Bool
+	sessionID       string
+	sessionIDHeader string // empty means the header is disabled
 
 	listener     net.Listener
 	pprofServer  *http.Server
@@ -39,25 +41,31 @@ type Server struct {
 
 // Config holds configuration for the proxy server
 type Config struct {
-	HTTPPort     int
-	RuleEngine   rulesengine.Engine
-	Auditor      audit.Auditor
-	Logger       *slog.Logger
-	TLSConfig    *tls.Config
-	PprofEnabled bool
-	PprofPort    int
+	HTTPPort        int
+	RuleEngine      rulesengine.Engine
+	Auditor         audit.Auditor
+	Logger          *slog.Logger
+	TLSConfig       *tls.Config
+	PprofEnabled    bool
+	PprofPort       int
+	// SessionID is the per-run UUID injected into forwarded requests.
+	SessionID       string
+	// SessionIDHeader is the header name to use. Empty disables injection.
+	SessionIDHeader string
 }
 
 // NewProxyServer creates a new proxy server instance
 func NewProxyServer(config Config) *Server {
 	return &Server{
-		ruleEngine:   config.RuleEngine,
-		auditor:      config.Auditor,
-		logger:       config.Logger,
-		tlsConfig:    config.TLSConfig,
-		httpPort:     config.HTTPPort,
-		pprofEnabled: config.PprofEnabled,
-		pprofPort:    config.PprofPort,
+		ruleEngine:      config.RuleEngine,
+		auditor:         config.Auditor,
+		logger:          config.Logger,
+		tlsConfig:       config.TLSConfig,
+		httpPort:        config.HTTPPort,
+		pprofEnabled:    config.PprofEnabled,
+		pprofPort:       config.PprofPort,
+		sessionID:       config.SessionID,
+		sessionIDHeader: config.SessionIDHeader,
 	}
 }
 
@@ -333,6 +341,12 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 		for _, value := range values {
 			newReq.Header.Add(name, value)
 		}
+	}
+
+	// Stamp the session ID header, overwriting any value the jailed client may
+	// have set with the same name so that the upstream always sees boundary's ID.
+	if p.sessionIDHeader != "" && p.sessionID != "" {
+		newReq.Header.Set(p.sessionIDHeader, p.sessionID)
 	}
 
 	// Make request to destination

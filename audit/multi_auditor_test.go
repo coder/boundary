@@ -25,7 +25,7 @@ func TestSetupAuditor_DisabledAuditLogs(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	ctx := context.Background()
 
-	auditor, err := SetupAuditor(ctx, logger, true, "")
+	auditor, err := SetupAuditor(ctx, logger, true, "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestSetupAuditor_EmptySocketPath(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	ctx := context.Background()
 
-	_, err := SetupAuditor(ctx, logger, false, "")
+	_, err := SetupAuditor(ctx, logger, false, "", "")
 	if err == nil {
 		t.Fatal("expected error for empty socket path, got nil")
 	}
@@ -62,7 +62,7 @@ func TestSetupAuditor_SocketDoesNotExist(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	ctx := context.Background()
 
-	auditor, err := SetupAuditor(ctx, logger, false, "/nonexistent/socket/path")
+	auditor, err := SetupAuditor(ctx, logger, false, "/nonexistent/socket/path", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestSetupAuditor_SocketExists(t *testing.T) {
 		t.Fatalf("failed to close temp file: %v", err)
 	}
 
-	auditor, err := SetupAuditor(ctx, logger, false, socketPath)
+	auditor, err := SetupAuditor(ctx, logger, false, socketPath, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -31,16 +31,18 @@ func (m *mockAuditor) AuditRequest(req audit.Request) {
 
 // ProxyTest is a high-level test framework for proxy tests
 type ProxyTest struct {
-	t              *testing.T
-	server         *Server
-	client         *http.Client
-	proxyClient    *http.Client
-	port           int
-	useCertManager bool
-	configDir      string
-	startupDelay   time.Duration
-	allowedRules   []string
-	auditor        audit.Auditor
+	t               *testing.T
+	server          *Server
+	client          *http.Client
+	proxyClient     *http.Client
+	port            int
+	useCertManager  bool
+	configDir       string
+	startupDelay    time.Duration
+	allowedRules    []string
+	auditor         audit.Auditor
+	sessionID       string
+	sessionIDHeader string
 }
 
 // ProxyTestOption is a function that configures ProxyTest
@@ -152,11 +154,13 @@ func (pt *ProxyTest) Start() *ProxyTest {
 	}
 
 	pt.server = NewProxyServer(Config{
-		HTTPPort:   pt.port,
-		RuleEngine: ruleEngine,
-		Auditor:    auditor,
-		Logger:     logger,
-		TLSConfig:  tlsConfig,
+		HTTPPort:        pt.port,
+		RuleEngine:      ruleEngine,
+		Auditor:         auditor,
+		Logger:          logger,
+		TLSConfig:       tlsConfig,
+		SessionID:       pt.sessionID,
+		SessionIDHeader: pt.sessionIDHeader,
 	})
 
 	err = pt.server.Start()

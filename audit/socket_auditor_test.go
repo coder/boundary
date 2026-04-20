@@ -451,14 +451,56 @@ func TestSocketAuditor_Loop_ShutdownFlushIncludesDrops(t *testing.T) {
 func TestFlush_EmptyBatch(t *testing.T) {
 	t.Parallel()
 
-	err := flush(nil, nil)
+	err := flush(nil, nil, "")
 	if err != nil {
 		t.Errorf("expected nil error for empty batch, got %v", err)
 	}
 
-	err = flush(nil, []*agentproto.BoundaryLog{})
+	err = flush(nil, []*agentproto.BoundaryLog{}, "")
 	if err != nil {
 		t.Errorf("expected nil error for empty slice, got %v", err)
+	}
+}
+
+func TestSocketAuditor_Loop_SessionIDInBatch(t *testing.T) {
+	t.Parallel()
+
+	const wantSessionID = "test-boundary-session-uuid"
+
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() {
+		_ = clientConn.Close()
+		_ = serverConn.Close()
+	})
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	auditor := &SocketAuditor{
+		dial: func() (net.Conn, error) {
+			return clientConn, nil
+		},
+		logger:             logger,
+		logCh:              make(chan *agentproto.BoundaryLog, 2*defaultBatchSize),
+		batchSize:          defaultBatchSize,
+		batchTimerDuration: time.Hour, // disable timer; flush via batch size
+		sessionID:          wantSessionID,
+	}
+
+	cr := newConnReader()
+	go readFromConn(t, serverConn, cr)
+	go auditor.Loop(t.Context())
+
+	// Fill a full batch so it flushes immediately.
+	for i := 0; i < auditor.batchSize; i++ {
+		auditor.AuditRequest(Request{Method: "GET", URL: "https://example.com", Allowed: true})
+	}
+
+	select {
+	case req := <-cr.logs:
+		if req.SessionId != wantSessionID {
+			t.Errorf("expected session_id=%q, got %q", wantSessionID, req.SessionId)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for flush")
 	}
 }
 

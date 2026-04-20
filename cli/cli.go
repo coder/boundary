@@ -164,6 +164,27 @@ func BaseCommand(version string) *serpent.Command {
 				YAML:  "", // CLI only, not loaded from YAML
 			},
 			{
+				Flag:        "session-id",
+				Env:         "BOUNDARY_SESSION_ID",
+				Description: "Session ID to use for this boundary invocation. Generated as a UUID if not provided.",
+				Value:       &cliConfig.SessionID,
+				YAML:        "", // CLI only
+			},
+			{
+				Flag:        "session-id-header",
+				Env:         "BOUNDARY_SESSION_ID_HEADER",
+				Description: fmt.Sprintf("HTTP header name used to inject the session ID into forwarded requests. Default: %q.", config.DefaultSessionIDHeader),
+				Value:       &cliConfig.SessionIDHeader,
+				YAML:        "session_id_header",
+			},
+			{
+				Flag:        "disable-session-id-header",
+				Env:         "BOUNDARY_DISABLE_SESSION_ID_HEADER",
+				Description: "Disable injection of the session ID header on forwarded requests.",
+				Value:       &cliConfig.DisableSessionIDHeader,
+				YAML:        "disable_session_id_header",
+			},
+			{
 				Flag:        "version",
 				Description: "Print version information and exit.",
 				Value:       &showVersion,
@@ -198,6 +219,8 @@ func BaseCommand(version string) *serpent.Command {
 			if err != nil {
 				return fmt.Errorf("could not set up logging: %v", err)
 			}
+
+			logger.Info("boundary session started", "session_id", appConfig.SessionID)
 
 			appConfigInJSON, err := json.Marshal(appConfig)
 			if err != nil {
