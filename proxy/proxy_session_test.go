@@ -66,6 +66,7 @@ func TestSessionIDHeader_InjectedOnForwardedRequest(t *testing.T) {
 		WithAllowedDomain(backendURL.Hostname()),
 		WithSessionID(sessionID),
 		WithSessionIDHeader(headerName),
+		WithSessionIDMatch("domain="+backendURL.Hostname()),
 	).Start()
 	defer pt.Stop()
 
@@ -100,6 +101,7 @@ func TestSessionIDHeader_OverwritesClientValue(t *testing.T) {
 		WithAllowedDomain(backendURL.Hostname()),
 		WithSessionID(sessionID),
 		WithSessionIDHeader(headerName),
+		WithSessionIDMatch("domain="+backendURL.Hostname()),
 	).Start()
 	defer pt.Stop()
 
@@ -132,7 +134,7 @@ func TestSessionIDHeader_OmittedWhenDisabled(t *testing.T) {
 
 	// No WithSessionIDHeader option → sessionIDHeader stays empty → disabled.
 	pt := NewProxyTest(t,
-		WithProxyPort(8087),
+		WithProxyPort(8083),
 		WithAllowedDomain(backendURL.Hostname()),
 		WithSessionID("some-id"),
 	).Start()
@@ -146,4 +148,94 @@ func TestSessionIDHeader_OmittedWhenDisabled(t *testing.T) {
 	require.NotNil(t, got)
 	assert.Empty(t, got.Get(headerName),
 		"upstream should not receive the session ID header when the feature is disabled")
+}
+
+// TestSessionIDHeader_NotInjectedWithoutMatchRules verifies that no header is
+// injected when no session-ID match rules are configured, even if a session ID
+// and header name are set. This covers the new "empty rules = never inject"
+// default introduced with the match-rule gating feature.
+func TestSessionIDHeader_NotInjectedWithoutMatchRules(t *testing.T) {
+	const headerName = "X-Coder-Agent-Firewall-Session-Id"
+
+	recorder := &recordingHandler{}
+	backend := httptest.NewServer(recorder)
+	defer backend.Close()
+
+	backendURL, err := url.Parse(backend.URL)
+	require.NoError(t, err)
+
+	// No WithSessionIDMatch → match engine has zero rules → header must not appear.
+	pt := NewProxyTest(t,
+		WithProxyPort(8088),
+		WithAllowedDomain(backendURL.Hostname()),
+		WithSessionID("some-session-id"),
+		WithSessionIDHeader(headerName),
+	).Start()
+	defer pt.Stop()
+
+	resp, err := pt.proxyClient.Get(backend.URL + "/path")
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	got := recorder.last()
+	require.NotNil(t, got)
+	assert.Empty(t, got.Get(headerName),
+		"upstream should not receive the session ID header when no match rules are configured")
+}
+
+// TestSessionIDHeader_InjectedOnlyOnMatchingRequests verifies selective
+// injection: the header is stamped on requests whose URL matches a session-ID
+// rule but not on requests to a different backend.
+func TestSessionIDHeader_InjectedOnlyOnMatchingRequests(t *testing.T) {
+	const sessionID = "selective-session-id"
+	const headerName = "X-Coder-Agent-Firewall-Session-Id"
+
+	// Two upstream backends: one that matches the session-ID rule, one that does not.
+	matchedRecorder := &recordingHandler{}
+	matchedBackend := httptest.NewServer(matchedRecorder)
+	defer matchedBackend.Close()
+
+	unmatchedRecorder := &recordingHandler{}
+	unmatchedBackend := httptest.NewServer(unmatchedRecorder)
+	defer unmatchedBackend.Close()
+
+	matchedURL, err := url.Parse(matchedBackend.URL)
+	require.NoError(t, err)
+	unmatchedURL, err := url.Parse(unmatchedBackend.URL)
+	require.NoError(t, err)
+
+	// Allow both backends through the proxy, but only inject the header for the
+	// matched backend's path prefix.
+	pt := NewProxyTest(t,
+		WithProxyPort(8089),
+		WithAllowedDomain(matchedURL.Hostname()),
+		WithAllowedDomain(unmatchedURL.Hostname()),
+		WithSessionID(sessionID),
+		WithSessionIDHeader(headerName),
+		WithSessionIDMatch("domain="+matchedURL.Hostname()+" path=/api/v2/aibridge/*"),
+	).Start()
+	defer pt.Stop()
+
+	// Request to the matched backend on the matching path.
+	resp, err := pt.proxyClient.Get(matchedBackend.URL + "/api/v2/aibridge/anthropic/v1/messages")
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	got := matchedRecorder.last()
+	require.NotNil(t, got)
+	assert.Equal(t, sessionID, got.Get(headerName),
+		"matched backend should receive the session ID header")
+
+	// Request to the unmatched backend: no header.
+	resp, err = pt.proxyClient.Get(unmatchedBackend.URL + "/other/path")
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	got = unmatchedRecorder.last()
+	require.NotNil(t, got)
+	assert.Empty(t, got.Get(headerName),
+		"unmatched backend should not receive the session ID header")
 }

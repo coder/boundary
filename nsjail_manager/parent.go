@@ -27,6 +27,13 @@ func RunParent(ctx context.Context, logger *slog.Logger, config config.AppConfig
 	// Create rule engine
 	ruleEngine := rulesengine.NewRuleEngine(allowRules, logger)
 
+	// Parse session-ID match rules and build a second engine that gates header injection.
+	sessionIDMatchRules, err := rulesengine.ParseAllowSpecs(config.SessionIDMatchRules)
+	if err != nil {
+		return fmt.Errorf("failed to parse session-id-match rules: %v", err)
+	}
+	sessionIDMatchEngine := rulesengine.NewRuleEngine(sessionIDMatchRules, logger)
+
 	// Create auditor
 	auditor, err := audit.SetupAuditor(ctx, logger, config.DisableAuditLogs, config.LogProxySocketPath, config.SessionID)
 	if err != nil {
@@ -65,7 +72,7 @@ func RunParent(ctx context.Context, logger *slog.Logger, config config.AppConfig
 	}
 
 	// Create boundary instance
-	nsJailMgr, err := NewNSJailManager(ruleEngine, auditor, tlsConfig, jailer, logger, config)
+	nsJailMgr, err := NewNSJailManager(ruleEngine, sessionIDMatchEngine, auditor, tlsConfig, jailer, logger, config)
 	if err != nil {
 		return fmt.Errorf("failed to create boundary instance: %v", err)
 	}

@@ -28,6 +28,7 @@ type NSJailManager struct {
 
 func NewNSJailManager(
 	ruleEngine rulesengine.Engine,
+	sessionIDMatch rulesengine.Engine,
 	auditor audit.Auditor,
 	tlsConfig *tls.Config,
 	jailer nsjail.Jailer,
@@ -45,6 +46,7 @@ func NewNSJailManager(
 		PprofPort:       int(config.PprofPort),
 		SessionID:       config.SessionID,
 		SessionIDHeader: config.SessionIDHeader,
+		SessionIDMatch:  sessionIDMatch,
 	})
 
 	return &NSJailManager{

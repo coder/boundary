@@ -62,8 +62,8 @@ func (a AllowStringsArray) Value() []string {
 
 type CliConfig struct {
 	Config                    serpent.YAMLConfigPath `yaml:"-"`
-	AllowListStrings          serpent.StringArray    `yaml:"allowlist"` // From config file
-	AllowStrings              AllowStringsArray      `yaml:"-"`         // From CLI flags only
+	AllowListStrings          serpent.StringArray    `yaml:"allowlist"`          // From config file
+	AllowStrings              AllowStringsArray      `yaml:"-"`                  // From CLI flags only
 	LogLevel                  serpent.String         `yaml:"log_level"`
 	LogDir                    serpent.String         `yaml:"log_dir"`
 	ProxyPort                 serpent.Int64          `yaml:"proxy_port"`
@@ -74,9 +74,11 @@ type CliConfig struct {
 	NoUserNamespace           serpent.Bool           `yaml:"no_user_namespace"`
 	DisableAuditLogs          serpent.Bool           `yaml:"disable_audit_logs"`
 	LogProxySocketPath        serpent.String         `yaml:"log_proxy_socket_path"`
-	SessionID                 serpent.String         `yaml:"-"` // CLI only; generated if empty
+	SessionID                 serpent.String         `yaml:"-"`                  // CLI only; generated if empty
 	SessionIDHeader           serpent.String         `yaml:"session_id_header"`
 	DisableSessionIDHeader    serpent.Bool           `yaml:"disable_session_id_header"`
+	SessionIDMatchList        serpent.StringArray    `yaml:"session_id_inject_domains"` // From config file
+	SessionIDMatch            AllowStringsArray      `yaml:"-"`                  // From CLI flags only
 }
 
 type AppConfig struct {
@@ -94,12 +96,17 @@ type AppConfig struct {
 	DisableAuditLogs        bool
 	LogProxySocketPath      string
 	// SessionID is a UUID generated at startup that identifies this boundary
-	// invocation. It is injected as a header on all outgoing HTTP requests and
-	// included in audit batches sent to the workspace agent.
+	// invocation. It is injected as a header on matching outgoing HTTP requests
+	// and included in audit batches sent to the workspace agent.
 	SessionID               string
 	// SessionIDHeader is the HTTP header name used to carry the session ID.
 	// An empty value means the header is disabled.
 	SessionIDHeader         string
+	// SessionIDMatchRules is the merged list of match-rule strings from the
+	// YAML session_id_matches key and the --session-id-match CLI flag. The
+	// session ID header is only injected on requests that match at least one
+	// rule. Empty means never inject.
+	SessionIDMatchRules     []string
 }
 
 func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) (AppConfig, error) {
@@ -130,21 +137,26 @@ func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) (AppConfig, er
 		}
 	}
 
+	// Merge session-ID match rules: YAML list first, then CLI flags (same
+	// pattern as allAllowStrings above).
+	allMatchStrings := append(cfg.SessionIDMatchList.Value(), cfg.SessionIDMatch.Value()...)
+
 	return AppConfig{
-		AllowRules:         allAllowStrings,
-		LogLevel:           cfg.LogLevel.Value(),
-		LogDir:             cfg.LogDir.Value(),
-		ProxyPort:          cfg.ProxyPort.Value(),
-		PprofEnabled:       cfg.PprofEnabled.Value(),
-		PprofPort:          cfg.PprofPort.Value(),
-		JailType:           jailType,
-		UseRealDNS:         cfg.UseRealDNS.Value(),
-		NoUserNamespace:    cfg.NoUserNamespace.Value(),
-		TargetCMD:          targetCMD,
-		UserInfo:           userInfo,
-		DisableAuditLogs:   cfg.DisableAuditLogs.Value(),
-		LogProxySocketPath: cfg.LogProxySocketPath.Value(),
-		SessionID:          sessionID,
-		SessionIDHeader:    sessionIDHeader,
+		AllowRules:          allAllowStrings,
+		LogLevel:            cfg.LogLevel.Value(),
+		LogDir:              cfg.LogDir.Value(),
+		ProxyPort:           cfg.ProxyPort.Value(),
+		PprofEnabled:        cfg.PprofEnabled.Value(),
+		PprofPort:           cfg.PprofPort.Value(),
+		JailType:            jailType,
+		UseRealDNS:          cfg.UseRealDNS.Value(),
+		NoUserNamespace:     cfg.NoUserNamespace.Value(),
+		TargetCMD:           targetCMD,
+		UserInfo:            userInfo,
+		DisableAuditLogs:    cfg.DisableAuditLogs.Value(),
+		LogProxySocketPath:  cfg.LogProxySocketPath.Value(),
+		SessionID:           sessionID,
+		SessionIDHeader:     sessionIDHeader,
+		SessionIDMatchRules: allMatchStrings,
 	}, nil
 }

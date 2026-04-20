@@ -26,6 +26,7 @@ type LandJail struct {
 
 func NewLandJail(
 	ruleEngine rulesengine.Engine,
+	sessionIDMatch rulesengine.Engine,
 	auditor audit.Auditor,
 	tlsConfig *tls.Config,
 	logger *slog.Logger,
@@ -42,6 +43,7 @@ func NewLandJail(
 		PprofPort:       int(config.PprofPort),
 		SessionID:       config.SessionID,
 		SessionIDHeader: config.SessionIDHeader,
+		SessionIDMatch:  sessionIDMatch,
 	})
 
 	return &LandJail{

@@ -31,18 +31,19 @@ func (m *mockAuditor) AuditRequest(req audit.Request) {
 
 // ProxyTest is a high-level test framework for proxy tests
 type ProxyTest struct {
-	t               *testing.T
-	server          *Server
-	client          *http.Client
-	proxyClient     *http.Client
-	port            int
-	useCertManager  bool
-	configDir       string
-	startupDelay    time.Duration
-	allowedRules    []string
-	auditor         audit.Auditor
-	sessionID       string
-	sessionIDHeader string
+	t                *testing.T
+	server           *Server
+	client           *http.Client
+	proxyClient      *http.Client
+	port             int
+	useCertManager   bool
+	configDir        string
+	startupDelay     time.Duration
+	allowedRules     []string
+	auditor          audit.Auditor
+	sessionID        string
+	sessionIDHeader  string
+	sessionIDMatches []string // match rules for session ID header injection
 }
 
 // ProxyTestOption is a function that configures ProxyTest
@@ -110,6 +111,15 @@ func WithAuditor(auditor audit.Auditor) ProxyTestOption {
 	}
 }
 
+// WithSessionIDMatch adds a session-ID match rule. Only requests matching at
+// least one rule will receive the session ID header. Omitting this option
+// means no injection (same as an empty match list).
+func WithSessionIDMatch(rule string) ProxyTestOption {
+	return func(pt *ProxyTest) {
+		pt.sessionIDMatches = append(pt.sessionIDMatches, rule)
+	}
+}
+
 // Start starts the proxy server
 func (pt *ProxyTest) Start() *ProxyTest {
 	pt.t.Helper()
@@ -122,6 +132,11 @@ func (pt *ProxyTest) Start() *ProxyTest {
 	require.NoError(pt.t, err, "Failed to parse test rules")
 
 	ruleEngine := rulesengine.NewRuleEngine(testRules, logger)
+
+	matchRules, err := rulesengine.ParseAllowSpecs(pt.sessionIDMatches)
+	require.NoError(pt.t, err, "Failed to parse session-ID match rules")
+
+	sessionIDMatchEngine := rulesengine.NewRuleEngine(matchRules, logger)
 
 	// Use custom auditor if provided, otherwise use no-op mock
 	auditor := pt.auditor
@@ -161,6 +176,7 @@ func (pt *ProxyTest) Start() *ProxyTest {
 		TLSConfig:       tlsConfig,
 		SessionID:       pt.sessionID,
 		SessionIDHeader: pt.sessionIDHeader,
+		SessionIDMatch:  sessionIDMatchEngine,
 	})
 
 	err = pt.server.Start()

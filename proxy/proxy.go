@@ -31,7 +31,8 @@ type Server struct {
 	httpPort        int
 	started         atomic.Bool
 	sessionID       string
-	sessionIDHeader string // empty means the header is disabled
+	sessionIDHeader string         // empty means the header is disabled
+	sessionIDMatch  rulesengine.Engine // gates which requests get the header
 
 	listener     net.Listener
 	pprofServer  *http.Server
@@ -48,10 +49,15 @@ type Config struct {
 	TLSConfig       *tls.Config
 	PprofEnabled    bool
 	PprofPort       int
-	// SessionID is the per-run UUID injected into forwarded requests.
+	// SessionID is the per-run UUID injected into matching forwarded requests.
 	SessionID       string
 	// SessionIDHeader is the header name to use. Empty disables injection.
 	SessionIDHeader string
+	// SessionIDMatch gates which requests receive the session ID header.
+	// The header is only set when this engine's Evaluate returns Allowed=true.
+	// An engine with zero rules returns Allowed=false for every request, which
+	// means an empty SessionIDMatch effectively disables header injection.
+	SessionIDMatch  rulesengine.Engine
 }
 
 // NewProxyServer creates a new proxy server instance
@@ -66,6 +72,7 @@ func NewProxyServer(config Config) *Server {
 		pprofPort:       config.PprofPort,
 		sessionID:       config.SessionID,
 		sessionIDHeader: config.SessionIDHeader,
+		sessionIDMatch:  config.SessionIDMatch,
 	}
 }
 
@@ -343,9 +350,9 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 		}
 	}
 
-	// Stamp the session ID header, overwriting any value the jailed client may
-	// have set with the same name so that the upstream always sees boundary's ID.
-	if p.sessionIDHeader != "" && p.sessionID != "" {
+	// Stamp the session ID header on matching requests, overwriting any value
+	// the jailed client may have set so the upstream always sees boundary's ID.
+	if p.shouldStampSessionID(newReq.Method, targetURL.String()) {
 		newReq.Header.Set(p.sessionIDHeader, p.sessionID)
 	}
 
@@ -403,6 +410,18 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 	}
 
 	p.logger.Debug("Successfully wrote to connection")
+}
+
+// shouldStampSessionID returns true when the session ID header should be set
+// on the outgoing request. Injection requires both a header name and a session
+// ID to be configured, and the request must match at least one session-ID match
+// rule. An engine with zero rules always returns Allowed=false, so leaving
+// SessionIDMatch unconfigured effectively disables injection.
+func (p *Server) shouldStampSessionID(method, url string) bool {
+	if p.sessionIDHeader == "" || p.sessionID == "" {
+		return false
+	}
+	return p.sessionIDMatch.Evaluate(method, url).Allowed
 }
 
 func (p *Server) writeBlockedResponse(conn net.Conn, req *http.Request) {

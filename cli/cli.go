@@ -185,6 +185,19 @@ func BaseCommand(version string) *serpent.Command {
 				YAML:        "disable_session_id_header",
 			},
 			{
+				Flag:        "session-id-inject-domain",
+				Env:         "BOUNDARY_SESSION_ID_INJECT_DOMAIN",
+				Description: "Match rule (repeatable) selecting which requests receive the session ID header. Merged with session_id_inject_domains from config file. Uses the same syntax as --allow (e.g. \"domain=dev.coder.com path=/api/v2/aibridge/*\"). If no rules are configured the header is never injected.",
+				Value:       &cliConfig.SessionIDMatch,
+				YAML:        "", // CLI only, not loaded from YAML
+			},
+			{
+				Flag:        "", // No CLI flag, YAML only
+				Description: "Session ID match rules from config file (YAML only). Merged with --session-id-inject-domain CLI flags.",
+				Value:       &cliConfig.SessionIDMatchList,
+				YAML:        "session_id_inject_domains",
+			},
+			{
 				Flag:        "version",
 				Description: "Print version information and exit.",
 				Value:       &showVersion,
