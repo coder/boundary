@@ -52,7 +52,7 @@ func (r *recordingHandler) last() http.Header {
 // and that it overwrites any value the jailed client set.
 func TestSessionIDHeader_InjectedOnForwardedRequest(t *testing.T) {
 	const sessionID = "test-session-uuid-1234"
-	const headerName = "X-Agent-Firewall-Session-Id"
+	const headerName = "X-Coder-Agent-Firewall-Session-Id"
 
 	recorder := &recordingHandler{}
 	backend := httptest.NewServer(recorder)
@@ -85,7 +85,7 @@ func TestSessionIDHeader_InjectedOnForwardedRequest(t *testing.T) {
 // when the jailed process has already set the same header.
 func TestSessionIDHeader_OverwritesClientValue(t *testing.T) {
 	const sessionID = "boundary-session-uuid"
-	const headerName = "X-Agent-Firewall-Session-Id"
+	const headerName = "X-Coder-Agent-Firewall-Session-Id"
 	const clientValue = "evil-client-forged-value"
 
 	recorder := &recordingHandler{}
@@ -121,7 +121,7 @@ func TestSessionIDHeader_OverwritesClientValue(t *testing.T) {
 // TestSessionIDHeader_OmittedWhenDisabled verifies that no header is injected
 // when SessionIDHeader is empty (i.e. the feature is disabled).
 func TestSessionIDHeader_OmittedWhenDisabled(t *testing.T) {
-	const headerName = "X-Agent-Firewall-Session-Id"
+	const headerName = "X-Coder-Agent-Firewall-Session-Id"
 
 	recorder := &recordingHandler{}
 	backend := httptest.NewServer(recorder)

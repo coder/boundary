@@ -11,7 +11,7 @@ import (
 
 // DefaultSessionIDHeader is the HTTP header injected by boundary on every
 // outgoing forwarded request.
-const DefaultSessionIDHeader = "X-Agent-Firewall-Session-Id"
+const DefaultSessionIDHeader = "X-Coder-Agent-Firewall-Session-Id"
 
 // JailType represents the type of jail to use for network isolation
 type JailType string
