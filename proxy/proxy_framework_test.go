@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"os/user"
@@ -288,6 +289,28 @@ func (pt *ProxyTest) ExpectAllowedViaProxy(targetURL, expectedBody string) {
 	require.NoError(pt.t, err, "Failed to read response body")
 
 	require.Equal(pt.t, expectedBody, string(body), "Expected response body does not match")
+}
+
+// ExpectRawURI spins up a temporary httptest backend, sends a request through
+// the proxy with the given path, and asserts the backend received the expected
+// raw URI. Useful for verifying that percent-encoded characters survive forwarding.
+func (pt *ProxyTest) ExpectRawURI(requestPath, expectedRawURI string) {
+	pt.t.Helper()
+
+	var receivedRawURI string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedRawURI = r.RequestURI
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	resp, err := pt.proxyClient.Get(backend.URL + requestPath)
+	require.NoError(pt.t, err, "Failed to make request via proxy")
+	defer resp.Body.Close() //nolint:errcheck
+
+	require.Equal(pt.t, http.StatusOK, resp.StatusCode)
+	require.Equal(pt.t, expectedRawURI, receivedRawURI,
+		"proxy must preserve raw URI encoding")
 }
 
 // ExpectAllowedContainsViaProxy makes a request through the proxy using proxy transport (implicit CONNECT for HTTPS)

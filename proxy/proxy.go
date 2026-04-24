@@ -306,11 +306,14 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 		scheme = "https"
 	}
 
-	// Create a new request to the target server
+	// RawPath preserves the original percent-encoding (e.g. %2F in scoped
+	// npm package names like /@sentry%2Fbun) so url.URL.String() doesn't
+	// re-encode reserved characters as their literal form.
 	targetURL := &url.URL{
 		Scheme:   scheme,
 		Host:     req.Host,
 		Path:     req.URL.Path,
+		RawPath:  req.URL.RawPath,
 		RawQuery: req.URL.RawQuery,
 	}
 
