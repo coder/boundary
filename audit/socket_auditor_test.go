@@ -33,6 +33,12 @@ func TestSocketAuditor_AuditRequest_QueuesLog(t *testing.T) {
 		if log.Allowed != true {
 			t.Errorf("expected Allowed=true, got %v", log.Allowed)
 		}
+		if log.Time == nil {
+			t.Fatal("expected Time to be set")
+		}
+		if log.SequenceNumber != 0 {
+			t.Errorf("expected first SequenceNumber=0, got %d", log.SequenceNumber)
+		}
 		httpReq := log.GetHttpRequest()
 		if httpReq == nil {
 			t.Fatal("expected HttpRequest, got nil")
@@ -230,6 +236,8 @@ func TestSocketAuditor_Loop_RetriesOnConnectionFailure(t *testing.T) {
 		logCh:              make(chan *agentproto.BoundaryLog, 2*defaultBatchSize),
 		batchSize:          defaultBatchSize,
 		batchTimerDuration: time.Hour, // Ensure timer doesn't interfere with the test
+		sessionID:          "test-session-id",
+		seq:                &SequenceCounter{},
 	}
 
 	// Set up hook to detect flush attempts
@@ -349,6 +357,8 @@ func TestSocketAuditor_Loop_ReportsBatchFullDrops(t *testing.T) {
 		logCh:              make(chan *agentproto.BoundaryLog, 2*defaultBatchSize),
 		batchSize:          defaultBatchSize,
 		batchTimerDuration: time.Hour,
+		sessionID:          "test-session-id",
+		seq:                &SequenceCounter{},
 	}
 
 	flushed := make(chan struct{}, 4)
@@ -451,14 +461,71 @@ func TestSocketAuditor_Loop_ShutdownFlushIncludesDrops(t *testing.T) {
 func TestFlush_EmptyBatch(t *testing.T) {
 	t.Parallel()
 
-	err := flush(nil, nil)
+	err := flush(nil, "", nil)
 	if err != nil {
 		t.Errorf("expected nil error for empty batch, got %v", err)
 	}
 
-	err = flush(nil, []*agentproto.BoundaryLog{})
+	err = flush(nil, "", []*agentproto.BoundaryLog{})
 	if err != nil {
 		t.Errorf("expected nil error for empty slice, got %v", err)
+	}
+}
+
+func TestSocketAuditor_AuditRequest_SequenceNumberIncrements(t *testing.T) {
+	t.Parallel()
+
+	auditor := setupSocketAuditor(t)
+
+	for i := range 5 {
+		auditor.AuditRequest(Request{Method: "GET", URL: "https://example.com", Allowed: true})
+
+		select {
+		case log := <-auditor.logCh:
+			if log.SequenceNumber != uint64(i) {
+				t.Errorf("request %d: expected SequenceNumber=%d, got %d", i, i, log.SequenceNumber)
+			}
+		default:
+			t.Fatalf("request %d: expected log in channel, got none", i)
+		}
+	}
+}
+
+func TestSocketAuditor_Loop_FlushIncludesSessionID(t *testing.T) {
+	t.Parallel()
+
+	auditor, serverConn := setupTestAuditor(t)
+	auditor.batchTimerDuration = time.Hour
+
+	cr := newConnReader()
+	go readFromConn(t, serverConn, cr)
+
+	go auditor.Loop(t.Context())
+
+	// Fill a batch to trigger a flush.
+	for i := 0; i < auditor.batchSize; i++ {
+		auditor.AuditRequest(Request{Method: "GET", URL: "https://example.com", Allowed: true})
+	}
+
+	select {
+	case req := <-cr.logs:
+		if req.SessionId != "test-session-id" {
+			t.Errorf("expected SessionId=test-session-id, got %q", req.SessionId)
+		}
+		if len(req.Logs) != auditor.batchSize {
+			t.Errorf("expected %d logs, got %d", auditor.batchSize, len(req.Logs))
+		}
+		// Verify sequence numbers are monotonically increasing.
+		for i, log := range req.Logs {
+			if log.SequenceNumber != uint64(i) {
+				t.Errorf("log %d: expected SequenceNumber=%d, got %d", i, i, log.SequenceNumber)
+			}
+			if log.Time == nil {
+				t.Errorf("log %d: expected Time to be set", i)
+			}
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for flush")
 	}
 }
 
@@ -475,6 +542,8 @@ func setupSocketAuditor(t *testing.T) *SocketAuditor {
 		logCh:              make(chan *agentproto.BoundaryLog, 2*defaultBatchSize),
 		batchSize:          defaultBatchSize,
 		batchTimerDuration: defaultBatchTimerDuration,
+		sessionID:          "test-session-id",
+		seq:                &SequenceCounter{},
 	}
 }
 
@@ -504,6 +573,8 @@ func setupTestAuditor(t *testing.T) (*SocketAuditor, net.Conn) {
 		logCh:              make(chan *agentproto.BoundaryLog, 2*defaultBatchSize),
 		batchSize:          defaultBatchSize,
 		batchTimerDuration: defaultBatchTimerDuration,
+		sessionID:          "test-session-id",
+		seq:                &SequenceCounter{},
 	}
 
 	return auditor, serverConn
