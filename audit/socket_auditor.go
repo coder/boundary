@@ -81,10 +81,17 @@ func (s *SocketAuditor) AuditRequest(req Request) {
 		httpReq.MatchedRule = req.Rule
 	}
 
+	var seqNum uint64
+	if req.SequenceNumber != nil {
+		seqNum = *req.SequenceNumber
+	} else {
+		seqNum = s.seq.Next()
+	}
+
 	log := &agentproto.BoundaryLog{
 		Allowed:        req.Allowed,
 		Time:           timestamppb.Now(),
-		SequenceNumber: s.seq.Next(),
+		SequenceNumber: seqNum,
 		Resource:       &agentproto.BoundaryLog_HttpRequest_{HttpRequest: httpReq},
 	}
 

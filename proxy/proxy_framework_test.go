@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/coder/boundary/audit"
+	"github.com/coder/boundary/config"
 	"github.com/coder/boundary/rulesengine"
 	boundary_tls "github.com/coder/boundary/tls"
 	"github.com/stretchr/testify/require"
@@ -32,16 +33,19 @@ func (m *mockAuditor) AuditRequest(req audit.Request) {
 
 // ProxyTest is a high-level test framework for proxy tests
 type ProxyTest struct {
-	t              *testing.T
-	server         *Server
-	client         *http.Client
-	proxyClient    *http.Client
-	port           int
-	useCertManager bool
-	configDir      string
-	startupDelay   time.Duration
-	allowedRules   []string
-	auditor        audit.Auditor
+	t                  *testing.T
+	server             *Server
+	client             *http.Client
+	proxyClient        *http.Client
+	port               int
+	useCertManager     bool
+	configDir          string
+	startupDelay       time.Duration
+	allowedRules       []string
+	auditor            audit.Auditor
+	sessionCorrelation config.SessionCorrelationConfig
+	sessionID          string
+	seqCounter         *audit.SequenceCounter
 }
 
 // ProxyTestOption is a function that configures ProxyTest
@@ -109,6 +113,28 @@ func WithAuditor(auditor audit.Auditor) ProxyTestOption {
 	}
 }
 
+// WithSessionCorrelation sets the session correlation config for the
+// proxy under test.
+func WithSessionCorrelation(sc config.SessionCorrelationConfig) ProxyTestOption {
+	return func(pt *ProxyTest) {
+		pt.sessionCorrelation = sc
+	}
+}
+
+// WithSessionID sets the boundary session ID for the proxy under test.
+func WithSessionID(id string) ProxyTestOption {
+	return func(pt *ProxyTest) {
+		pt.sessionID = id
+	}
+}
+
+// WithSequenceCounter sets the sequence counter for the proxy under test.
+func WithSequenceCounter(seq *audit.SequenceCounter) ProxyTestOption {
+	return func(pt *ProxyTest) {
+		pt.seqCounter = seq
+	}
+}
+
 // Start starts the proxy server
 func (pt *ProxyTest) Start() *ProxyTest {
 	pt.t.Helper()
@@ -153,11 +179,14 @@ func (pt *ProxyTest) Start() *ProxyTest {
 	}
 
 	pt.server = NewProxyServer(Config{
-		HTTPPort:   pt.port,
-		RuleEngine: ruleEngine,
-		Auditor:    auditor,
-		Logger:     logger,
-		TLSConfig:  tlsConfig,
+		HTTPPort:           pt.port,
+		RuleEngine:         ruleEngine,
+		Auditor:            auditor,
+		Logger:             logger,
+		TLSConfig:          tlsConfig,
+		SessionCorrelation: pt.sessionCorrelation,
+		SessionID:          pt.sessionID,
+		SequenceCounter:    pt.seqCounter,
 	})
 
 	err = pt.server.Start()

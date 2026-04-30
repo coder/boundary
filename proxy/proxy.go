@@ -13,23 +13,28 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/coder/boundary/audit"
+	"github.com/coder/boundary/config"
 	"github.com/coder/boundary/rulesengine"
 )
 
 // Server handles HTTP and HTTPS requests with rule-based filtering
 type Server struct {
-	ruleEngine rulesengine.Engine
-	auditor    audit.Auditor
-	logger     *slog.Logger
-	tlsConfig  *tls.Config
-	httpPort   int
-	started    atomic.Bool
+	ruleEngine         rulesengine.Engine
+	auditor            audit.Auditor
+	logger             *slog.Logger
+	tlsConfig          *tls.Config
+	httpPort           int
+	started            atomic.Bool
+	sessionCorrelation config.SessionCorrelationConfig
+	sessionID          string
+	seqCounter         *audit.SequenceCounter
 
 	listener     net.Listener
 	pprofServer  *http.Server
@@ -46,18 +51,30 @@ type Config struct {
 	TLSConfig    *tls.Config
 	PprofEnabled bool
 	PprofPort    int
+	// SessionCorrelation controls header injection for AI Bridge
+	// correlation. See config.SessionCorrelationConfig for details.
+	SessionCorrelation config.SessionCorrelationConfig
+	// SessionID is the boundary session UUID injected as a header
+	// on matching requests.
+	SessionID string
+	// SequenceCounter provides monotonically increasing sequence
+	// numbers shared with the auditor so both carry the same value.
+	SequenceCounter *audit.SequenceCounter
 }
 
 // NewProxyServer creates a new proxy server instance
 func NewProxyServer(config Config) *Server {
 	return &Server{
-		ruleEngine:   config.RuleEngine,
-		auditor:      config.Auditor,
-		logger:       config.Logger,
-		tlsConfig:    config.TLSConfig,
-		httpPort:     config.HTTPPort,
-		pprofEnabled: config.PprofEnabled,
-		pprofPort:    config.PprofPort,
+		ruleEngine:         config.RuleEngine,
+		auditor:            config.Auditor,
+		logger:             config.Logger,
+		tlsConfig:          config.TLSConfig,
+		httpPort:           config.HTTPPort,
+		pprofEnabled:       config.PprofEnabled,
+		pprofPort:          config.PprofPort,
+		sessionCorrelation: config.SessionCorrelation,
+		sessionID:          config.SessionID,
+		seqCounter:         config.SequenceCounter,
 	}
 }
 
@@ -276,12 +293,21 @@ func (p *Server) processHTTPRequest(conn net.Conn, req *http.Request, https bool
 
 	result := p.ruleEngine.Evaluate(req.Method, fullURL)
 
+	// Pre-allocate a sequence number so the audit event and any
+	// injected header carry the same value.
+	var seqNum *uint64
+	if p.seqCounter != nil {
+		n := p.seqCounter.Next()
+		seqNum = &n
+	}
+
 	p.auditor.AuditRequest(audit.Request{
-		Method:  req.Method,
-		URL:     fullURL,
-		Host:    req.Host,
-		Allowed: result.Allowed,
-		Rule:    result.Rule,
+		Method:         req.Method,
+		URL:            fullURL,
+		Host:           req.Host,
+		Allowed:        result.Allowed,
+		Rule:           result.Rule,
+		SequenceNumber: seqNum,
 	})
 
 	if !result.Allowed {
@@ -290,10 +316,36 @@ func (p *Server) processHTTPRequest(conn net.Conn, req *http.Request, https bool
 	}
 
 	// Forward request to destination
-	p.forwardRequest(conn, req, https)
+	p.forwardRequest(conn, req, https, seqNum)
 }
 
-func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
+// shouldInjectHeaders reports whether the request to the given host
+// and path matches any configured inject target. When session
+// correlation is disabled or no targets match it returns false.
+func (p *Server) shouldInjectHeaders(host, reqPath string) bool {
+	if !p.sessionCorrelation.Enabled {
+		return false
+	}
+	// Strip port from host for matching (e.g. "example.com:443" -> "example.com").
+	h := host
+	if i := strings.LastIndex(h, ":"); i != -1 {
+		h = h[:i]
+	}
+	for _, target := range p.sessionCorrelation.InjectTargets {
+		if !strings.EqualFold(target.Domain, h) {
+			continue
+		}
+		if target.Path == "" {
+			return true
+		}
+		if matched, _ := path.Match(target.Path, reqPath); matched {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool, seqNum *uint64) {
 	// Create HTTP client
 	client := &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -335,6 +387,16 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 		}
 		for _, value := range values {
 			newReq.Header.Add(name, value)
+		}
+	}
+
+	// Stamp session correlation headers on matching requests,
+	// overwriting any value the jailed client may have set so the
+	// upstream always sees boundary's ID.
+	if p.shouldInjectHeaders(req.Host, req.URL.Path) {
+		newReq.Header.Set(p.sessionCorrelation.SessionIDHeaderName, p.sessionID)
+		if seqNum != nil {
+			newReq.Header.Set(p.sessionCorrelation.SequenceNumberHeaderName, strconv.FormatUint(*seqNum, 10))
 		}
 	}
 
