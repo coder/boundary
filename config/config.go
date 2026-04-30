@@ -85,6 +85,11 @@ type AppConfig struct {
 	UserInfo           *UserInfo
 	DisableAuditLogs   bool
 	LogProxySocketPath string
+
+	// SessionID is a UUIDv4 generated at process startup. It groups
+	// all audit events produced by this boundary invocation into a
+	// single session. Set by Run, not by configuration.
+	SessionID string
 }
 
 func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) (AppConfig, error) {

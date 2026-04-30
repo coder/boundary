@@ -6,6 +6,7 @@ require (
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/coder/coder/v2 v2.10.1-0.20260303212958-f758443f44ac
 	github.com/coder/serpent v0.14.0
+	github.com/google/uuid v1.6.0
 	github.com/landlock-lsm/go-landlock v0.0.0-20251103212306-430f8e5cd97c
 	github.com/miekg/dns v1.1.72
 	github.com/spf13/pflag v1.0.10

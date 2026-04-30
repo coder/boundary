@@ -10,9 +10,13 @@ import (
 	"github.com/coder/boundary/config"
 	"github.com/coder/boundary/landjail"
 	"github.com/coder/boundary/nsjail_manager"
+	"github.com/google/uuid"
 )
 
 func Run(ctx context.Context, logger *slog.Logger, cfg config.AppConfig) error {
+	cfg.SessionID = uuid.New().String()
+	logger.Info("boundary session started", "session_id", cfg.SessionID)
+
 	switch cfg.JailType {
 	case config.NSJailType:
 		return nsjail_manager.Run(ctx, logger, cfg)
