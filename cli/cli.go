@@ -169,6 +169,43 @@ func BaseCommand(version string) *serpent.Command {
 				Value:       &showVersion,
 				YAML:        "", // CLI only
 			},
+			// Session correlation header injection options.
+			{
+				Flag:        "enable-session-correlation",
+				Env:         "BOUNDARY_SESSION_CORRELATION_ENABLED",
+				Description: "Enable session correlation header injection. Disable for deployments without AI Bridge in front.",
+				Value:       &cliConfig.SessionCorrelationEnabled,
+				YAML:        "session_correlation_enabled",
+			},
+			{
+				Flag:        "inject-session-id-on",
+				Env:         "BOUNDARY_INJECT_SESSION_ID_ON",
+				Description: `Inject target (repeatable). Requests matching these targets receive session correlation headers. Format: "domain=<host> [path=<glob>]".`,
+				Value:       &cliConfig.InjectSessionIDOn,
+				YAML:        "", // CLI only, YAML uses session_id_inject_targets.
+			},
+			{
+				Flag:        "", // No CLI flag, YAML only.
+				Description: "Inject targets from config file (YAML only).",
+				Value:       &cliConfig.InjectSessionIDOnYAML,
+				YAML:        "session_id_inject_targets",
+			},
+			{
+				Flag:        "session-id-header-name",
+				Env:         "BOUNDARY_SESSION_ID_HEADER_NAME",
+				Description: "HTTP header name for the boundary session ID.",
+				Default:     config.DefaultSessionIDHeaderName,
+				Value:       &cliConfig.SessionIDHeaderName,
+				YAML:        "session_id_header_name",
+			},
+			{
+				Flag:        "sequence-number-header-name",
+				Env:         "BOUNDARY_SEQUENCE_NUMBER_HEADER_NAME",
+				Description: "HTTP header name for the boundary sequence number.",
+				Default:     config.DefaultSequenceNumberHeaderName,
+				Value:       &cliConfig.SequenceNumberHeaderName,
+				YAML:        "sequence_number_header_name",
+			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
 			// Handle --version flag early

@@ -70,6 +70,13 @@ type CliConfig struct {
 	NoUserNamespace    serpent.Bool           `yaml:"no_user_namespace"`
 	DisableAuditLogs   serpent.Bool           `yaml:"disable_audit_logs"`
 	LogProxySocketPath serpent.String         `yaml:"log_proxy_socket_path"`
+
+	// Session correlation header injection.
+	SessionCorrelationEnabled serpent.Bool           `yaml:"session_correlation_enabled"`
+	InjectSessionIDOn         AllowStringsArray      `yaml:"inject_session_id_on"`
+	InjectSessionIDOnYAML     serpent.StringArray     `yaml:"session_id_inject_targets"`
+	SessionIDHeaderName       serpent.String          `yaml:"session_id_header_name"`
+	SequenceNumberHeaderName  serpent.String          `yaml:"sequence_number_header_name"`
 }
 
 type AppConfig struct {
@@ -86,6 +93,10 @@ type AppConfig struct {
 	UserInfo           *UserInfo
 	DisableAuditLogs   bool
 	LogProxySocketPath string
+
+	// SessionCorrelation controls header injection for AI Bridge
+	// correlation. See SessionCorrelationConfig for details.
+	SessionCorrelation SessionCorrelationConfig
 
 	// SessionID is a UUIDv4 generated at process startup. It groups
 	// all audit events produced by this boundary invocation into a
@@ -108,6 +119,12 @@ func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) (AppConfig, er
 
 	userInfo := GetUserInfo()
 
+	// Build session correlation config from CLI and YAML sources.
+	sc, err := buildSessionCorrelation(cfg)
+	if err != nil {
+		return AppConfig{}, fmt.Errorf("session correlation config: %w", err)
+	}
+
 	return AppConfig{
 		AllowRules:         allAllowStrings,
 		LogLevel:           cfg.LogLevel.Value(),
@@ -122,5 +139,46 @@ func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) (AppConfig, er
 		UserInfo:           userInfo,
 		DisableAuditLogs:   cfg.DisableAuditLogs.Value(),
 		LogProxySocketPath: cfg.LogProxySocketPath.Value(),
+		SessionCorrelation: sc,
 	}, nil
+}
+
+// buildSessionCorrelation merges CLI and YAML inject target sources,
+// parses each target string, applies header name defaults, and
+// validates the resulting configuration.
+func buildSessionCorrelation(cfg CliConfig) (SessionCorrelationConfig, error) {
+	// Merge YAML targets with CLI targets.
+	rawTargets := append(cfg.InjectSessionIDOnYAML.Value(), cfg.InjectSessionIDOn.Value()...)
+
+	var targets []InjectTarget
+	for _, raw := range rawTargets {
+		t, err := ParseInjectTarget(raw)
+		if err != nil {
+			return SessionCorrelationConfig{}, err
+		}
+		targets = append(targets, t)
+	}
+
+	// Apply defaults for header names.
+	sessionIDHeader := cfg.SessionIDHeaderName.Value()
+	if sessionIDHeader == "" {
+		sessionIDHeader = DefaultSessionIDHeaderName
+	}
+	seqHeader := cfg.SequenceNumberHeaderName.Value()
+	if seqHeader == "" {
+		seqHeader = DefaultSequenceNumberHeaderName
+	}
+
+	sc := SessionCorrelationConfig{
+		Enabled:                  cfg.SessionCorrelationEnabled.Value(),
+		InjectTargets:            targets,
+		SessionIDHeaderName:      sessionIDHeader,
+		SequenceNumberHeaderName: seqHeader,
+	}
+
+	if err := ValidateSessionCorrelation(sc); err != nil {
+		return SessionCorrelationConfig{}, err
+	}
+
+	return sc, nil
 }
