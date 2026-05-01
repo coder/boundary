@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/coder/coder/v2/agent/boundarylogproxy/codec"
 	agentproto "github.com/coder/coder/v2/agent/proto"
 )
@@ -35,6 +37,9 @@ func TestSocketAuditor_AuditRequest_QueuesLog(t *testing.T) {
 		}
 		if log.Time == nil {
 			t.Fatal("expected Time to be set")
+		}
+		if log.Time.AsTime().IsZero() {
+			t.Fatal("expected Time to not be the zero time")
 		}
 		if log.SequenceNumber != 0 {
 			t.Errorf("expected first SequenceNumber=0, got %d", log.SequenceNumber)
@@ -236,7 +241,7 @@ func TestSocketAuditor_Loop_RetriesOnConnectionFailure(t *testing.T) {
 		logCh:              make(chan *agentproto.BoundaryLog, 2*defaultBatchSize),
 		batchSize:          defaultBatchSize,
 		batchTimerDuration: time.Hour, // Ensure timer doesn't interfere with the test
-		sessionID:          "test-session-id",
+		sessionID:          uuid.MustParse("00000000-0000-4000-8000-000000000001"),
 		seq:                &SequenceCounter{},
 	}
 
@@ -357,7 +362,7 @@ func TestSocketAuditor_Loop_ReportsBatchFullDrops(t *testing.T) {
 		logCh:              make(chan *agentproto.BoundaryLog, 2*defaultBatchSize),
 		batchSize:          defaultBatchSize,
 		batchTimerDuration: time.Hour,
-		sessionID:          "test-session-id",
+		sessionID:          uuid.MustParse("00000000-0000-4000-8000-000000000001"),
 		seq:                &SequenceCounter{},
 	}
 
@@ -461,12 +466,12 @@ func TestSocketAuditor_Loop_ShutdownFlushIncludesDrops(t *testing.T) {
 func TestFlush_EmptyBatch(t *testing.T) {
 	t.Parallel()
 
-	err := flush(nil, "", nil)
+	err := flush(nil, uuid.Nil, nil)
 	if err != nil {
 		t.Errorf("expected nil error for empty batch, got %v", err)
 	}
 
-	err = flush(nil, "", []*agentproto.BoundaryLog{})
+	err = flush(nil, uuid.Nil, []*agentproto.BoundaryLog{})
 	if err != nil {
 		t.Errorf("expected nil error for empty slice, got %v", err)
 	}
@@ -509,8 +514,9 @@ func TestSocketAuditor_Loop_FlushIncludesSessionID(t *testing.T) {
 
 	select {
 	case req := <-cr.logs:
-		if req.SessionId != "test-session-id" {
-			t.Errorf("expected SessionId=test-session-id, got %q", req.SessionId)
+		expectedSessionID := uuid.MustParse("00000000-0000-4000-8000-000000000001").String()
+		if req.SessionId != expectedSessionID {
+			t.Errorf("expected SessionId=%s, got %q", expectedSessionID, req.SessionId)
 		}
 		if len(req.Logs) != auditor.batchSize {
 			t.Errorf("expected %d logs, got %d", auditor.batchSize, len(req.Logs))
@@ -542,7 +548,7 @@ func setupSocketAuditor(t *testing.T) *SocketAuditor {
 		logCh:              make(chan *agentproto.BoundaryLog, 2*defaultBatchSize),
 		batchSize:          defaultBatchSize,
 		batchTimerDuration: defaultBatchTimerDuration,
-		sessionID:          "test-session-id",
+		sessionID:          uuid.MustParse("00000000-0000-4000-8000-000000000001"),
 		seq:                &SequenceCounter{},
 	}
 }
@@ -573,7 +579,7 @@ func setupTestAuditor(t *testing.T) (*SocketAuditor, net.Conn) {
 		logCh:              make(chan *agentproto.BoundaryLog, 2*defaultBatchSize),
 		batchSize:          defaultBatchSize,
 		batchTimerDuration: defaultBatchTimerDuration,
-		sessionID:          "test-session-id",
+		sessionID:          uuid.MustParse("00000000-0000-4000-8000-000000000001"),
 		seq:                &SequenceCounter{},
 	}
 

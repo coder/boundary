@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 type mockAuditor struct {
@@ -25,7 +27,7 @@ func TestSetupAuditor_DisabledAuditLogs(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	ctx := context.Background()
 
-	auditor, err := SetupAuditor(ctx, logger, true, "", "test-session")
+	auditor, err := SetupAuditor(ctx, logger, true, "", uuid.New())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -50,7 +52,7 @@ func TestSetupAuditor_EmptySocketPath(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	ctx := context.Background()
 
-	_, err := SetupAuditor(ctx, logger, false, "", "test-session")
+	_, err := SetupAuditor(ctx, logger, false, "", uuid.New())
 	if err == nil {
 		t.Fatal("expected error for empty socket path, got nil")
 	}
@@ -62,7 +64,7 @@ func TestSetupAuditor_SocketDoesNotExist(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	ctx := context.Background()
 
-	auditor, err := SetupAuditor(ctx, logger, false, "/nonexistent/socket/path", "test-session")
+	auditor, err := SetupAuditor(ctx, logger, false, "/nonexistent/socket/path", uuid.New())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -100,7 +102,7 @@ func TestSetupAuditor_SocketExists(t *testing.T) {
 		t.Fatalf("failed to close temp file: %v", err)
 	}
 
-	auditor, err := SetupAuditor(ctx, logger, false, socketPath, "test-session")
+	auditor, err := SetupAuditor(ctx, logger, false, socketPath, uuid.New())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

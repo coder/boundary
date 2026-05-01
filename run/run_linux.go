@@ -14,8 +14,8 @@ import (
 )
 
 func Run(ctx context.Context, logger *slog.Logger, cfg config.AppConfig) error {
-	cfg.SessionID = uuid.New().String()
-	logger.Info("boundary session started", "session_id", cfg.SessionID)
+	cfg.SessionID = uuid.New()
+	logger.Info("boundary session started", "session_id", cfg.SessionID.String())
 
 	switch cfg.JailType {
 	case config.NSJailType:

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/coder/serpent"
+	"github.com/google/uuid"
 	"github.com/spf13/pflag"
 )
 
@@ -89,7 +90,7 @@ type AppConfig struct {
 	// SessionID is a UUIDv4 generated at process startup. It groups
 	// all audit events produced by this boundary invocation into a
 	// single session. Set by Run, not by configuration.
-	SessionID string
+	SessionID uuid.UUID
 }
 
 func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) (AppConfig, error) {
