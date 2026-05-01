@@ -482,7 +482,7 @@ func TestSocketAuditor_AuditRequest_SequenceNumberIncrements(t *testing.T) {
 
 		select {
 		case log := <-auditor.logCh:
-			if log.SequenceNumber != uint64(i) {
+			if log.SequenceNumber != int32(i) {
 				t.Errorf("request %d: expected SequenceNumber=%d, got %d", i, i, log.SequenceNumber)
 			}
 		default:
@@ -517,7 +517,7 @@ func TestSocketAuditor_Loop_FlushIncludesSessionID(t *testing.T) {
 		}
 		// Verify sequence numbers are monotonically increasing.
 		for i, log := range req.Logs {
-			if log.SequenceNumber != uint64(i) {
+			if log.SequenceNumber != int32(i) {
 				t.Errorf("log %d: expected SequenceNumber=%d, got %d", i, i, log.SequenceNumber)
 			}
 			if log.Time == nil {
