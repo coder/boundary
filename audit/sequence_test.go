@@ -18,7 +18,7 @@ func TestSequenceCounter_Increments(t *testing.T) {
 	t.Parallel()
 
 	var c SequenceCounter
-	for i := range uint64(100) {
+	for i := range int32(100) {
 		if got := c.Next(); got != i {
 			t.Fatalf("call %d: got %d, want %d", i, got, i)
 		}
