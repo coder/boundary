@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/coder/coder/v2/agent/boundarylogproxy/codec"
@@ -34,6 +35,8 @@ type SocketAuditor struct {
 	batchSize          int
 	batchTimerDuration time.Duration
 	socketPath         string
+	sessionID          uuid.UUID
+	seq                *SequenceCounter
 
 	droppedChannelFull atomic.Int64
 	droppedBatchFull   atomic.Int64
@@ -45,7 +48,7 @@ type SocketAuditor struct {
 // NewSocketAuditor creates a new SocketAuditor that sends logs to the agent's
 // boundary log proxy socket after SocketAuditor.Loop is called. The socket path
 // is read from EnvAuditSocketPath, falling back to defaultAuditSocketPath.
-func NewSocketAuditor(logger *slog.Logger, socketPath string) *SocketAuditor {
+func NewSocketAuditor(logger *slog.Logger, socketPath string, sessionID uuid.UUID, seq *SequenceCounter) *SocketAuditor {
 	// This channel buffer size intends to allow enough buffering for bursty
 	// AI agent network requests while a batch is being sent to the workspace
 	// agent.
@@ -60,6 +63,8 @@ func NewSocketAuditor(logger *slog.Logger, socketPath string) *SocketAuditor {
 		batchSize:          defaultBatchSize,
 		batchTimerDuration: defaultBatchTimerDuration,
 		socketPath:         socketPath,
+		sessionID:          sessionID,
+		seq:                seq,
 	}
 }
 
@@ -77,9 +82,10 @@ func (s *SocketAuditor) AuditRequest(req Request) {
 	}
 
 	log := &agentproto.BoundaryLog{
-		Allowed:  req.Allowed,
-		Time:     timestamppb.Now(),
-		Resource: &agentproto.BoundaryLog_HttpRequest_{HttpRequest: httpReq},
+		Allowed:        req.Allowed,
+		Time:           timestamppb.Now(),
+		SequenceNumber: s.seq.Next(),
+		Resource:       &agentproto.BoundaryLog_HttpRequest_{HttpRequest: httpReq},
 	}
 
 	select {
@@ -100,14 +106,17 @@ type flushErr struct {
 func (e *flushErr) Error() string { return e.err.Error() }
 
 // flush sends the current batch of logs to the given connection.
-func flush(conn net.Conn, logs []*agentproto.BoundaryLog) *flushErr {
+func flush(conn net.Conn, sessionID uuid.UUID, logs []*agentproto.BoundaryLog) *flushErr {
 	if len(logs) == 0 {
 		return nil
 	}
 
 	msg := &codec.BoundaryMessage{
 		Msg: &codec.BoundaryMessage_Logs{
-			Logs: &agentproto.ReportBoundaryLogsRequest{Logs: logs},
+			Logs: &agentproto.ReportBoundaryLogsRequest{
+				Logs:      logs,
+				SessionId: sessionID.String(),
+			},
 		},
 	}
 	if err := codec.WriteMessage(conn, codec.TagV2, msg); err != nil {
@@ -188,7 +197,7 @@ func (s *SocketAuditor) Loop(ctx context.Context) {
 			return
 		}
 
-		if err := flush(conn, batch); err != nil {
+		if err := flush(conn, s.sessionID, batch); err != nil {
 			if err.permanent {
 				// Data error: discard batch to avoid infinite retries.
 				s.logger.Warn("dropping batch due to data error on flush attempt",

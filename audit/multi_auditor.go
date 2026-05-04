@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+
+	"github.com/google/uuid"
 )
 
 // MultiAuditor wraps multiple auditors and sends audit events to all of them.
@@ -28,7 +30,7 @@ func (m *MultiAuditor) AuditRequest(req Request) {
 // provided configuration. It always includes a LogAuditor for stderr logging,
 // and conditionally adds a SocketAuditor if audit logs are enabled and the
 // workspace agent's log proxy socket exists.
-func SetupAuditor(ctx context.Context, logger *slog.Logger, disableAuditLogs bool, logProxySocketPath string) (Auditor, error) {
+func SetupAuditor(ctx context.Context, logger *slog.Logger, disableAuditLogs bool, logProxySocketPath string, sessionID uuid.UUID) (Auditor, error) {
 	stderrAuditor := NewLogAuditor(logger)
 	auditors := []Auditor{stderrAuditor}
 
@@ -48,7 +50,8 @@ func SetupAuditor(ctx context.Context, logger *slog.Logger, disableAuditLogs boo
 		}
 		agentWillProxy := !os.IsNotExist(err)
 		if agentWillProxy {
-			socketAuditor := NewSocketAuditor(logger, logProxySocketPath)
+			seq := &SequenceCounter{}
+			socketAuditor := NewSocketAuditor(logger, logProxySocketPath, sessionID, seq)
 			go socketAuditor.Loop(ctx)
 			auditors = append(auditors, socketAuditor)
 		} else {
