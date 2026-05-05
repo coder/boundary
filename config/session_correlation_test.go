@@ -205,9 +205,9 @@ func TestNewAppConfigFromCliConfig_SessionCorrelation(t *testing.T) {
 		{
 			name: "enabled with inject targets",
 			cli: func() CliConfig {
-			c := baseCliConfig()
-			_ = c.SessionCorrelationEnabled.Set("true")
-			_ = c.InjectSessionIDTarget.Set("domain=dev.coder.com path=/api/v2/aibridge/*")
+				c := baseCliConfig()
+				_ = c.SessionCorrelationEnabled.Set("true")
+				_ = c.InjectSessionIDTarget.Set("domain=dev.coder.com path=/api/v2/aibridge/*")
 				return c
 			}(),
 			want: SessionCorrelationConfig{
@@ -222,11 +222,11 @@ func TestNewAppConfigFromCliConfig_SessionCorrelation(t *testing.T) {
 		{
 			name: "custom header names",
 			cli: func() CliConfig {
-			c := baseCliConfig()
-			_ = c.SessionCorrelationEnabled.Set("true")
-			_ = c.InjectSessionIDTarget.Set("domain=example.com")
-			_ = c.SessionIDHeaderName.Set("X-My-Session")
-			_ = c.SequenceNumberHeaderName.Set("X-My-Seq")
+				c := baseCliConfig()
+				_ = c.SessionCorrelationEnabled.Set("true")
+				_ = c.InjectSessionIDTarget.Set("domain=example.com")
+				_ = c.SessionIDHeaderName.Set("X-My-Session")
+				_ = c.SequenceNumberHeaderName.Set("X-My-Seq")
 				return c
 			}(),
 			want: SessionCorrelationConfig{
@@ -243,9 +243,9 @@ func TestNewAppConfigFromCliConfig_SessionCorrelation(t *testing.T) {
 		{
 			name: "invalid inject target",
 			cli: func() CliConfig {
-			c := baseCliConfig()
-			_ = c.SessionCorrelationEnabled.Set("true")
-			_ = c.InjectSessionIDTarget.Set("notakey")
+				c := baseCliConfig()
+				_ = c.SessionCorrelationEnabled.Set("true")
+				_ = c.InjectSessionIDTarget.Set("notakey")
 				return c
 			}(),
 			wantErr: true,
