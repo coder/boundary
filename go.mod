@@ -4,8 +4,8 @@ go 1.25.9
 
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3
-	github.com/coder/coder/v2 v2.33.0-rc.3.0.20260501075247-b3e1178358f5
-	github.com/coder/serpent v0.14.0
+	github.com/coder/coder/v2 v2.34.0-rc.0.0.20260505083626-1ba7139f2154
+	github.com/coder/serpent v0.15.0
 	github.com/google/uuid v1.6.0
 	github.com/landlock-lsm/go-landlock v0.0.0-20251103212306-430f8e5cd97c
 	github.com/miekg/dns v1.1.72

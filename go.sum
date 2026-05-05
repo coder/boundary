@@ -34,10 +34,14 @@ github.com/clipperhouse/uax29/v2 v2.6.0 h1:z0cDbUV+aPASdFb2/ndFnS9ts/WNXgTNNGFoK
 github.com/clipperhouse/uax29/v2 v2.6.0/go.mod h1:Wn1g7MK6OoeDT0vL+Q0SQLDz/KpfsVRgg6W7ihQeh4g=
 github.com/coder/coder/v2 v2.33.0-rc.3.0.20260501075247-b3e1178358f5 h1:7V2ZTceP3V8EqYA8kC+3xrRwaZ8SOtgw4b8cElm0rcA=
 github.com/coder/coder/v2 v2.33.0-rc.3.0.20260501075247-b3e1178358f5/go.mod h1:w3FcuW2hJS/QnmY7ilsvt0yVpUhlVYdnBozwTkmpkKE=
+github.com/coder/coder/v2 v2.34.0-rc.0.0.20260505083626-1ba7139f2154 h1:f3/+Fbp1/SPq3g8sI/oTjYEc53Zs54Cbd5byw0TEkEE=
+github.com/coder/coder/v2 v2.34.0-rc.0.0.20260505083626-1ba7139f2154/go.mod h1:W1EYsVyhiAfMsZSguJK6/g5uJL3UbDPva4zvND7kHwQ=
 github.com/coder/pretty v0.0.0-20230908205945-e89ba86370e0 h1:3A0ES21Ke+FxEM8CXx9n47SZOKOpgSE1bbJzlE4qPVs=
 github.com/coder/pretty v0.0.0-20230908205945-e89ba86370e0/go.mod h1:5UuS2Ts+nTToAMeOjNlnHFkPahrtDkmpydBen/3wgZc=
 github.com/coder/serpent v0.14.0 h1:g7vt2zBMp3nWyAvyhvQduaI53Ku65U3wITMi01+/8pU=
 github.com/coder/serpent v0.14.0/go.mod h1:7OIvFBYMd+OqarMy5einBl8AtRr8LliopVU7pyrwucY=
+github.com/coder/serpent v0.15.0 h1:jobR7DnPsxzEMD0cRiailwlY+4v6HAPS/8emIgBpaIU=
+github.com/coder/serpent v0.15.0/go.mod h1:7OIvFBYMd+OqarMy5einBl8AtRr8LliopVU7pyrwucY=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
