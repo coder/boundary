@@ -72,11 +72,11 @@ type CliConfig struct {
 	LogProxySocketPath serpent.String         `yaml:"log_proxy_socket_path"`
 
 	// Session correlation header injection.
-	SessionCorrelationEnabled serpent.Bool           `yaml:"session_correlation_enabled"`
-	InjectSessionIDOn         AllowStringsArray      `yaml:"inject_session_id_on"`
-	InjectSessionIDOnYAML     serpent.StringArray     `yaml:"session_id_inject_targets"`
-	SessionIDHeaderName       serpent.String          `yaml:"session_id_header_name"`
-	SequenceNumberHeaderName  serpent.String          `yaml:"sequence_number_header_name"`
+	SessionCorrelationEnabled serpent.Bool        `yaml:"session_correlation_enabled"`
+	InjectSessionIDOn         AllowStringsArray   `yaml:"inject_session_id_on"`
+	InjectSessionIDOnYAML     serpent.StringArray `yaml:"session_id_inject_targets"`
+	SessionIDHeaderName       serpent.String      `yaml:"session_id_header_name"`
+	SequenceNumberHeaderName  serpent.String      `yaml:"sequence_number_header_name"`
 }
 
 type AppConfig struct {
