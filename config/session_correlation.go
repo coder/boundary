@@ -2,13 +2,23 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 )
 
-// Default header names for session correlation.
+// Default header names and paths for session correlation.
 const (
 	DefaultSessionIDHeaderName      = "X-Coder-Agent-Firewall-Session-Id"
 	DefaultSequenceNumberHeaderName = "X-Coder-Agent-Firewall-Sequence-Number"
+
+	// DefaultAIBridgePath is the path glob used when auto-deriving an inject
+	// target from CODER_AGENT_URL.
+	DefaultAIBridgePath = "/api/v2/aibridge/*"
+
+	// CoderAgentURLEnv is the environment variable set by the Coder workspace
+	// agent that points to the control plane. Boundary uses it to derive a
+	// default inject target when none is explicitly configured.
+	CoderAgentURLEnv = "CODER_AGENT_URL"
 )
 
 // InjectTarget represents a parsed target for session correlation header
@@ -77,6 +87,38 @@ func ParseInjectTarget(raw string) (InjectTarget, error) {
 	}
 
 	return target, nil
+}
+
+// DefaultInjectTargetFromEnv derives an InjectTarget from the CODER_AGENT_URL
+// variable in the provided environment slice. It returns nil if the variable is
+// absent, empty, or not a valid URL with a host. The derived target uses
+// DefaultAIBridgePath as the path glob so that all AI Bridge traffic on the
+// control-plane host is matched.
+//
+// The environ parameter is accepted rather than reading os.Environ directly so
+// that callers (and tests) can supply an arbitrary environment.
+func DefaultInjectTargetFromEnv(environ []string) *InjectTarget {
+	var raw string
+	for _, e := range environ {
+		k, v, ok := strings.Cut(e, "=")
+		if ok && k == CoderAgentURLEnv {
+			raw = v
+			break
+		}
+	}
+	if raw == "" {
+		return nil
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return nil
+	}
+
+	return &InjectTarget{
+		Domain: u.Hostname(),
+		Path:   DefaultAIBridgePath,
+	}
 }
 
 // ValidateSessionCorrelation checks that the session correlation config

@@ -37,7 +37,22 @@ func NewCommand(version string) *serpent.Command {
   # Use allowlist from config file with additional CLI allow rules
   boundary --allow "domain=example.com" -- curl https://example.com
 
-  # Block everything by default (implicit)`
+  # Block everything by default (implicit)
+
+  # Enable session correlation inside a Coder workspace (inject target auto-derived from CODER_AGENT_URL)
+  boundary --enable-session-correlation \
+    --allow "domain=dev.coder.com" -- python train.py
+
+  # Enable session correlation with an explicit inject target (e.g. outside a workspace or custom deployment)
+  boundary --enable-session-correlation \
+    --session-id-inject-target "domain=mydeployment.coder.com path=/api/v2/aibridge/*" \
+    --allow "domain=mydeployment.coder.com" -- python train.py
+
+  # Enable session correlation with multiple inject targets (e.g. staging + prod)
+  boundary --enable-session-correlation \
+    --session-id-inject-target "domain=staging.coder.com path=/api/v2/aibridge/*" \
+    --session-id-inject-target "domain=prod.coder.com path=/api/v2/aibridge/*" \
+    --allow "domain=staging.coder.com" --allow "domain=prod.coder.com" -- python train.py`
 
 	return cmd
 }
@@ -173,21 +188,21 @@ func BaseCommand(version string) *serpent.Command {
 			{
 				Flag:        "enable-session-correlation",
 				Env:         "BOUNDARY_SESSION_CORRELATION_ENABLED",
-				Description: "Enable session correlation header injection. Disable for deployments without AI Bridge in front.",
+				Description: "Enable session correlation header injection. When no inject targets are configured, the target is auto-derived from CODER_AGENT_URL (set automatically inside Coder workspaces). Disable for deployments without Coder AI Gateway in front.",
 				Value:       &cliConfig.SessionCorrelationEnabled,
 				YAML:        "session_correlation_enabled",
 			},
 			{
-				Flag:        "inject-session-id-on",
-				Env:         "BOUNDARY_INJECT_SESSION_ID_ON",
-				Description: `Inject target (repeatable). Requests matching these targets receive session correlation headers. Format: "domain=<host> [path=<glob>]".`,
-				Value:       &cliConfig.InjectSessionIDOn,
+				Flag:        "session-id-inject-target",
+				Env:         "BOUNDARY_SESSION_ID_INJECT_TARGET",
+				Description: `Inject target (repeatable via flag; env accepts one value). Requests matching these targets receive session correlation headers. For multiple targets use the YAML config. Format: "domain=<host> [path=<glob>]".`,
+				Value:       &cliConfig.InjectSessionIDTarget,
 				YAML:        "", // CLI only, YAML uses session_id_inject_targets.
 			},
 			{
 				Flag:        "", // No CLI flag, YAML only.
 				Description: "Inject targets from config file (YAML only).",
-				Value:       &cliConfig.InjectSessionIDOnYAML,
+				Value:       &cliConfig.InjectSessionIDTargets,
 				YAML:        "session_id_inject_targets",
 			},
 			{

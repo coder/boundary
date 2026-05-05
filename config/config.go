@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/coder/serpent"
@@ -73,8 +74,8 @@ type CliConfig struct {
 
 	// Session correlation header injection.
 	SessionCorrelationEnabled serpent.Bool        `yaml:"session_correlation_enabled"`
-	InjectSessionIDOn         AllowStringsArray   `yaml:"inject_session_id_on"`
-	InjectSessionIDOnYAML     serpent.StringArray `yaml:"session_id_inject_targets"`
+	InjectSessionIDTarget     AllowStringsArray   `yaml:"-"`                         // From CLI flags only
+	InjectSessionIDTargets    serpent.StringArray `yaml:"session_id_inject_targets"` // From config file
 	SessionIDHeaderName       serpent.String      `yaml:"session_id_header_name"`
 	SequenceNumberHeaderName  serpent.String      `yaml:"sequence_number_header_name"`
 }
@@ -120,7 +121,7 @@ func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) (AppConfig, er
 	userInfo := GetUserInfo()
 
 	// Build session correlation config from CLI and YAML sources.
-	sc, err := buildSessionCorrelation(cfg)
+	sc, err := buildSessionCorrelation(cfg, os.Environ())
 	if err != nil {
 		return AppConfig{}, fmt.Errorf("session correlation config: %w", err)
 	}
@@ -145,10 +146,12 @@ func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) (AppConfig, er
 
 // buildSessionCorrelation merges CLI and YAML inject target sources,
 // parses each target string, applies header name defaults, and
-// validates the resulting configuration.
-func buildSessionCorrelation(cfg CliConfig) (SessionCorrelationConfig, error) {
+// validates the resulting configuration. environ is passed explicitly
+// (rather than reading os.Environ inside) so that callers and tests
+// can supply a controlled environment.
+func buildSessionCorrelation(cfg CliConfig, environ []string) (SessionCorrelationConfig, error) {
 	// Merge YAML targets with CLI targets.
-	rawTargets := append(cfg.InjectSessionIDOnYAML.Value(), cfg.InjectSessionIDOn.Value()...)
+	rawTargets := append(cfg.InjectSessionIDTargets.Value(), cfg.InjectSessionIDTarget.Value()...)
 
 	var targets []InjectTarget
 	for _, raw := range rawTargets {
@@ -157,6 +160,12 @@ func buildSessionCorrelation(cfg CliConfig) (SessionCorrelationConfig, error) {
 			return SessionCorrelationConfig{}, err
 		}
 		targets = append(targets, t)
+	}
+
+	if len(targets) == 0 && cfg.SessionCorrelationEnabled.Value() {
+		if t := DefaultInjectTargetFromEnv(environ); t != nil {
+			targets = []InjectTarget{*t}
+		}
 	}
 
 	// Apply defaults for header names.
