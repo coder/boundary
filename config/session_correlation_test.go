@@ -205,9 +205,9 @@ func TestNewAppConfigFromCliConfig_SessionCorrelation(t *testing.T) {
 		{
 			name: "enabled with inject targets",
 			cli: func() CliConfig {
-				c := baseCliConfig()
-				c.SessionCorrelationEnabled.Set("true")
-				_ = c.InjectSessionIDTarget.Set("domain=dev.coder.com path=/api/v2/aibridge/*")
+			c := baseCliConfig()
+			_ = c.SessionCorrelationEnabled.Set("true")
+			_ = c.InjectSessionIDTarget.Set("domain=dev.coder.com path=/api/v2/aibridge/*")
 				return c
 			}(),
 			want: SessionCorrelationConfig{
@@ -222,11 +222,11 @@ func TestNewAppConfigFromCliConfig_SessionCorrelation(t *testing.T) {
 		{
 			name: "custom header names",
 			cli: func() CliConfig {
-				c := baseCliConfig()
-				c.SessionCorrelationEnabled.Set("true")
-				_ = c.InjectSessionIDTarget.Set("domain=example.com")
-				c.SessionIDHeaderName.Set("X-My-Session")
-				c.SequenceNumberHeaderName.Set("X-My-Seq")
+			c := baseCliConfig()
+			_ = c.SessionCorrelationEnabled.Set("true")
+			_ = c.InjectSessionIDTarget.Set("domain=example.com")
+			_ = c.SessionIDHeaderName.Set("X-My-Session")
+			_ = c.SequenceNumberHeaderName.Set("X-My-Seq")
 				return c
 			}(),
 			want: SessionCorrelationConfig{
@@ -243,9 +243,9 @@ func TestNewAppConfigFromCliConfig_SessionCorrelation(t *testing.T) {
 		{
 			name: "invalid inject target",
 			cli: func() CliConfig {
-				c := baseCliConfig()
-				c.SessionCorrelationEnabled.Set("true")
-				_ = c.InjectSessionIDTarget.Set("notakey")
+			c := baseCliConfig()
+			_ = c.SessionCorrelationEnabled.Set("true")
+			_ = c.InjectSessionIDTarget.Set("notakey")
 				return c
 			}(),
 			wantErr: true,
@@ -380,7 +380,7 @@ func TestBuildSessionCorrelation_AgentURLFallback(t *testing.T) {
 			name: "enabled, no explicit targets, CODER_AGENT_URL set → auto-derived",
 			cfg: func() CliConfig {
 				c := baseCliConfig()
-				c.SessionCorrelationEnabled.Set("true")
+				_ = c.SessionCorrelationEnabled.Set("true")
 				return c
 			},
 			environ: []string{"CODER_AGENT_URL=https://dev.coder.com/"},
@@ -392,7 +392,7 @@ func TestBuildSessionCorrelation_AgentURLFallback(t *testing.T) {
 			name: "enabled, no explicit targets, CODER_AGENT_URL absent → error",
 			cfg: func() CliConfig {
 				c := baseCliConfig()
-				c.SessionCorrelationEnabled.Set("true")
+				_ = c.SessionCorrelationEnabled.Set("true")
 				return c
 			},
 			environ: []string{},
@@ -402,7 +402,7 @@ func TestBuildSessionCorrelation_AgentURLFallback(t *testing.T) {
 			name: "enabled, explicit target wins over CODER_AGENT_URL",
 			cfg: func() CliConfig {
 				c := baseCliConfig()
-				c.SessionCorrelationEnabled.Set("true")
+				_ = c.SessionCorrelationEnabled.Set("true")
 				_ = c.InjectSessionIDTarget.Set("domain=custom.example.com")
 				return c
 			},
@@ -458,8 +458,8 @@ func TestBuildSessionCorrelation_AgentURLFallback(t *testing.T) {
 // correlation fields without tripping over unrelated validation.
 func baseCliConfig() CliConfig {
 	c := CliConfig{}
-	c.JailType.Set("nsjail")
-	c.SessionIDHeaderName.Set(DefaultSessionIDHeaderName)
-	c.SequenceNumberHeaderName.Set(DefaultSequenceNumberHeaderName)
+	_ = c.JailType.Set("nsjail")
+	_ = c.SessionIDHeaderName.Set(DefaultSessionIDHeaderName)
+	_ = c.SequenceNumberHeaderName.Set(DefaultSequenceNumberHeaderName)
 	return c
 }
