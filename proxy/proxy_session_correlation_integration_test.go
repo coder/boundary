@@ -108,11 +108,8 @@ func newSessionCorrelationIntegrationSetup(t *testing.T, sessionID string) *sess
 				Domain: llmURL.Hostname(),
 				Path:   "/v1/*",
 			}},
-			SessionIDHeaderName:      config.DefaultSessionIDHeaderName,
-			SequenceNumberHeaderName: config.DefaultSequenceNumberHeaderName,
 		}),
 		WithSessionID(sessionID),
-		WithSequenceCounter(seq),
 		WithAuditor(aud),
 	).Start()
 
@@ -146,18 +143,18 @@ func TestIntegration_LLMRequestAuditAndHeadersAgree(t *testing.T) {
 	require.Len(t, events, 1)
 	require.True(t, events[0].Allowed)
 	require.NotNil(t, events[0].SequenceNumber)
-	assert.Equal(t, uint64(0), *events[0].SequenceNumber)
+	assert.Equal(t, int32(0), events[0].SequenceNumber)
 
 	// Forwarded headers.
 	require.Equal(t, 1, s.llmBackend.requestCount())
 	hdr := s.llmBackend.headersAt(0)
-	assert.Equal(t, sessionID, hdr.Get(config.DefaultSessionIDHeaderName))
-	assert.Equal(t, "0", hdr.Get(config.DefaultSequenceNumberHeaderName))
+	assert.Equal(t, sessionID, hdr.Get(config.SessionIDHeaderName))
+	assert.Equal(t, "0", hdr.Get(config.SequenceNumberHeaderName))
 
 	// The two must agree.
 	assert.Equal(t,
-		strconv.FormatUint(*events[0].SequenceNumber, 10),
-		hdr.Get(config.DefaultSequenceNumberHeaderName),
+		strconv.Itoa(int(events[0].SequenceNumber)),
+		hdr.Get(config.SequenceNumberHeaderName),
 		"audit event and forwarded header must carry the same sequence number",
 	)
 }
@@ -180,14 +177,14 @@ func TestIntegration_NonLLMRequestAuditedWithoutHeaders(t *testing.T) {
 	require.Len(t, events, 1)
 	require.True(t, events[0].Allowed)
 	require.NotNil(t, events[0].SequenceNumber)
-	assert.Equal(t, uint64(0), *events[0].SequenceNumber)
+	assert.Equal(t, int32(0), events[0].SequenceNumber)
 
 	// No correlation headers on the backend.
 	require.Equal(t, 1, s.otherBackend.requestCount())
 	hdr := s.otherBackend.headersAt(0)
-	assert.Empty(t, hdr.Get(config.DefaultSessionIDHeaderName),
+	assert.Empty(t, hdr.Get(config.SessionIDHeaderName),
 		"non-inject-target requests must not carry session ID header")
-	assert.Empty(t, hdr.Get(config.DefaultSequenceNumberHeaderName),
+	assert.Empty(t, hdr.Get(config.SequenceNumberHeaderName),
 		"non-inject-target requests must not carry sequence number header")
 }
 
@@ -201,19 +198,15 @@ func TestIntegration_DeniedRequestAuditedNeverForwarded(t *testing.T) {
 	defer llm.close()
 
 	aud := &capturingAuditor{}
-	seq := &audit.SequenceCounter{}
 
 	pt := NewProxyTest(t,
 		WithCertManager(t.TempDir()),
 		// No allowed domains: deny everything.
 		WithSessionCorrelation(config.SessionCorrelationConfig{
-			Enabled:                  true,
-			InjectTargets:            []config.InjectTarget{{Domain: "anything.example.com"}},
-			SessionIDHeaderName:      config.DefaultSessionIDHeaderName,
-			SequenceNumberHeaderName: config.DefaultSequenceNumberHeaderName,
+			Enabled:       true,
+			InjectTargets: []config.InjectTarget{{Domain: "anything.example.com"}},
 		}),
 		WithSessionID("test-session"),
-		WithSequenceCounter(seq),
 		WithAuditor(aud),
 	).Start()
 	defer pt.Stop()
@@ -228,7 +221,7 @@ func TestIntegration_DeniedRequestAuditedNeverForwarded(t *testing.T) {
 	require.Len(t, events, 1)
 	require.False(t, events[0].Allowed)
 	require.NotNil(t, events[0].SequenceNumber)
-	assert.Equal(t, uint64(0), *events[0].SequenceNumber)
+	assert.Equal(t, int32(0), events[0].SequenceNumber)
 
 	// Backend never hit.
 	assert.Equal(t, 0, llm.requestCount(),
@@ -259,7 +252,6 @@ func TestIntegration_MixedRequestsSequenceOrdering(t *testing.T) {
 	require.NoError(t, err)
 
 	aud := &capturingAuditor{}
-	seq := &audit.SequenceCounter{}
 
 	pt := NewProxyTest(t,
 		WithCertManager(t.TempDir()),
@@ -272,11 +264,8 @@ func TestIntegration_MixedRequestsSequenceOrdering(t *testing.T) {
 				Domain: llmURL.Hostname(),
 				Path:   "/v1/*",
 			}},
-			SessionIDHeaderName:      config.DefaultSessionIDHeaderName,
-			SequenceNumberHeaderName: config.DefaultSequenceNumberHeaderName,
 		}),
 		WithSessionID(sessionID),
-		WithSequenceCounter(seq),
 		WithAuditor(aud),
 	).Start()
 	defer pt.Stop()
@@ -309,11 +298,11 @@ func TestIntegration_MixedRequestsSequenceOrdering(t *testing.T) {
 	events := aud.getRequests()
 	require.Len(t, events, 4, "expected exactly four audit events")
 
-	expectedSeq := []uint64{0, 1, 2, 3}
+	expectedSeq := []int32{0, 1, 2, 3}
 	expectedAllowed := []bool{true, true, false, true}
 	for i, ev := range events {
 		require.NotNil(t, ev.SequenceNumber, "event %d: sequence number must be set", i)
-		assert.Equal(t, expectedSeq[i], *ev.SequenceNumber,
+		assert.Equal(t, expectedSeq[i], ev.SequenceNumber,
 			"event %d: wrong sequence number", i)
 		assert.Equal(t, expectedAllowed[i], ev.Allowed,
 			"event %d: wrong allowed flag", i)
@@ -324,30 +313,30 @@ func TestIntegration_MixedRequestsSequenceOrdering(t *testing.T) {
 		"LLM backend should have received exactly two requests")
 
 	firstLLMHdr := llm.headersAt(0)
-	assert.Equal(t, sessionID, firstLLMHdr.Get(config.DefaultSessionIDHeaderName))
-	assert.Equal(t, "0", firstLLMHdr.Get(config.DefaultSequenceNumberHeaderName),
+	assert.Equal(t, sessionID, firstLLMHdr.Get(config.SessionIDHeaderName))
+	assert.Equal(t, "0", firstLLMHdr.Get(config.SequenceNumberHeaderName),
 		"first LLM request must have sequence 0")
 
 	secondLLMHdr := llm.headersAt(1)
-	assert.Equal(t, sessionID, secondLLMHdr.Get(config.DefaultSessionIDHeaderName))
-	assert.Equal(t, "3", secondLLMHdr.Get(config.DefaultSequenceNumberHeaderName),
+	assert.Equal(t, sessionID, secondLLMHdr.Get(config.SessionIDHeaderName))
+	assert.Equal(t, "3", secondLLMHdr.Get(config.SequenceNumberHeaderName),
 		"second LLM request must have sequence 3")
 
 	// -- Verify non-LLM backend has no correlation headers --
 	require.Equal(t, 1, other.requestCount())
 	otherHdr := other.headersAt(0)
-	assert.Empty(t, otherHdr.Get(config.DefaultSessionIDHeaderName))
-	assert.Empty(t, otherHdr.Get(config.DefaultSequenceNumberHeaderName))
+	assert.Empty(t, otherHdr.Get(config.SessionIDHeaderName))
+	assert.Empty(t, otherHdr.Get(config.SequenceNumberHeaderName))
 
 	// -- Verify the gap reveals intermediate activity --
 	// The gap between the two LLM sequence numbers (0 and 3) means
 	// that sequence numbers 1 and 2 were consumed by non-LLM
 	// activity, matching audit events 1 (non-LLM allowed) and 2
 	// (denied).
-	firstLLMSeq := *events[0].SequenceNumber
-	secondLLMSeq := *events[3].SequenceNumber
+	firstLLMSeq := events[0].SequenceNumber
+	secondLLMSeq := events[3].SequenceNumber
 	gap := secondLLMSeq - firstLLMSeq - 1
-	assert.Equal(t, uint64(2), gap,
+	assert.Equal(t, int32(2), gap,
 		"gap between LLM requests should reveal 2 intermediate events")
 }
 
@@ -372,7 +361,6 @@ func TestIntegration_SequenceGapRevealsAgenticLoop(t *testing.T) {
 	require.NoError(t, err)
 
 	aud := &capturingAuditor{}
-	seq := &audit.SequenceCounter{}
 
 	pt := NewProxyTest(t,
 		WithCertManager(t.TempDir()),
@@ -384,11 +372,8 @@ func TestIntegration_SequenceGapRevealsAgenticLoop(t *testing.T) {
 				Domain: llmURL.Hostname(),
 				Path:   "/v1/*",
 			}},
-			SessionIDHeaderName:      config.DefaultSessionIDHeaderName,
-			SequenceNumberHeaderName: config.DefaultSequenceNumberHeaderName,
 		}),
 		WithSessionID(sessionID),
-		WithSequenceCounter(seq),
 		WithAuditor(aud),
 	).Start()
 	defer pt.Stop()
@@ -412,24 +397,24 @@ func TestIntegration_SequenceGapRevealsAgenticLoop(t *testing.T) {
 
 	// Verify LLM sequence headers.
 	require.Equal(t, 2, llm.requestCount())
-	assert.Equal(t, "0", llm.headersAt(0).Get(config.DefaultSequenceNumberHeaderName))
-	assert.Equal(t, "4", llm.headersAt(1).Get(config.DefaultSequenceNumberHeaderName))
+	assert.Equal(t, "0", llm.headersAt(0).Get(config.SequenceNumberHeaderName))
+	assert.Equal(t, "4", llm.headersAt(1).Get(config.SequenceNumberHeaderName))
 
 	// The gap between sequence numbers 0 and 4 is 3, matching the
 	// three tool-use requests in between.
 	events := aud.getRequests()
 	require.Len(t, events, 5)
 
-	firstLLMSeq := *events[0].SequenceNumber
-	secondLLMSeq := *events[4].SequenceNumber
+	firstLLMSeq := events[0].SequenceNumber
+	secondLLMSeq := events[4].SequenceNumber
 	gap := secondLLMSeq - firstLLMSeq - 1
-	assert.Equal(t, uint64(3), gap,
+	assert.Equal(t, int32(3), gap,
 		"gap between prompts should equal number of tool-use requests")
 
 	// Verify the intermediate events are the tool-use requests.
 	for i := 1; i <= 3; i++ {
 		require.NotNil(t, events[i].SequenceNumber)
-		assert.Equal(t, uint64(i), *events[i].SequenceNumber)
+		assert.Equal(t, int32(i), events[i].SequenceNumber)
 		assert.True(t, events[i].Allowed)
 	}
 }
@@ -445,8 +430,8 @@ func TestIntegration_SpoofedHeadersOverwrittenWithCorrectSequence(t *testing.T) 
 
 	req, err := http.NewRequest(http.MethodPost, s.llmBackend.server.URL+"/v1/messages", nil)
 	require.NoError(t, err)
-	req.Header.Set(config.DefaultSessionIDHeaderName, "spoofed-session")
-	req.Header.Set(config.DefaultSequenceNumberHeaderName, "9999")
+	req.Header.Set(config.SessionIDHeaderName, "spoofed-session")
+	req.Header.Set(config.SequenceNumberHeaderName, "9999")
 
 	resp, err := s.pt.proxyClient.Do(req)
 	require.NoError(t, err)
@@ -456,16 +441,16 @@ func TestIntegration_SpoofedHeadersOverwrittenWithCorrectSequence(t *testing.T) 
 	// Backend received real values, not spoofed.
 	require.Equal(t, 1, s.llmBackend.requestCount())
 	hdr := s.llmBackend.headersAt(0)
-	assert.Equal(t, sessionID, hdr.Get(config.DefaultSessionIDHeaderName))
-	assert.Equal(t, "0", hdr.Get(config.DefaultSequenceNumberHeaderName))
+	assert.Equal(t, sessionID, hdr.Get(config.SessionIDHeaderName))
+	assert.Equal(t, "0", hdr.Get(config.SequenceNumberHeaderName))
 
 	// Audit event agrees with header.
 	events := s.auditor.getRequests()
 	require.Len(t, events, 1)
 	require.NotNil(t, events[0].SequenceNumber)
 	assert.Equal(t,
-		strconv.FormatUint(*events[0].SequenceNumber, 10),
-		hdr.Get(config.DefaultSequenceNumberHeaderName),
+		strconv.Itoa(int(events[0].SequenceNumber)),
+		hdr.Get(config.SequenceNumberHeaderName),
 	)
 }
 
@@ -487,10 +472,8 @@ func TestIntegration_DisabledCorrelationNoHeadersNoPreallocatedSequence(t *testi
 		WithAllowedDomain(llmURL.Hostname()),
 		// Correlation disabled; no sequence counter.
 		WithSessionCorrelation(config.SessionCorrelationConfig{
-			Enabled:                  false,
-			InjectTargets:            []config.InjectTarget{{Domain: llmURL.Hostname()}},
-			SessionIDHeaderName:      config.DefaultSessionIDHeaderName,
-			SequenceNumberHeaderName: config.DefaultSequenceNumberHeaderName,
+			Enabled:       false,
+			InjectTargets: []config.InjectTarget{{Domain: llmURL.Hostname()}},
 		}),
 		WithSessionID("should-not-appear"),
 		// Explicitly do NOT set WithSequenceCounter; seqCounter is nil.
@@ -506,14 +489,14 @@ func TestIntegration_DisabledCorrelationNoHeadersNoPreallocatedSequence(t *testi
 	// No correlation headers.
 	require.Equal(t, 1, llm.requestCount())
 	hdr := llm.headersAt(0)
-	assert.Empty(t, hdr.Get(config.DefaultSessionIDHeaderName))
-	assert.Empty(t, hdr.Get(config.DefaultSequenceNumberHeaderName))
+	assert.Empty(t, hdr.Get(config.SessionIDHeaderName))
+	assert.Empty(t, hdr.Get(config.SequenceNumberHeaderName))
 
 	// Audit event recorded but without a pre-allocated sequence
 	// number (nil), because no SequenceCounter was provided.
 	events := aud.getRequests()
 	require.Len(t, events, 1)
-	assert.Nil(t, events[0].SequenceNumber,
+	assert.Equal(t, int32(0), events[0].SequenceNumber,
 		"no sequence counter means no pre-allocated sequence number")
 }
 
@@ -547,17 +530,17 @@ func TestIntegration_ConcurrentRequestsUniqueSequenceNumbers(t *testing.T) {
 	require.Len(t, events, numRequests)
 
 	// Collect all sequence numbers and verify uniqueness.
-	seen := make(map[uint64]bool, numRequests)
+	seen := make(map[int32]bool, numRequests)
 	for i, ev := range events {
 		require.NotNil(t, ev.SequenceNumber,
 			"event %d: sequence number must not be nil", i)
-		assert.False(t, seen[*ev.SequenceNumber],
-			"event %d: duplicate sequence number %d", i, *ev.SequenceNumber)
-		seen[*ev.SequenceNumber] = true
+		assert.False(t, seen[ev.SequenceNumber],
+			"event %d: duplicate sequence number %d", i, ev.SequenceNumber)
+		seen[ev.SequenceNumber] = true
 	}
 
 	// The set should be exactly {0, 1, ..., numRequests-1}.
-	for i := uint64(0); i < numRequests; i++ {
+	for i := int32(0); i < numRequests; i++ {
 		assert.True(t, seen[i],
 			"sequence number %d is missing from the set", i)
 	}
@@ -567,11 +550,11 @@ func TestIntegration_ConcurrentRequestsUniqueSequenceNumbers(t *testing.T) {
 	headerSeqs := make(map[string]bool, numRequests)
 	for i := 0; i < numRequests; i++ {
 		hdr := s.llmBackend.headersAt(i)
-		seqStr := hdr.Get(config.DefaultSequenceNumberHeaderName)
+		seqStr := hdr.Get(config.SequenceNumberHeaderName)
 		assert.NotEmpty(t, seqStr, "request %d: sequence header must be set", i)
 		headerSeqs[seqStr] = true
 	}
-	for i := uint64(0); i < numRequests; i++ {
+	for i := int32(0); i < numRequests; i++ {
 		assert.True(t, headerSeqs[fmt.Sprintf("%d", i)],
 			"header sequence number %d is missing", i)
 	}
