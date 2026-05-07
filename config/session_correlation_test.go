@@ -116,60 +116,25 @@ func TestValidateSessionCorrelation(t *testing.T) {
 			},
 		},
 		{
-			name: "enabled with targets and default headers",
+			name: "enabled with targets",
 			cfg: SessionCorrelationConfig{
-				Enabled:                  true,
-				InjectTargets:            []InjectTarget{{Domain: "dev.coder.com"}},
-				SessionIDHeaderName:      DefaultSessionIDHeaderName,
-				SequenceNumberHeaderName: DefaultSequenceNumberHeaderName,
-			},
-		},
-		{
-			name: "enabled with custom headers",
-			cfg: SessionCorrelationConfig{
-				Enabled:                  true,
-				InjectTargets:            []InjectTarget{{Domain: "example.com", Path: "/api/*"}},
-				SessionIDHeaderName:      "X-Custom-Session",
-				SequenceNumberHeaderName: "X-Custom-Seq",
+				Enabled:       true,
+				InjectTargets: []InjectTarget{{Domain: "dev.coder.com"}},
 			},
 		},
 		{
 			name: "enabled with no targets",
 			cfg: SessionCorrelationConfig{
-				Enabled:                  true,
-				InjectTargets:            nil,
-				SessionIDHeaderName:      DefaultSessionIDHeaderName,
-				SequenceNumberHeaderName: DefaultSequenceNumberHeaderName,
+				Enabled:       true,
+				InjectTargets: nil,
 			},
 			wantErr: true,
 		},
 		{
 			name: "enabled with empty targets slice",
 			cfg: SessionCorrelationConfig{
-				Enabled:                  true,
-				InjectTargets:            []InjectTarget{},
-				SessionIDHeaderName:      DefaultSessionIDHeaderName,
-				SequenceNumberHeaderName: DefaultSequenceNumberHeaderName,
-			},
-			wantErr: true,
-		},
-		{
-			name: "enabled with empty session id header",
-			cfg: SessionCorrelationConfig{
-				Enabled:                  true,
-				InjectTargets:            []InjectTarget{{Domain: "example.com"}},
-				SessionIDHeaderName:      "",
-				SequenceNumberHeaderName: DefaultSequenceNumberHeaderName,
-			},
-			wantErr: true,
-		},
-		{
-			name: "enabled with empty sequence number header",
-			cfg: SessionCorrelationConfig{
-				Enabled:                  true,
-				InjectTargets:            []InjectTarget{{Domain: "example.com"}},
-				SessionIDHeaderName:      DefaultSessionIDHeaderName,
-				SequenceNumberHeaderName: "",
+				Enabled:       true,
+				InjectTargets: []InjectTarget{},
 			},
 			wantErr: true,
 		},
@@ -207,10 +172,8 @@ func TestNewAppConfigFromCliConfig_SessionCorrelation(t *testing.T) {
 			name: "defaults when not configured",
 			cli:  baseCliConfig(),
 			want: SessionCorrelationConfig{
-				Enabled:                  false,
-				InjectTargets:            nil,
-				SessionIDHeaderName:      DefaultSessionIDHeaderName,
-				SequenceNumberHeaderName: DefaultSequenceNumberHeaderName,
+				Enabled:       false,
+				InjectTargets: nil,
 			},
 		},
 		{
@@ -226,25 +189,6 @@ func TestNewAppConfigFromCliConfig_SessionCorrelation(t *testing.T) {
 				InjectTargets: []InjectTarget{
 					{Domain: "dev.coder.com", Path: "/api/v2/aibridge/*"},
 				},
-				SessionIDHeaderName:      DefaultSessionIDHeaderName,
-				SequenceNumberHeaderName: DefaultSequenceNumberHeaderName,
-			},
-		},
-		{
-			name: "custom header names",
-			cli: func() CliConfig {
-				c := baseCliConfig()
-				_ = c.SessionCorrelationEnabled.Set("true")
-				_ = c.InjectSessionIDTarget.Set("domain=example.com")
-				_ = c.SessionIDHeaderName.Set("X-My-Session")
-				_ = c.SequenceNumberHeaderName.Set("X-My-Seq")
-				return c
-			}(),
-			want: SessionCorrelationConfig{
-				Enabled:                  true,
-				InjectTargets:            []InjectTarget{{Domain: "example.com"}},
-				SessionIDHeaderName:      "X-My-Session",
-				SequenceNumberHeaderName: "X-My-Seq",
 			},
 		},
 		{
@@ -256,10 +200,8 @@ func TestNewAppConfigFromCliConfig_SessionCorrelation(t *testing.T) {
 			}(),
 			environ: []string{"CODER_AGENT_URL=https://dev.coder.com/"},
 			want: SessionCorrelationConfig{
-				Enabled:                  true,
-				InjectTargets:            []InjectTarget{{Domain: "dev.coder.com", Path: DefaultAIBridgePath}},
-				SessionIDHeaderName:      DefaultSessionIDHeaderName,
-				SequenceNumberHeaderName: DefaultSequenceNumberHeaderName,
+				Enabled:       true,
+				InjectTargets: []InjectTarget{{Domain: "dev.coder.com", Path: DefaultAIBridgePath}},
 			},
 		},
 		{
@@ -302,14 +244,6 @@ func TestNewAppConfigFromCliConfig_SessionCorrelation(t *testing.T) {
 			sc := got.SessionCorrelation
 			if sc.Enabled != tc.want.Enabled {
 				t.Errorf("Enabled: got %v, want %v", sc.Enabled, tc.want.Enabled)
-			}
-			if sc.SessionIDHeaderName != tc.want.SessionIDHeaderName {
-				t.Errorf("SessionIDHeaderName: got %q, want %q",
-					sc.SessionIDHeaderName, tc.want.SessionIDHeaderName)
-			}
-			if sc.SequenceNumberHeaderName != tc.want.SequenceNumberHeaderName {
-				t.Errorf("SequenceNumberHeaderName: got %q, want %q",
-					sc.SequenceNumberHeaderName, tc.want.SequenceNumberHeaderName)
 			}
 			if len(sc.InjectTargets) != len(tc.want.InjectTargets) {
 				t.Fatalf("InjectTargets len: got %d, want %d",
@@ -583,7 +517,5 @@ func TestBuildSessionCorrelation_AgentURLFallback(t *testing.T) {
 func baseCliConfig() CliConfig {
 	c := CliConfig{}
 	_ = c.JailType.Set("nsjail")
-	_ = c.SessionIDHeaderName.Set(DefaultSessionIDHeaderName)
-	_ = c.SequenceNumberHeaderName.Set(DefaultSequenceNumberHeaderName)
 	return c
 }

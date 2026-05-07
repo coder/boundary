@@ -6,10 +6,16 @@ import (
 	"strings"
 )
 
-// Default header names and paths for session correlation.
+// Header names and paths for session correlation.
 const (
-	DefaultSessionIDHeaderName      = "X-Coder-Agent-Firewall-Session-Id"
-	DefaultSequenceNumberHeaderName = "X-Coder-Agent-Firewall-Sequence-Number"
+	// SessionIDHeaderName is the fixed HTTP header name boundary injects to
+	// carry its session ID. Coder AI Gateway expects exactly this header name.
+	SessionIDHeaderName = "X-Coder-Agent-Firewall-Session-Id"
+
+	// SequenceNumberHeaderName is the fixed HTTP header name boundary injects
+	// to carry its per-session sequence number. Coder AI Gateway expects
+	// exactly this header name.
+	SequenceNumberHeaderName = "X-Coder-Agent-Firewall-Sequence-Number"
 
 	// DefaultAIBridgePath is the path glob used when auto-deriving an inject
 	// target from CODER_AGENT_URL.
@@ -42,15 +48,6 @@ type SessionCorrelationConfig struct {
 	// InjectTargets is the list of domain/path patterns that should
 	// receive session correlation headers.
 	InjectTargets []InjectTarget
-
-	// SessionIDHeaderName is the HTTP header name used to carry the
-	// boundary session ID. Defaults to DefaultSessionIDHeaderName.
-	SessionIDHeaderName string
-
-	// SequenceNumberHeaderName is the HTTP header name used to carry
-	// the boundary sequence number. Defaults to
-	// DefaultSequenceNumberHeaderName.
-	SequenceNumberHeaderName string
 }
 
 // ParseInjectTarget parses a string of the form "domain=... path=..."
@@ -140,14 +137,6 @@ func ValidateSessionCorrelation(cfg SessionCorrelationConfig) error {
 		return fmt.Errorf(
 			"session correlation is enabled but no inject targets are configured",
 		)
-	}
-
-	if cfg.SessionIDHeaderName == "" {
-		return fmt.Errorf("session-id-header-name must not be empty when session correlation is enabled")
-	}
-
-	if cfg.SequenceNumberHeaderName == "" {
-		return fmt.Errorf("sequence-number-header-name must not be empty when session correlation is enabled")
 	}
 
 	return nil

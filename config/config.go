@@ -75,8 +75,6 @@ type CliConfig struct {
 	SessionCorrelationEnabled serpent.Bool        `yaml:"session_correlation_enabled"`
 	InjectSessionIDTarget     AllowStringsArray   `yaml:"-"`                         // From CLI flags only
 	InjectSessionIDTargets    serpent.StringArray `yaml:"session_id_inject_targets"` // From config file
-	SessionIDHeaderName       serpent.String      `yaml:"session_id_header_name"`
-	SequenceNumberHeaderName  serpent.String      `yaml:"sequence_number_header_name"`
 }
 
 type AppConfig struct {
@@ -144,10 +142,9 @@ func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string, environ []stri
 }
 
 // buildSessionCorrelation merges CLI and YAML inject target sources,
-// parses each target string, applies header name defaults, and
-// validates the resulting configuration. environ is passed explicitly
-// (rather than reading os.Environ inside) so that callers and tests
-// can supply a controlled environment.
+// parses each target string, and validates the resulting configuration.
+// environ is passed explicitly (rather than reading os.Environ inside)
+// so that callers and tests can supply a controlled environment.
 func buildSessionCorrelation(cfg CliConfig, environ []string) (SessionCorrelationConfig, error) {
 	// Merge YAML targets with CLI targets.
 	rawTargets := append(cfg.InjectSessionIDTargets.Value(), cfg.InjectSessionIDTarget.Value()...)
@@ -167,21 +164,9 @@ func buildSessionCorrelation(cfg CliConfig, environ []string) (SessionCorrelatio
 		}
 	}
 
-	// Apply defaults for header names.
-	sessionIDHeader := cfg.SessionIDHeaderName.Value()
-	if sessionIDHeader == "" {
-		sessionIDHeader = DefaultSessionIDHeaderName
-	}
-	seqHeader := cfg.SequenceNumberHeaderName.Value()
-	if seqHeader == "" {
-		seqHeader = DefaultSequenceNumberHeaderName
-	}
-
 	sc := SessionCorrelationConfig{
-		Enabled:                  cfg.SessionCorrelationEnabled.Value(),
-		InjectTargets:            targets,
-		SessionIDHeaderName:      sessionIDHeader,
-		SequenceNumberHeaderName: seqHeader,
+		Enabled:       cfg.SessionCorrelationEnabled.Value(),
+		InjectTargets: targets,
 	}
 
 	if err := ValidateSessionCorrelation(sc); err != nil {

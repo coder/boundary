@@ -205,22 +205,6 @@ func BaseCommand(version string) *serpent.Command {
 				Value:       &cliConfig.InjectSessionIDTargets,
 				YAML:        "session_id_inject_targets",
 			},
-			{
-				Flag:        "session-id-header-name",
-				Env:         "BOUNDARY_SESSION_ID_HEADER_NAME",
-				Description: "HTTP header name for the boundary session ID.",
-				Default:     config.DefaultSessionIDHeaderName,
-				Value:       &cliConfig.SessionIDHeaderName,
-				YAML:        "session_id_header_name",
-			},
-			{
-				Flag:        "sequence-number-header-name",
-				Env:         "BOUNDARY_SEQUENCE_NUMBER_HEADER_NAME",
-				Description: "HTTP header name for the boundary sequence number.",
-				Default:     config.DefaultSequenceNumberHeaderName,
-				Value:       &cliConfig.SequenceNumberHeaderName,
-				YAML:        "sequence_number_header_name",
-			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
 			// Handle --version flag early
