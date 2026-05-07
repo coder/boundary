@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/coder/serpent"
@@ -105,7 +104,7 @@ type AppConfig struct {
 	SessionID uuid.UUID
 }
 
-func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) (AppConfig, error) {
+func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string, environ []string) (AppConfig, error) {
 	// Merge allowlist from config file with allow from CLI flags
 	allowListStrings := cfg.AllowListStrings.Value()
 	allowStrings := cfg.AllowStrings.Value()
@@ -121,7 +120,7 @@ func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) (AppConfig, er
 	userInfo := GetUserInfo()
 
 	// Build session correlation config from CLI and YAML sources.
-	sc, err := buildSessionCorrelation(cfg, os.Environ())
+	sc, err := buildSessionCorrelation(cfg, environ)
 	if err != nil {
 		return AppConfig{}, fmt.Errorf("session correlation config: %w", err)
 	}

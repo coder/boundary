@@ -228,7 +228,7 @@ func BaseCommand(version string) *serpent.Command {
 				printVersion(version)
 				return nil
 			}
-			appConfig, err := config.NewAppConfigFromCliConfig(cliConfig, inv.Args)
+			appConfig, err := config.NewAppConfigFromCliConfig(cliConfig, inv.Args, os.Environ())
 			if err != nil {
 				return fmt.Errorf("failed to parse cli config file: %v", err)
 			}

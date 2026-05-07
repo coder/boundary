@@ -189,6 +189,7 @@ func TestNewAppConfigFromCliConfig_SessionCorrelation(t *testing.T) {
 	tests := []struct {
 		name    string
 		cli     CliConfig
+		environ []string
 		want    SessionCorrelationConfig
 		wantErr bool
 	}{
@@ -236,10 +237,31 @@ func TestNewAppConfigFromCliConfig_SessionCorrelation(t *testing.T) {
 				SequenceNumberHeaderName: "X-My-Seq",
 			},
 		},
-		// Note: "enabled with no targets" is tested in
-		// TestBuildSessionCorrelation_AgentURLFallback with a controlled
-		// environ so that CODER_AGENT_URL in the test runner's environment
-		// cannot interfere.
+		{
+			name: "enabled with no targets, CODER_AGENT_URL set → auto-derived",
+			cli: func() CliConfig {
+				c := baseCliConfig()
+				_ = c.SessionCorrelationEnabled.Set("true")
+				return c
+			}(),
+			environ: []string{"CODER_AGENT_URL=https://dev.coder.com/"},
+			want: SessionCorrelationConfig{
+				Enabled:                  true,
+				InjectTargets:            []InjectTarget{{Domain: "dev.coder.com", Path: DefaultAIBridgePath}},
+				SessionIDHeaderName:      DefaultSessionIDHeaderName,
+				SequenceNumberHeaderName: DefaultSequenceNumberHeaderName,
+			},
+		},
+		{
+			name: "enabled with no targets, CODER_AGENT_URL absent → error",
+			cli: func() CliConfig {
+				c := baseCliConfig()
+				_ = c.SessionCorrelationEnabled.Set("true")
+				return c
+			}(),
+			environ: []string{},
+			wantErr: true,
+		},
 		{
 			name: "invalid inject target",
 			cli: func() CliConfig {
@@ -256,7 +278,7 @@ func TestNewAppConfigFromCliConfig_SessionCorrelation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := NewAppConfigFromCliConfig(tc.cli, []string{"echo", "hello"})
+			got, err := NewAppConfigFromCliConfig(tc.cli, []string{"echo", "hello"}, tc.environ)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got nil")
