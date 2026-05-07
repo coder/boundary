@@ -242,7 +242,6 @@ func TestSocketAuditor_Loop_RetriesOnConnectionFailure(t *testing.T) {
 		batchSize:          defaultBatchSize,
 		batchTimerDuration: time.Hour, // Ensure timer doesn't interfere with the test
 		sessionID:          uuid.MustParse("00000000-0000-4000-8000-000000000001"),
-		seq:                &SequenceCounter{},
 	}
 
 	// Set up hook to detect flush attempts
@@ -363,7 +362,6 @@ func TestSocketAuditor_Loop_ReportsBatchFullDrops(t *testing.T) {
 		batchSize:          defaultBatchSize,
 		batchTimerDuration: time.Hour,
 		sessionID:          uuid.MustParse("00000000-0000-4000-8000-000000000001"),
-		seq:                &SequenceCounter{},
 	}
 
 	flushed := make(chan struct{}, 4)
@@ -483,7 +481,7 @@ func TestSocketAuditor_AuditRequest_SequenceNumberIncrements(t *testing.T) {
 	auditor := setupSocketAuditor(t)
 
 	for i := range 5 {
-		auditor.AuditRequest(Request{Method: "GET", URL: "https://example.com", Allowed: true})
+		auditor.AuditRequest(Request{Method: "GET", URL: "https://example.com", Allowed: true, SequenceNumber: int32(i)})
 
 		select {
 		case log := <-auditor.logCh:
@@ -509,7 +507,7 @@ func TestSocketAuditor_Loop_FlushIncludesSessionID(t *testing.T) {
 
 	// Fill a batch to trigger a flush.
 	for i := 0; i < auditor.batchSize; i++ {
-		auditor.AuditRequest(Request{Method: "GET", URL: "https://example.com", Allowed: true})
+		auditor.AuditRequest(Request{Method: "GET", URL: "https://example.com", Allowed: true, SequenceNumber: int32(i)})
 	}
 
 	select {
@@ -549,7 +547,6 @@ func setupSocketAuditor(t *testing.T) *SocketAuditor {
 		batchSize:          defaultBatchSize,
 		batchTimerDuration: defaultBatchTimerDuration,
 		sessionID:          uuid.MustParse("00000000-0000-4000-8000-000000000001"),
-		seq:                &SequenceCounter{},
 	}
 }
 
@@ -580,7 +577,6 @@ func setupTestAuditor(t *testing.T) (*SocketAuditor, net.Conn) {
 		batchSize:          defaultBatchSize,
 		batchTimerDuration: defaultBatchTimerDuration,
 		sessionID:          uuid.MustParse("00000000-0000-4000-8000-000000000001"),
-		seq:                &SequenceCounter{},
 	}
 
 	return auditor, serverConn

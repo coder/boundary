@@ -12,10 +12,8 @@ type Request struct {
 	Allowed bool
 	Rule    string // The rule that matched (if any)
 
-	// SequenceNumber is a pre-allocated sequence number for this
-	// audit event. When non-nil the auditor must use this value
-	// instead of generating its own so that the audit log and
-	// any injected HTTP header carry the same number. When nil
-	// the auditor falls back to its internal SequenceCounter.
-	SequenceNumber *int32
+	// SequenceNumber is the sequence number assigned to this audit event
+	// by the proxy. It is monotonically increasing within a session and
+	// is shared with any injected HTTP header so both carry the same value.
+	SequenceNumber int32
 }

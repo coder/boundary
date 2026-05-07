@@ -45,7 +45,6 @@ type ProxyTest struct {
 	auditor            audit.Auditor
 	sessionCorrelation config.SessionCorrelationConfig
 	sessionID          string
-	seqCounter         *audit.SequenceCounter
 }
 
 // ProxyTestOption is a function that configures ProxyTest
@@ -128,13 +127,6 @@ func WithSessionID(id string) ProxyTestOption {
 	}
 }
 
-// WithSequenceCounter sets the sequence counter for the proxy under test.
-func WithSequenceCounter(seq *audit.SequenceCounter) ProxyTestOption {
-	return func(pt *ProxyTest) {
-		pt.seqCounter = seq
-	}
-}
-
 // Start starts the proxy server
 func (pt *ProxyTest) Start() *ProxyTest {
 	pt.t.Helper()
@@ -186,7 +178,6 @@ func (pt *ProxyTest) Start() *ProxyTest {
 		TLSConfig:          tlsConfig,
 		SessionCorrelation: pt.sessionCorrelation,
 		SessionID:          pt.sessionID,
-		SequenceCounter:    pt.seqCounter,
 	})
 
 	err = pt.server.Start()

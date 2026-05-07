@@ -7,7 +7,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/coder/boundary/audit"
 	"github.com/coder/boundary/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,8 +47,6 @@ func TestSessionCorrelation_MatchedDomain(t *testing.T) {
 	backendURL, err := url.Parse(backend.server.URL)
 	require.NoError(t, err)
 
-	seq := &audit.SequenceCounter{}
-
 	pt := NewProxyTest(t,
 		WithCertManager(t.TempDir()),
 		WithAllowedDomain(backendURL.Hostname()),
@@ -58,7 +55,6 @@ func TestSessionCorrelation_MatchedDomain(t *testing.T) {
 			InjectTargets: []config.InjectTarget{{Domain: backendURL.Hostname()}},
 		}),
 		WithSessionID("test-session-id-1234"),
-		WithSequenceCounter(seq),
 	).Start()
 	defer pt.Stop()
 
@@ -81,8 +77,6 @@ func TestSessionCorrelation_UnmatchedDomain(t *testing.T) {
 	backendURL, err := url.Parse(backend.server.URL)
 	require.NoError(t, err)
 
-	seq := &audit.SequenceCounter{}
-
 	pt := NewProxyTest(t,
 		WithCertManager(t.TempDir()),
 		WithAllowedDomain(backendURL.Hostname()),
@@ -91,7 +85,6 @@ func TestSessionCorrelation_UnmatchedDomain(t *testing.T) {
 			InjectTargets: []config.InjectTarget{{Domain: "other-domain.example.com"}},
 		}),
 		WithSessionID("test-session-id-1234"),
-		WithSequenceCounter(seq),
 	).Start()
 	defer pt.Stop()
 
@@ -114,8 +107,6 @@ func TestSessionCorrelation_Disabled(t *testing.T) {
 	backendURL, err := url.Parse(backend.server.URL)
 	require.NoError(t, err)
 
-	seq := &audit.SequenceCounter{}
-
 	pt := NewProxyTest(t,
 		WithCertManager(t.TempDir()),
 		WithAllowedDomain(backendURL.Hostname()),
@@ -124,7 +115,6 @@ func TestSessionCorrelation_Disabled(t *testing.T) {
 			InjectTargets: []config.InjectTarget{{Domain: backendURL.Hostname()}},
 		}),
 		WithSessionID("test-session-id-1234"),
-		WithSequenceCounter(seq),
 	).Start()
 	defer pt.Stop()
 
@@ -147,8 +137,6 @@ func TestSessionCorrelation_OverwritesClientValue(t *testing.T) {
 	backendURL, err := url.Parse(backend.server.URL)
 	require.NoError(t, err)
 
-	seq := &audit.SequenceCounter{}
-
 	pt := NewProxyTest(t,
 		WithCertManager(t.TempDir()),
 		WithAllowedDomain(backendURL.Hostname()),
@@ -157,7 +145,6 @@ func TestSessionCorrelation_OverwritesClientValue(t *testing.T) {
 			InjectTargets: []config.InjectTarget{{Domain: backendURL.Hostname()}},
 		}),
 		WithSessionID("real-session-id"),
-		WithSequenceCounter(seq),
 	).Start()
 	defer pt.Stop()
 
@@ -187,8 +174,6 @@ func TestSessionCorrelation_PathMatching(t *testing.T) {
 	backendURL, err := url.Parse(backend.server.URL)
 	require.NoError(t, err)
 
-	seq := &audit.SequenceCounter{}
-
 	pt := NewProxyTest(t,
 		WithCertManager(t.TempDir()),
 		WithAllowedDomain(backendURL.Hostname()),
@@ -200,7 +185,6 @@ func TestSessionCorrelation_PathMatching(t *testing.T) {
 			}},
 		}),
 		WithSessionID("test-session-id"),
-		WithSequenceCounter(seq),
 	).Start()
 	defer pt.Stop()
 
@@ -234,8 +218,6 @@ func TestSessionCorrelation_SequenceNumberIncrements(t *testing.T) {
 	backendURL, err := url.Parse(backend.server.URL)
 	require.NoError(t, err)
 
-	seq := &audit.SequenceCounter{}
-
 	pt := NewProxyTest(t,
 		WithCertManager(t.TempDir()),
 		WithAllowedDomain(backendURL.Hostname()),
@@ -244,7 +226,6 @@ func TestSessionCorrelation_SequenceNumberIncrements(t *testing.T) {
 			InjectTargets: []config.InjectTarget{{Domain: backendURL.Hostname()}},
 		}),
 		WithSessionID("test-session-id"),
-		WithSequenceCounter(seq),
 	).Start()
 	defer pt.Stop()
 

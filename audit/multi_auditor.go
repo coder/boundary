@@ -50,8 +50,7 @@ func SetupAuditor(ctx context.Context, logger *slog.Logger, disableAuditLogs boo
 		}
 		agentWillProxy := !os.IsNotExist(err)
 		if agentWillProxy {
-			seq := &SequenceCounter{}
-			socketAuditor := NewSocketAuditor(logger, logProxySocketPath, sessionID, seq)
+			socketAuditor := NewSocketAuditor(logger, logProxySocketPath, sessionID)
 			go socketAuditor.Loop(ctx)
 			auditors = append(auditors, socketAuditor)
 		} else {

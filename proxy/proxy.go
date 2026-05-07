@@ -34,7 +34,7 @@ type Server struct {
 	started            atomic.Bool
 	sessionCorrelation config.SessionCorrelationConfig
 	sessionID          string
-	seqCounter         *audit.SequenceCounter
+	seqCounter         audit.SequenceCounter
 
 	listener     net.Listener
 	pprofServer  *http.Server
@@ -57,9 +57,6 @@ type Config struct {
 	// SessionID is the boundary session UUID injected as a header
 	// on matching requests.
 	SessionID string
-	// SequenceCounter provides monotonically increasing sequence
-	// numbers shared with the auditor so both carry the same value.
-	SequenceCounter *audit.SequenceCounter
 }
 
 // NewProxyServer creates a new proxy server instance
@@ -74,7 +71,6 @@ func NewProxyServer(config Config) *Server {
 		pprofPort:          config.PprofPort,
 		sessionCorrelation: config.SessionCorrelation,
 		sessionID:          config.SessionID,
-		seqCounter:         config.SequenceCounter,
 	}
 }
 
@@ -293,13 +289,7 @@ func (p *Server) processHTTPRequest(conn net.Conn, req *http.Request, https bool
 
 	result := p.ruleEngine.Evaluate(req.Method, fullURL)
 
-	// Pre-allocate a sequence number so the audit event and any
-	// injected header carry the same value.
-	var seqNum *int32
-	if p.seqCounter != nil {
-		n := p.seqCounter.Next()
-		seqNum = &n
-	}
+	seqNum := p.seqCounter.Next()
 
 	p.auditor.AuditRequest(audit.Request{
 		Method:         req.Method,
@@ -345,7 +335,7 @@ func (p *Server) shouldInjectHeaders(host, reqPath string) bool {
 	return false
 }
 
-func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool, seqNum *int32) {
+func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool, seqNum int32) {
 	// Create HTTP client
 	client := &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -395,9 +385,7 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool, se
 	// upstream always sees boundary's ID.
 	if p.shouldInjectHeaders(req.Host, req.URL.Path) {
 		newReq.Header.Set(config.SessionIDHeaderName, p.sessionID)
-		if seqNum != nil {
-			newReq.Header.Set(config.SequenceNumberHeaderName, strconv.Itoa(int(*seqNum)))
-		}
+		newReq.Header.Set(config.SequenceNumberHeaderName, strconv.Itoa(int(seqNum)))
 	}
 
 	// Make request to destination
