@@ -398,6 +398,98 @@ func TestDefaultInjectTargetFromEnv(t *testing.T) {
 	}
 }
 
+func TestBuildSessionCorrelation_TargetMerge(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		cfg         func() CliConfig
+		wantTargets []InjectTarget
+	}{
+		{
+			name: "YAML targets only",
+			cfg: func() CliConfig {
+				c := baseCliConfig()
+				_ = c.SessionCorrelationEnabled.Set("true")
+				_ = c.InjectSessionIDTargets.Set("domain=yaml.example.com path=/yaml/*")
+				return c
+			},
+			wantTargets: []InjectTarget{
+				{Domain: "yaml.example.com", Path: "/yaml/*"},
+			},
+		},
+		{
+			name: "CLI targets only",
+			cfg: func() CliConfig {
+				c := baseCliConfig()
+				_ = c.SessionCorrelationEnabled.Set("true")
+				_ = c.InjectSessionIDTarget.Set("domain=cli.example.com path=/cli/*")
+				return c
+			},
+			wantTargets: []InjectTarget{
+				{Domain: "cli.example.com", Path: "/cli/*"},
+			},
+		},
+		{
+			name: "YAML and CLI targets merged, YAML comes first",
+			cfg: func() CliConfig {
+				c := baseCliConfig()
+				_ = c.SessionCorrelationEnabled.Set("true")
+				_ = c.InjectSessionIDTargets.Set("domain=yaml.example.com path=/yaml/*")
+				_ = c.InjectSessionIDTarget.Set("domain=cli.example.com path=/cli/*")
+				return c
+			},
+			wantTargets: []InjectTarget{
+				{Domain: "yaml.example.com", Path: "/yaml/*"},
+				{Domain: "cli.example.com", Path: "/cli/*"},
+			},
+		},
+		{
+			name: "multiple from each source are all preserved",
+			cfg: func() CliConfig {
+				c := baseCliConfig()
+				_ = c.SessionCorrelationEnabled.Set("true")
+				_ = c.InjectSessionIDTargets.Set("domain=yaml1.example.com")
+				_ = c.InjectSessionIDTargets.Set("domain=yaml2.example.com")
+				_ = c.InjectSessionIDTarget.Set("domain=cli1.example.com")
+				_ = c.InjectSessionIDTarget.Set("domain=cli2.example.com")
+				return c
+			},
+			wantTargets: []InjectTarget{
+				{Domain: "yaml1.example.com"},
+				{Domain: "yaml2.example.com"},
+				{Domain: "cli1.example.com"},
+				{Domain: "cli2.example.com"},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			sc, err := buildSessionCorrelation(tc.cfg(), []string{})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(sc.InjectTargets) != len(tc.wantTargets) {
+				t.Fatalf("InjectTargets len: got %d, want %d",
+					len(sc.InjectTargets), len(tc.wantTargets))
+			}
+			for i := range sc.InjectTargets {
+				if sc.InjectTargets[i].Domain != tc.wantTargets[i].Domain {
+					t.Errorf("InjectTargets[%d].Domain: got %q, want %q",
+						i, sc.InjectTargets[i].Domain, tc.wantTargets[i].Domain)
+				}
+				if sc.InjectTargets[i].Path != tc.wantTargets[i].Path {
+					t.Errorf("InjectTargets[%d].Path: got %q, want %q",
+						i, sc.InjectTargets[i].Path, tc.wantTargets[i].Path)
+				}
+			}
+		})
+	}
+}
+
 func TestBuildSessionCorrelation_AgentURLFallback(t *testing.T) {
 	t.Parallel()
 
