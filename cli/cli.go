@@ -39,11 +39,11 @@ func NewCommand(version string) *serpent.Command {
 
   # Block everything by default (implicit)
 
-  # Enable session correlation inside a Coder workspace (inject target auto-derived from CODER_AGENT_URL)
+  # Enable session correlation inside a Coder workspace
   boundary --enable-session-correlation \
     --allow "domain=dev.coder.com" -- python train.py
 
-  # Enable session correlation with an explicit inject target (e.g. outside a workspace or custom deployment)
+  # Enable session correlation with an explicit inject target
   boundary --enable-session-correlation \
     --session-id-inject-target "domain=mydeployment.coder.com path=/api/v2/aibridge/*" \
     --allow "domain=mydeployment.coder.com" -- python train.py
