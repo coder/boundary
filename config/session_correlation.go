@@ -62,6 +62,7 @@ func ParseInjectTarget(raw string) (InjectTarget, error) {
 	}
 
 	var target InjectTarget
+	seen := make(map[string]bool)
 	for _, part := range strings.Fields(raw) {
 		key, value, ok := strings.Cut(part, "=")
 		if !ok {
@@ -69,6 +70,12 @@ func ParseInjectTarget(raw string) (InjectTarget, error) {
 				"inject target: malformed key-value pair %q, expected key=value", part,
 			)
 		}
+		if seen[key] {
+			return InjectTarget{}, fmt.Errorf(
+				"inject target: duplicate key %q (use separate flags for multiple targets)", key,
+			)
+		}
+		seen[key] = true
 		switch key {
 		case "domain":
 			if value == "" {

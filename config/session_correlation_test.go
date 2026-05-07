@@ -58,6 +58,16 @@ func TestParseInjectTarget(t *testing.T) {
 			input:   "domain=example.com port=443",
 			wantErr: true,
 		},
+		{
+			name:    "duplicate domain key",
+			input:   "domain=staging.coder.com domain=prod.coder.com",
+			wantErr: true,
+		},
+		{
+			name:    "duplicate path key",
+			input:   "domain=example.com path=/api/* path=/other/*",
+			wantErr: true,
+		},
 	}
 
 	for _, tc := range tests {
