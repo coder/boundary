@@ -34,8 +34,8 @@ type SocketAuditor struct {
 	logCh              chan *agentproto.BoundaryLog
 	batchSize          int
 	batchTimerDuration time.Duration
-	socketPath string
-	sessionID  uuid.UUID
+	socketPath         string
+	sessionID          uuid.UUID
 
 	droppedChannelFull atomic.Int64
 	droppedBatchFull   atomic.Int64
