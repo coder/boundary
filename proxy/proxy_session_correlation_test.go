@@ -70,6 +70,45 @@ func TestSessionCorrelation_MatchedDomain(t *testing.T) {
 		"sequence number header must start at 0")
 }
 
+func TestSessionCorrelation_MatchedDomainWithPort(t *testing.T) {
+	backend := newHeaderCapturingBackend()
+	defer backend.close()
+
+	backendURL, err := url.Parse(backend.server.URL)
+	require.NoError(t, err)
+
+	// httptest.NewServer binds to a random ephemeral port, so backendURL.Host
+	// is always "127.0.0.1:<port>" and backendURL.Hostname() is "127.0.0.1".
+	// Verify that assumption holds before relying on it below.
+	require.NotEmpty(t, backendURL.Port(), "httptest.Server URL must include a port")
+	require.Equal(t, backendURL.Hostname()+":"+backendURL.Port(), backendURL.Host,
+		"backendURL.Host must be host:port")
+
+	// Configure the inject target with host:port instead of just the hostname.
+	// The port must be stripped during matching so the request still matches.
+	pt := NewProxyTest(t,
+		WithCertManager(t.TempDir()),
+		WithAllowedDomain(backendURL.Hostname()),
+		WithSessionCorrelation(config.SessionCorrelationConfig{
+			Enabled:       true,
+			InjectTargets: []config.InjectTarget{{Domain: backendURL.Host}},
+		}),
+		WithSessionID("test-session-id-1234"),
+	).Start()
+	defer pt.Stop()
+
+	resp, err := pt.proxyClient.Get(backend.server.URL + "/api/v2")
+	require.NoError(t, err)
+	defer resp.Body.Close() //nolint:errcheck
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	got := backend.receivedHeaders()
+	assert.Equal(t, "test-session-id-1234", got.Get(config.SessionIDHeaderName),
+		"session ID header must be injected when inject target domain includes a port")
+	assert.Equal(t, "0", got.Get(config.SequenceNumberHeaderName),
+		"sequence number header must start at 0")
+}
+
 func TestSessionCorrelation_UnmatchedDomain(t *testing.T) {
 	backend := newHeaderCapturingBackend()
 	defer backend.close()

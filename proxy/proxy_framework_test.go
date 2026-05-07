@@ -45,6 +45,7 @@ type ProxyTest struct {
 	auditor            audit.Auditor
 	sessionCorrelation config.SessionCorrelationConfig
 	sessionID          string
+	forwardTransport   http.RoundTripper
 }
 
 // ProxyTestOption is a function that configures ProxyTest
@@ -127,6 +128,15 @@ func WithSessionID(id string) ProxyTestOption {
 	}
 }
 
+// WithForwardTransport sets the http.RoundTripper the proxy uses when
+// forwarding requests to backends. Use in tests to trust self-signed
+// backend certificates (e.g. those from httptest.NewTLSServer).
+func WithForwardTransport(transport http.RoundTripper) ProxyTestOption {
+	return func(pt *ProxyTest) {
+		pt.forwardTransport = transport
+	}
+}
+
 // Start starts the proxy server
 func (pt *ProxyTest) Start() *ProxyTest {
 	pt.t.Helper()
@@ -178,6 +188,7 @@ func (pt *ProxyTest) Start() *ProxyTest {
 		TLSConfig:          tlsConfig,
 		SessionCorrelation: pt.sessionCorrelation,
 		SessionID:          pt.sessionID,
+		ForwardTransport:   pt.forwardTransport,
 	})
 
 	err = pt.server.Start()

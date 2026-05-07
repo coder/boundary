@@ -35,6 +35,7 @@ type Server struct {
 	sessionCorrelation config.SessionCorrelationConfig
 	sessionID          string
 	seqCounter         audit.SequenceCounter
+	forwardTransport   http.RoundTripper // nil means use http.DefaultTransport
 
 	listener     net.Listener
 	pprofServer  *http.Server
@@ -57,6 +58,10 @@ type Config struct {
 	// SessionID is the boundary session UUID injected as a header
 	// on matching requests.
 	SessionID string
+	// ForwardTransport, if non-nil, is used when forwarding requests to
+	// backend servers. Defaults to http.DefaultTransport when nil. Set in
+	// tests to trust self-signed backend certificates.
+	ForwardTransport http.RoundTripper
 }
 
 // NewProxyServer creates a new proxy server instance
@@ -71,6 +76,7 @@ func NewProxyServer(config Config) *Server {
 		pprofPort:          config.PprofPort,
 		sessionCorrelation: config.SessionCorrelation,
 		sessionID:          config.SessionID,
+		forwardTransport:   config.ForwardTransport,
 	}
 }
 
@@ -321,7 +327,11 @@ func (p *Server) shouldInjectHeaders(host, reqPath string) bool {
 		h = stripped
 	}
 	for _, target := range p.sessionCorrelation.InjectTargets {
-		if !strings.EqualFold(target.Domain, h) {
+		targetHost := target.Domain
+		if stripped, _, err := net.SplitHostPort(targetHost); err == nil {
+			targetHost = stripped
+		}
+		if !strings.EqualFold(targetHost, h) {
 			continue
 		}
 		if target.Path == "" {
@@ -340,6 +350,7 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool, se
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse // Don't follow redirects
 		},
+		Transport: p.forwardTransport, // nil → http.DefaultTransport
 	}
 
 	scheme := "http"
