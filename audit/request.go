@@ -17,5 +17,5 @@ type Request struct {
 	// instead of generating its own so that the audit log and
 	// any injected HTTP header carry the same number. When nil
 	// the auditor falls back to its internal SequenceCounter.
-	SequenceNumber *uint64
+	SequenceNumber *int32
 }

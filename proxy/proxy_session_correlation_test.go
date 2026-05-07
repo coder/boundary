@@ -54,10 +54,8 @@ func TestSessionCorrelation_MatchedDomain(t *testing.T) {
 		WithCertManager(t.TempDir()),
 		WithAllowedDomain(backendURL.Hostname()),
 		WithSessionCorrelation(config.SessionCorrelationConfig{
-			Enabled:                  true,
-			InjectTargets:            []config.InjectTarget{{Domain: backendURL.Hostname()}},
-			SessionIDHeaderName:      config.DefaultSessionIDHeaderName,
-			SequenceNumberHeaderName: config.DefaultSequenceNumberHeaderName,
+			Enabled:       true,
+			InjectTargets: []config.InjectTarget{{Domain: backendURL.Hostname()}},
 		}),
 		WithSessionID("test-session-id-1234"),
 		WithSequenceCounter(seq),
@@ -70,9 +68,9 @@ func TestSessionCorrelation_MatchedDomain(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	got := backend.receivedHeaders()
-	assert.Equal(t, "test-session-id-1234", got.Get(config.DefaultSessionIDHeaderName),
+	assert.Equal(t, "test-session-id-1234", got.Get(config.SessionIDHeaderName),
 		"session ID header must be injected on matching domain")
-	assert.Equal(t, "0", got.Get(config.DefaultSequenceNumberHeaderName),
+	assert.Equal(t, "0", got.Get(config.SequenceNumberHeaderName),
 		"sequence number header must start at 0")
 }
 
@@ -89,10 +87,8 @@ func TestSessionCorrelation_UnmatchedDomain(t *testing.T) {
 		WithCertManager(t.TempDir()),
 		WithAllowedDomain(backendURL.Hostname()),
 		WithSessionCorrelation(config.SessionCorrelationConfig{
-			Enabled:                  true,
-			InjectTargets:            []config.InjectTarget{{Domain: "other-domain.example.com"}},
-			SessionIDHeaderName:      config.DefaultSessionIDHeaderName,
-			SequenceNumberHeaderName: config.DefaultSequenceNumberHeaderName,
+			Enabled:       true,
+			InjectTargets: []config.InjectTarget{{Domain: "other-domain.example.com"}},
 		}),
 		WithSessionID("test-session-id-1234"),
 		WithSequenceCounter(seq),
@@ -105,9 +101,9 @@ func TestSessionCorrelation_UnmatchedDomain(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	got := backend.receivedHeaders()
-	assert.Empty(t, got.Get(config.DefaultSessionIDHeaderName),
+	assert.Empty(t, got.Get(config.SessionIDHeaderName),
 		"session ID header must not be injected on unmatched domain")
-	assert.Empty(t, got.Get(config.DefaultSequenceNumberHeaderName),
+	assert.Empty(t, got.Get(config.SequenceNumberHeaderName),
 		"sequence number header must not be injected on unmatched domain")
 }
 
@@ -124,10 +120,8 @@ func TestSessionCorrelation_Disabled(t *testing.T) {
 		WithCertManager(t.TempDir()),
 		WithAllowedDomain(backendURL.Hostname()),
 		WithSessionCorrelation(config.SessionCorrelationConfig{
-			Enabled:                  false,
-			InjectTargets:            []config.InjectTarget{{Domain: backendURL.Hostname()}},
-			SessionIDHeaderName:      config.DefaultSessionIDHeaderName,
-			SequenceNumberHeaderName: config.DefaultSequenceNumberHeaderName,
+			Enabled:       false,
+			InjectTargets: []config.InjectTarget{{Domain: backendURL.Hostname()}},
 		}),
 		WithSessionID("test-session-id-1234"),
 		WithSequenceCounter(seq),
@@ -140,9 +134,9 @@ func TestSessionCorrelation_Disabled(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	got := backend.receivedHeaders()
-	assert.Empty(t, got.Get(config.DefaultSessionIDHeaderName),
+	assert.Empty(t, got.Get(config.SessionIDHeaderName),
 		"session ID header must not be injected when correlation is disabled")
-	assert.Empty(t, got.Get(config.DefaultSequenceNumberHeaderName),
+	assert.Empty(t, got.Get(config.SequenceNumberHeaderName),
 		"sequence number header must not be injected when correlation is disabled")
 }
 
@@ -159,10 +153,8 @@ func TestSessionCorrelation_OverwritesClientValue(t *testing.T) {
 		WithCertManager(t.TempDir()),
 		WithAllowedDomain(backendURL.Hostname()),
 		WithSessionCorrelation(config.SessionCorrelationConfig{
-			Enabled:                  true,
-			InjectTargets:            []config.InjectTarget{{Domain: backendURL.Hostname()}},
-			SessionIDHeaderName:      config.DefaultSessionIDHeaderName,
-			SequenceNumberHeaderName: config.DefaultSequenceNumberHeaderName,
+			Enabled:       true,
+			InjectTargets: []config.InjectTarget{{Domain: backendURL.Hostname()}},
 		}),
 		WithSessionID("real-session-id"),
 		WithSequenceCounter(seq),
@@ -173,8 +165,8 @@ func TestSessionCorrelation_OverwritesClientValue(t *testing.T) {
 	// that should be overwritten by the proxy.
 	req, err := http.NewRequest(http.MethodGet, backend.server.URL+"/api/v2", nil)
 	require.NoError(t, err)
-	req.Header.Set(config.DefaultSessionIDHeaderName, "spoofed-session-id")
-	req.Header.Set(config.DefaultSequenceNumberHeaderName, "99999")
+	req.Header.Set(config.SessionIDHeaderName, "spoofed-session-id")
+	req.Header.Set(config.SequenceNumberHeaderName, "99999")
 
 	resp, err := pt.proxyClient.Do(req)
 	require.NoError(t, err)
@@ -182,9 +174,9 @@ func TestSessionCorrelation_OverwritesClientValue(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	got := backend.receivedHeaders()
-	assert.Equal(t, "real-session-id", got.Get(config.DefaultSessionIDHeaderName),
+	assert.Equal(t, "real-session-id", got.Get(config.SessionIDHeaderName),
 		"proxy must overwrite client-supplied session ID header")
-	assert.Equal(t, "0", got.Get(config.DefaultSequenceNumberHeaderName),
+	assert.Equal(t, "0", got.Get(config.SequenceNumberHeaderName),
 		"proxy must overwrite client-supplied sequence number header")
 }
 
@@ -206,8 +198,6 @@ func TestSessionCorrelation_PathMatching(t *testing.T) {
 				Domain: backendURL.Hostname(),
 				Path:   "/api/*",
 			}},
-			SessionIDHeaderName:      config.DefaultSessionIDHeaderName,
-			SequenceNumberHeaderName: config.DefaultSequenceNumberHeaderName,
 		}),
 		WithSessionID("test-session-id"),
 		WithSequenceCounter(seq),
@@ -221,7 +211,7 @@ func TestSessionCorrelation_PathMatching(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 
 		got := backend.receivedHeaders()
-		assert.Equal(t, "test-session-id", got.Get(config.DefaultSessionIDHeaderName),
+		assert.Equal(t, "test-session-id", got.Get(config.SessionIDHeaderName),
 			"header must be injected when path matches")
 	})
 
@@ -232,7 +222,7 @@ func TestSessionCorrelation_PathMatching(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 
 		got := backend.receivedHeaders()
-		assert.Empty(t, got.Get(config.DefaultSessionIDHeaderName),
+		assert.Empty(t, got.Get(config.SessionIDHeaderName),
 			"header must not be injected when path does not match")
 	})
 }
@@ -250,10 +240,8 @@ func TestSessionCorrelation_SequenceNumberIncrements(t *testing.T) {
 		WithCertManager(t.TempDir()),
 		WithAllowedDomain(backendURL.Hostname()),
 		WithSessionCorrelation(config.SessionCorrelationConfig{
-			Enabled:                  true,
-			InjectTargets:            []config.InjectTarget{{Domain: backendURL.Hostname()}},
-			SessionIDHeaderName:      config.DefaultSessionIDHeaderName,
-			SequenceNumberHeaderName: config.DefaultSequenceNumberHeaderName,
+			Enabled:       true,
+			InjectTargets: []config.InjectTarget{{Domain: backendURL.Hostname()}},
 		}),
 		WithSessionID("test-session-id"),
 		WithSequenceCounter(seq),
@@ -267,7 +255,7 @@ func TestSessionCorrelation_SequenceNumberIncrements(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 
 		got := backend.receivedHeaders()
-		assert.Equal(t, expected, got.Get(config.DefaultSequenceNumberHeaderName),
+		assert.Equal(t, expected, got.Get(config.SequenceNumberHeaderName),
 			"request %d: sequence number must be %s", i, expected)
 	}
 }

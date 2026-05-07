@@ -195,7 +195,7 @@ func BaseCommand(version string) *serpent.Command {
 			{
 				Flag:        "session-id-inject-target",
 				Env:         "BOUNDARY_SESSION_ID_INJECT_TARGET",
-				Description: `Inject target for session correlation headers. Repeat the flag once per target; each value describes exactly one target. Format: "domain=<host> [path=<glob>]". Example: --session-id-inject-target "domain=prod.coder.com path=/api/v2/aibridge/*"`,
+				Description: `Inject target for session correlation headers. Repeat the flag once per target; each value describes exactly one target. Format: "domain=<host> [path=<glob>]". Example: --session-id-inject-target "domain=prod.coder.com path=/api/v2/aibridge/*".`,
 				Value:       &cliConfig.InjectSessionIDTarget,
 				YAML:        "", // CLI only, YAML uses session_id_inject_targets.
 			},

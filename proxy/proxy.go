@@ -295,7 +295,7 @@ func (p *Server) processHTTPRequest(conn net.Conn, req *http.Request, https bool
 
 	// Pre-allocate a sequence number so the audit event and any
 	// injected header carry the same value.
-	var seqNum *uint64
+	var seqNum *int32
 	if p.seqCounter != nil {
 		n := p.seqCounter.Next()
 		seqNum = &n
@@ -345,7 +345,7 @@ func (p *Server) shouldInjectHeaders(host, reqPath string) bool {
 	return false
 }
 
-func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool, seqNum *uint64) {
+func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool, seqNum *int32) {
 	// Create HTTP client
 	client := &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -394,9 +394,9 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool, se
 	// overwriting any value the jailed client may have set so the
 	// upstream always sees boundary's ID.
 	if p.shouldInjectHeaders(req.Host, req.URL.Path) {
-		newReq.Header.Set(p.sessionCorrelation.SessionIDHeaderName, p.sessionID)
+		newReq.Header.Set(config.SessionIDHeaderName, p.sessionID)
 		if seqNum != nil {
-			newReq.Header.Set(p.sessionCorrelation.SequenceNumberHeaderName, strconv.FormatUint(*seqNum, 10))
+			newReq.Header.Set(config.SequenceNumberHeaderName, strconv.Itoa(int(*seqNum)))
 		}
 	}
 

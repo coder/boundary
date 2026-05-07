@@ -81,7 +81,7 @@ func (s *SocketAuditor) AuditRequest(req Request) {
 		httpReq.MatchedRule = req.Rule
 	}
 
-	var seqNum uint64
+	var seqNum int32
 	if req.SequenceNumber != nil {
 		seqNum = *req.SequenceNumber
 	} else {
