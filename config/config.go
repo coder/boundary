@@ -70,6 +70,11 @@ type CliConfig struct {
 	NoUserNamespace    serpent.Bool           `yaml:"no_user_namespace"`
 	DisableAuditLogs   serpent.Bool           `yaml:"disable_audit_logs"`
 	LogProxySocketPath serpent.String         `yaml:"log_proxy_socket_path"`
+
+	// Session correlation header injection.
+	SessionCorrelationEnabled serpent.Bool        `yaml:"session_correlation_enabled"`
+	InjectSessionIDTarget     AllowStringsArray   `yaml:"-"`                         // From CLI flags only
+	InjectSessionIDTargets    serpent.StringArray `yaml:"session_id_inject_targets"` // From config file
 }
 
 type AppConfig struct {
@@ -87,13 +92,17 @@ type AppConfig struct {
 	DisableAuditLogs   bool
 	LogProxySocketPath string
 
+	// SessionCorrelation controls header injection for AI Bridge
+	// correlation. See SessionCorrelationConfig for details.
+	SessionCorrelation SessionCorrelationConfig
+
 	// SessionID is a UUIDv4 generated at process startup. It groups
 	// all audit events produced by this boundary invocation into a
 	// single session. Set by Run, not by configuration.
 	SessionID uuid.UUID
 }
 
-func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) (AppConfig, error) {
+func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string, environ []string) (AppConfig, error) {
 	// Merge allowlist from config file with allow from CLI flags
 	allowListStrings := cfg.AllowListStrings.Value()
 	allowStrings := cfg.AllowStrings.Value()
@@ -107,6 +116,12 @@ func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) (AppConfig, er
 	}
 
 	userInfo := GetUserInfo()
+
+	// Build session correlation config from CLI and YAML sources.
+	sc, err := buildSessionCorrelation(cfg, environ)
+	if err != nil {
+		return AppConfig{}, fmt.Errorf("session correlation config: %w", err)
+	}
 
 	return AppConfig{
 		AllowRules:         allAllowStrings,
@@ -122,5 +137,41 @@ func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string) (AppConfig, er
 		UserInfo:           userInfo,
 		DisableAuditLogs:   cfg.DisableAuditLogs.Value(),
 		LogProxySocketPath: cfg.LogProxySocketPath.Value(),
+		SessionCorrelation: sc,
 	}, nil
+}
+
+// buildSessionCorrelation merges CLI and YAML inject target sources,
+// parses each target string, and validates the resulting configuration.
+// environ is passed explicitly (rather than reading os.Environ inside)
+// so that callers and tests can supply a controlled environment.
+func buildSessionCorrelation(cfg CliConfig, environ []string) (SessionCorrelationConfig, error) {
+	// Merge YAML targets with CLI targets.
+	rawTargets := append(cfg.InjectSessionIDTargets.Value(), cfg.InjectSessionIDTarget.Value()...)
+
+	var targets []InjectTarget
+	for _, raw := range rawTargets {
+		t, err := ParseInjectTarget(raw)
+		if err != nil {
+			return SessionCorrelationConfig{}, err
+		}
+		targets = append(targets, t)
+	}
+
+	if len(targets) == 0 && cfg.SessionCorrelationEnabled.Value() {
+		if t := DefaultInjectTargetFromEnv(environ); t != nil {
+			targets = []InjectTarget{*t}
+		}
+	}
+
+	sc := SessionCorrelationConfig{
+		Enabled:       cfg.SessionCorrelationEnabled.Value(),
+		InjectTargets: targets,
+	}
+
+	if err := ValidateSessionCorrelation(sc); err != nil {
+		return SessionCorrelationConfig{}, err
+	}
+
+	return sc, nil
 }

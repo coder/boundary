@@ -37,7 +37,22 @@ func NewCommand(version string) *serpent.Command {
   # Use allowlist from config file with additional CLI allow rules
   boundary --allow "domain=example.com" -- curl https://example.com
 
-  # Block everything by default (implicit)`
+  # Block everything by default (implicit)
+
+  # Enable session correlation inside a Coder workspace
+  boundary --enable-session-correlation \
+    --allow "domain=dev.coder.com" -- python train.py
+
+  # Enable session correlation with an explicit inject target
+  boundary --enable-session-correlation \
+    --session-id-inject-target "domain=mydeployment.coder.com path=/api/v2/aibridge/*" \
+    --allow "domain=mydeployment.coder.com" -- python train.py
+
+  # Enable session correlation with multiple inject targets (e.g. staging + prod)
+  boundary --enable-session-correlation \
+    --session-id-inject-target "domain=staging.coder.com path=/api/v2/aibridge/*" \
+    --session-id-inject-target "domain=prod.coder.com path=/api/v2/aibridge/*" \
+    --allow "domain=staging.coder.com" --allow "domain=prod.coder.com" -- python train.py`
 
 	return cmd
 }
@@ -169,6 +184,27 @@ func BaseCommand(version string) *serpent.Command {
 				Value:       &showVersion,
 				YAML:        "", // CLI only
 			},
+			// Session correlation header injection options.
+			{
+				Flag:        "enable-session-correlation",
+				Env:         "BOUNDARY_SESSION_CORRELATION_ENABLED",
+				Description: "Enable session correlation header injection. When no inject targets are configured, the target is auto-derived from CODER_AGENT_URL (set automatically inside Coder workspaces). Disable for deployments without Coder AI Gateway in front.",
+				Value:       &cliConfig.SessionCorrelationEnabled,
+				YAML:        "session_correlation_enabled",
+			},
+			{
+				Flag:        "session-id-inject-target",
+				Env:         "BOUNDARY_SESSION_ID_INJECT_TARGET",
+				Description: `Inject target for session correlation headers. Repeat the flag once per target; each value describes exactly one target. Format: "domain=<host> [path=<glob>]". Example: --session-id-inject-target "domain=prod.coder.com path=/api/v2/aibridge/*"`,
+				Value:       &cliConfig.InjectSessionIDTarget,
+				YAML:        "", // CLI only, YAML uses session_id_inject_targets.
+			},
+			{
+				Flag:        "", // No CLI flag, YAML only.
+				Description: "Inject targets from config file (YAML only).",
+				Value:       &cliConfig.InjectSessionIDTargets,
+				YAML:        "session_id_inject_targets",
+			},
 		},
 		Handler: func(inv *serpent.Invocation) error {
 			// Handle --version flag early
@@ -176,7 +212,7 @@ func BaseCommand(version string) *serpent.Command {
 				printVersion(version)
 				return nil
 			}
-			appConfig, err := config.NewAppConfigFromCliConfig(cliConfig, inv.Args)
+			appConfig, err := config.NewAppConfigFromCliConfig(cliConfig, inv.Args, os.Environ())
 			if err != nil {
 				return fmt.Errorf("failed to parse cli config file: %v", err)
 			}
