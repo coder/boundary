@@ -316,10 +316,9 @@ func (p *Server) shouldInjectHeaders(host, reqPath string) bool {
 	if !p.sessionCorrelation.Enabled {
 		return false
 	}
-	// Strip port from host for matching (e.g. "example.com:443" -> "example.com").
 	h := host
-	if i := strings.LastIndex(h, ":"); i != -1 {
-		h = h[:i]
+	if stripped, _, err := net.SplitHostPort(h); err == nil {
+		h = stripped
 	}
 	for _, target := range p.sessionCorrelation.InjectTargets {
 		if !strings.EqualFold(target.Domain, h) {
@@ -380,9 +379,6 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool, se
 		}
 	}
 
-	// Stamp session correlation headers on matching requests,
-	// overwriting any value the jailed client may have set so the
-	// upstream always sees boundary's ID.
 	if p.shouldInjectHeaders(req.Host, req.URL.Path) {
 		newReq.Header.Set(config.SessionIDHeaderName, p.sessionID)
 		newReq.Header.Set(config.SequenceNumberHeaderName, strconv.Itoa(int(seqNum)))
