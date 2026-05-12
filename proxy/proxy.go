@@ -34,7 +34,7 @@ type Server struct {
 	injectEngine     *rulesengine.Engine // nil when session correlation is disabled
 	sessionID        string
 	seqCounter       audit.SequenceCounter
-	forwardTransport http.RoundTripper // nil means use http.DefaultTransport
+	forwardTransport http.RoundTripper
 
 	listener     net.Listener
 	pprofServer  *http.Server
