@@ -141,26 +141,19 @@ func NewAppConfigFromCliConfig(cfg CliConfig, targetCMD []string, environ []stri
 	}, nil
 }
 
-// buildSessionCorrelation merges CLI and YAML inject target sources,
-// parses each target string, and validates the resulting configuration.
-// environ is passed explicitly (rather than reading os.Environ inside)
-// so that callers and tests can supply a controlled environment.
+// buildSessionCorrelation merges CLI and YAML inject target sources
+// and validates the resulting configuration. Inject targets use the same
+// "domain=... path=..." syntax as --allow rules so that matching semantics
+// are identical. environ is passed explicitly (rather than reading
+// os.Environ inside) so that callers and tests can supply a controlled
+// environment.
 func buildSessionCorrelation(cfg CliConfig, environ []string) (SessionCorrelationConfig, error) {
 	// Merge YAML targets with CLI targets.
-	rawTargets := append(cfg.InjectSessionIDTargets.Value(), cfg.InjectSessionIDTarget.Value()...)
-
-	var targets []InjectTarget
-	for _, raw := range rawTargets {
-		t, err := ParseInjectTarget(raw)
-		if err != nil {
-			return SessionCorrelationConfig{}, err
-		}
-		targets = append(targets, t)
-	}
+	targets := append(cfg.InjectSessionIDTargets.Value(), cfg.InjectSessionIDTarget.Value()...)
 
 	if len(targets) == 0 && cfg.SessionCorrelationEnabled.Value() {
-		if t := DefaultInjectTargetFromEnv(environ); t != nil {
-			targets = []InjectTarget{*t}
+		if t := DefaultInjectTargetFromEnv(environ); t != "" {
+			targets = []string{t}
 		}
 	}
 

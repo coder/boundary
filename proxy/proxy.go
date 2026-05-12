@@ -13,7 +13,6 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"net/url"
-	"path"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -32,10 +31,10 @@ type Server struct {
 	tlsConfig          *tls.Config
 	httpPort           int
 	started            atomic.Bool
-	sessionCorrelation config.SessionCorrelationConfig
-	sessionID          string
-	seqCounter         audit.SequenceCounter
-	forwardTransport   http.RoundTripper // nil means use http.DefaultTransport
+	injectEngine     *rulesengine.Engine // nil when session correlation is disabled
+	sessionID        string
+	seqCounter       audit.SequenceCounter
+	forwardTransport http.RoundTripper
 
 	listener     net.Listener
 	pprofServer  *http.Server
@@ -55,6 +54,10 @@ type Config struct {
 	// SessionCorrelation controls header injection for AI Bridge
 	// correlation. See config.SessionCorrelationConfig for details.
 	SessionCorrelation config.SessionCorrelationConfig
+	// InjectEngine, if non-nil, is used to evaluate whether outgoing
+	// requests match configured inject targets. Built from
+	// SessionCorrelation.InjectTargets using rulesengine.ParseAllowSpecs.
+	InjectEngine *rulesengine.Engine
 	// SessionID is the boundary session UUID injected as a header
 	// on matching requests.
 	SessionID string
@@ -74,8 +77,8 @@ func NewProxyServer(config Config) *Server {
 		httpPort:           config.HTTPPort,
 		pprofEnabled:       config.PprofEnabled,
 		pprofPort:          config.PprofPort,
-		sessionCorrelation: config.SessionCorrelation,
-		sessionID:          config.SessionID,
+		injectEngine:     config.InjectEngine,
+		sessionID:        config.SessionID,
 		forwardTransport:   config.ForwardTransport,
 	}
 }
@@ -315,33 +318,18 @@ func (p *Server) processHTTPRequest(conn net.Conn, req *http.Request, https bool
 	p.forwardRequest(conn, req, https, seqNum)
 }
 
-// shouldInjectHeaders reports whether the request to the given host
-// and path matches any configured inject target. When session
-// correlation is disabled or no targets match it returns false.
-func (p *Server) shouldInjectHeaders(host, reqPath string) bool {
-	if !p.sessionCorrelation.Enabled {
+// shouldInjectHeaders reports whether the request URL matches any
+// configured inject target. Inject targets are evaluated using the same
+// rulesengine matching as --allow rules so that domain/path semantics
+// are unified. When session correlation is disabled or no targets match
+// it returns false.
+func (p *Server) shouldInjectHeaders(fullURL string) bool {
+	if p.injectEngine == nil {
 		return false
 	}
-	h := host
-	if stripped, _, err := net.SplitHostPort(h); err == nil {
-		h = stripped
-	}
-	for _, target := range p.sessionCorrelation.InjectTargets {
-		targetHost := target.Domain
-		if stripped, _, err := net.SplitHostPort(targetHost); err == nil {
-			targetHost = stripped
-		}
-		if !strings.EqualFold(targetHost, h) {
-			continue
-		}
-		if target.Path == "" {
-			return true
-		}
-		if matched, _ := path.Match(target.Path, reqPath); matched {
-			return true
-		}
-	}
-	return false
+	// Inject targets do not restrict by HTTP method, so we pass an empty
+	// method. Rules without a method pattern match all methods.
+	return p.injectEngine.Evaluate("", fullURL).Allowed
 }
 
 func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool, seqNum int32) {
@@ -390,7 +378,7 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool, se
 		}
 	}
 
-	if p.shouldInjectHeaders(req.Host, req.URL.Path) {
+	if p.shouldInjectHeaders(targetURL.String()) {
 		newReq.Header.Set(config.SessionIDHeaderName, p.sessionID)
 		newReq.Header.Set(config.SequenceNumberHeaderName, strconv.Itoa(int(seqNum)))
 	}

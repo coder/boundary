@@ -180,6 +180,15 @@ func (pt *ProxyTest) Start() *ProxyTest {
 		}
 	}
 
+	// Build inject engine from session correlation targets.
+	var injectEngine *rulesengine.Engine
+	if pt.sessionCorrelation.Enabled && len(pt.sessionCorrelation.InjectTargets) > 0 {
+		injectRules, err := rulesengine.ParseAllowSpecs(pt.sessionCorrelation.InjectTargets)
+		require.NoError(pt.t, err, "Failed to parse inject target rules")
+		eng := rulesengine.NewRuleEngine(injectRules, logger)
+		injectEngine = &eng
+	}
+
 	pt.server = NewProxyServer(Config{
 		HTTPPort:           pt.port,
 		RuleEngine:         ruleEngine,
@@ -187,6 +196,7 @@ func (pt *ProxyTest) Start() *ProxyTest {
 		Logger:             logger,
 		TLSConfig:          tlsConfig,
 		SessionCorrelation: pt.sessionCorrelation,
+		InjectEngine:       injectEngine,
 		SessionID:          pt.sessionID,
 		ForwardTransport:   pt.forwardTransport,
 	})

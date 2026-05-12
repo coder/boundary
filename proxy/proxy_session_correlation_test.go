@@ -52,7 +52,7 @@ func TestSessionCorrelation_MatchedDomain(t *testing.T) {
 		WithAllowedDomain(backendURL.Hostname()),
 		WithSessionCorrelation(config.SessionCorrelationConfig{
 			Enabled:       true,
-			InjectTargets: []config.InjectTarget{{Domain: backendURL.Hostname()}},
+			InjectTargets: []string{"domain=" + backendURL.Hostname()},
 		}),
 		WithSessionID("test-session-id-1234"),
 	).Start()
@@ -84,14 +84,14 @@ func TestSessionCorrelation_MatchedDomainWithPort(t *testing.T) {
 	require.Equal(t, backendURL.Hostname()+":"+backendURL.Port(), backendURL.Host,
 		"backendURL.Host must be host:port")
 
-	// Configure the inject target with host:port instead of just the hostname.
-	// The port must be stripped during matching so the request still matches.
+	// Configure the inject target using just the hostname (without port).
+	// The rulesengine strips ports during matching, same as for --allow rules.
 	pt := NewProxyTest(t,
 		WithCertManager(t.TempDir()),
 		WithAllowedDomain(backendURL.Hostname()),
 		WithSessionCorrelation(config.SessionCorrelationConfig{
 			Enabled:       true,
-			InjectTargets: []config.InjectTarget{{Domain: backendURL.Host}},
+			InjectTargets: []string{"domain=" + backendURL.Hostname()},
 		}),
 		WithSessionID("test-session-id-1234"),
 	).Start()
@@ -104,7 +104,7 @@ func TestSessionCorrelation_MatchedDomainWithPort(t *testing.T) {
 
 	got := backend.receivedHeaders()
 	assert.Equal(t, "test-session-id-1234", got.Get(config.SessionIDHeaderName),
-		"session ID header must be injected when inject target domain includes a port")
+		"session ID header must be injected when inject target domain matches request hostname")
 	assert.Equal(t, "0", got.Get(config.SequenceNumberHeaderName),
 		"sequence number header must start at 0")
 }
@@ -121,7 +121,7 @@ func TestSessionCorrelation_UnmatchedDomain(t *testing.T) {
 		WithAllowedDomain(backendURL.Hostname()),
 		WithSessionCorrelation(config.SessionCorrelationConfig{
 			Enabled:       true,
-			InjectTargets: []config.InjectTarget{{Domain: "other-domain.example.com"}},
+			InjectTargets: []string{"domain=other-domain.example.com"},
 		}),
 		WithSessionID("test-session-id-1234"),
 	).Start()
@@ -151,7 +151,7 @@ func TestSessionCorrelation_Disabled(t *testing.T) {
 		WithAllowedDomain(backendURL.Hostname()),
 		WithSessionCorrelation(config.SessionCorrelationConfig{
 			Enabled:       false,
-			InjectTargets: []config.InjectTarget{{Domain: backendURL.Hostname()}},
+			InjectTargets: []string{"domain=" + backendURL.Hostname()},
 		}),
 		WithSessionID("test-session-id-1234"),
 	).Start()
@@ -181,7 +181,7 @@ func TestSessionCorrelation_OverwritesClientValue(t *testing.T) {
 		WithAllowedDomain(backendURL.Hostname()),
 		WithSessionCorrelation(config.SessionCorrelationConfig{
 			Enabled:       true,
-			InjectTargets: []config.InjectTarget{{Domain: backendURL.Hostname()}},
+			InjectTargets: []string{"domain=" + backendURL.Hostname()},
 		}),
 		WithSessionID("real-session-id"),
 	).Start()
@@ -217,11 +217,8 @@ func TestSessionCorrelation_PathMatching(t *testing.T) {
 		WithCertManager(t.TempDir()),
 		WithAllowedDomain(backendURL.Hostname()),
 		WithSessionCorrelation(config.SessionCorrelationConfig{
-			Enabled: true,
-			InjectTargets: []config.InjectTarget{{
-				Domain: backendURL.Hostname(),
-				Path:   "/api/*",
-			}},
+			Enabled:       true,
+			InjectTargets: []string{"domain=" + backendURL.Hostname() + " path=/api/*"},
 		}),
 		WithSessionID("test-session-id"),
 	).Start()
@@ -262,7 +259,7 @@ func TestSessionCorrelation_SequenceNumberIncrements(t *testing.T) {
 		WithAllowedDomain(backendURL.Hostname()),
 		WithSessionCorrelation(config.SessionCorrelationConfig{
 			Enabled:       true,
-			InjectTargets: []config.InjectTarget{{Domain: backendURL.Hostname()}},
+			InjectTargets: []string{"domain=" + backendURL.Hostname()},
 		}),
 		WithSessionID("test-session-id"),
 	).Start()
