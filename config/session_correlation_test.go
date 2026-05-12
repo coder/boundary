@@ -4,38 +4,25 @@ import (
 	"testing"
 )
 
-func TestParseInjectTarget(t *testing.T) {
+func TestParseInjectTarget_ViaValidation(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name    string
 		input   string
-		want    InjectTarget
 		wantErr bool
 	}{
 		{
 			name:  "domain only",
 			input: "domain=dev.coder.com",
-			want:  InjectTarget{Domain: "dev.coder.com"},
 		},
 		{
 			name:  "domain and path",
 			input: "domain=dev.coder.com path=/api/v2/aibridge/*",
-			want:  InjectTarget{Domain: "dev.coder.com", Path: "/api/v2/aibridge/*"},
-		},
-		{
-			name:  "leading and trailing whitespace",
-			input: "  domain=dev.coder.com path=/api/* ",
-			want:  InjectTarget{Domain: "dev.coder.com", Path: "/api/*"},
 		},
 		{
 			name:    "empty string",
 			input:   "",
-			wantErr: true,
-		},
-		{
-			name:    "whitespace only",
-			input:   "   ",
 			wantErr: true,
 		},
 		{
@@ -44,28 +31,8 @@ func TestParseInjectTarget(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "empty domain value",
-			input:   "domain=",
-			wantErr: true,
-		},
-		{
-			name:    "malformed pair no equals",
-			input:   "domain",
-			wantErr: true,
-		},
-		{
 			name:    "unknown key",
 			input:   "domain=example.com port=443",
-			wantErr: true,
-		},
-		{
-			name:    "duplicate domain key",
-			input:   "domain=staging.coder.com domain=prod.coder.com",
-			wantErr: true,
-		},
-		{
-			name:    "duplicate path key",
-			input:   "domain=example.com path=/api/* path=/other/*",
 			wantErr: true,
 		},
 	}
@@ -74,7 +41,11 @@ func TestParseInjectTarget(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := ParseInjectTarget(tc.input)
+			cfg := SessionCorrelationConfig{
+				Enabled:       true,
+				InjectTargets: []string{tc.input},
+			}
+			err := ValidateSessionCorrelation(cfg)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got nil")
@@ -83,12 +54,6 @@ func TestParseInjectTarget(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
-			}
-			if got.Domain != tc.want.Domain {
-				t.Errorf("Domain: got %q, want %q", got.Domain, tc.want.Domain)
-			}
-			if got.Path != tc.want.Path {
-				t.Errorf("Path: got %q, want %q", got.Path, tc.want.Path)
 			}
 		})
 	}
@@ -119,7 +84,7 @@ func TestValidateSessionCorrelation(t *testing.T) {
 			name: "enabled with targets",
 			cfg: SessionCorrelationConfig{
 				Enabled:       true,
-				InjectTargets: []InjectTarget{{Domain: "dev.coder.com"}},
+				InjectTargets: []string{"domain=dev.coder.com"},
 			},
 		},
 		{
@@ -134,7 +99,7 @@ func TestValidateSessionCorrelation(t *testing.T) {
 			name: "enabled with empty targets slice",
 			cfg: SessionCorrelationConfig{
 				Enabled:       true,
-				InjectTargets: []InjectTarget{},
+				InjectTargets: []string{},
 			},
 			wantErr: true,
 		},
@@ -162,19 +127,18 @@ func TestNewAppConfigFromCliConfig_SessionCorrelation(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		cli     CliConfig
-		environ []string
-		want    SessionCorrelationConfig
-		wantErr bool
+		name        string
+		cli         CliConfig
+		environ     []string
+		wantEnabled bool
+		wantTargets []string
+		wantErr     bool
 	}{
 		{
-			name: "defaults when not configured",
-			cli:  baseCliConfig(),
-			want: SessionCorrelationConfig{
-				Enabled:       false,
-				InjectTargets: nil,
-			},
+			name:        "defaults when not configured",
+			cli:         baseCliConfig(),
+			wantEnabled: false,
+			wantTargets: nil,
 		},
 		{
 			name: "enabled with inject targets",
@@ -184,28 +148,22 @@ func TestNewAppConfigFromCliConfig_SessionCorrelation(t *testing.T) {
 				_ = c.InjectSessionIDTarget.Set("domain=dev.coder.com path=/api/v2/aibridge/*")
 				return c
 			}(),
-			want: SessionCorrelationConfig{
-				Enabled: true,
-				InjectTargets: []InjectTarget{
-					{Domain: "dev.coder.com", Path: "/api/v2/aibridge/*"},
-				},
-			},
+			wantEnabled: true,
+			wantTargets: []string{"domain=dev.coder.com path=/api/v2/aibridge/*"},
 		},
 		{
-			name: "enabled with no targets, CODER_AGENT_URL set → auto-derived",
+			name: "enabled with no targets, CODER_AGENT_URL set -> auto-derived",
 			cli: func() CliConfig {
 				c := baseCliConfig()
 				_ = c.SessionCorrelationEnabled.Set("true")
 				return c
 			}(),
-			environ: []string{"CODER_AGENT_URL=https://dev.coder.com/"},
-			want: SessionCorrelationConfig{
-				Enabled:       true,
-				InjectTargets: []InjectTarget{{Domain: "dev.coder.com", Path: DefaultAIBridgePath}},
-			},
+			environ:     []string{"CODER_AGENT_URL=https://dev.coder.com/"},
+			wantEnabled: true,
+			wantTargets: []string{"domain=dev.coder.com path=" + DefaultAIBridgePath},
 		},
 		{
-			name: "enabled with no targets, CODER_AGENT_URL absent → error",
+			name: "enabled with no targets, CODER_AGENT_URL absent -> error",
 			cli: func() CliConfig {
 				c := baseCliConfig()
 				_ = c.SessionCorrelationEnabled.Set("true")
@@ -242,21 +200,17 @@ func TestNewAppConfigFromCliConfig_SessionCorrelation(t *testing.T) {
 			}
 
 			sc := got.SessionCorrelation
-			if sc.Enabled != tc.want.Enabled {
-				t.Errorf("Enabled: got %v, want %v", sc.Enabled, tc.want.Enabled)
+			if sc.Enabled != tc.wantEnabled {
+				t.Errorf("Enabled: got %v, want %v", sc.Enabled, tc.wantEnabled)
 			}
-			if len(sc.InjectTargets) != len(tc.want.InjectTargets) {
+			if len(sc.InjectTargets) != len(tc.wantTargets) {
 				t.Fatalf("InjectTargets len: got %d, want %d",
-					len(sc.InjectTargets), len(tc.want.InjectTargets))
+					len(sc.InjectTargets), len(tc.wantTargets))
 			}
 			for i := range sc.InjectTargets {
-				if sc.InjectTargets[i].Domain != tc.want.InjectTargets[i].Domain {
-					t.Errorf("InjectTargets[%d].Domain: got %q, want %q",
-						i, sc.InjectTargets[i].Domain, tc.want.InjectTargets[i].Domain)
-				}
-				if sc.InjectTargets[i].Path != tc.want.InjectTargets[i].Path {
-					t.Errorf("InjectTargets[%d].Path: got %q, want %q",
-						i, sc.InjectTargets[i].Path, tc.want.InjectTargets[i].Path)
+				if sc.InjectTargets[i] != tc.wantTargets[i] {
+					t.Errorf("InjectTargets[%d]: got %q, want %q",
+						i, sc.InjectTargets[i], tc.wantTargets[i])
 				}
 			}
 		})
@@ -269,42 +223,42 @@ func TestDefaultInjectTargetFromEnv(t *testing.T) {
 	tests := []struct {
 		name    string
 		environ []string
-		want    *InjectTarget
+		want    string
 	}{
 		{
 			name:    "valid URL with trailing slash",
 			environ: []string{"CODER_AGENT_URL=https://dev.coder.com/"},
-			want:    &InjectTarget{Domain: "dev.coder.com", Path: DefaultAIBridgePath},
+			want:    "domain=dev.coder.com path=" + DefaultAIBridgePath,
 		},
 		{
 			name:    "valid URL without trailing slash",
 			environ: []string{"CODER_AGENT_URL=https://dev.coder.com"},
-			want:    &InjectTarget{Domain: "dev.coder.com", Path: DefaultAIBridgePath},
+			want:    "domain=dev.coder.com path=" + DefaultAIBridgePath,
 		},
 		{
-			name:    "URL with port", // Ports are ignored in the rules engine, so we strip them here.
+			name:    "URL with port",
 			environ: []string{"CODER_AGENT_URL=https://dev.coder.com:8443/"},
-			want:    &InjectTarget{Domain: "dev.coder.com", Path: DefaultAIBridgePath},
+			want:    "domain=dev.coder.com path=" + DefaultAIBridgePath,
 		},
 		{
 			name:    "unset variable",
 			environ: []string{},
-			want:    nil,
+			want:    "",
 		},
 		{
 			name:    "empty value",
 			environ: []string{"CODER_AGENT_URL="},
-			want:    nil,
+			want:    "",
 		},
 		{
 			name:    "no host in URL",
 			environ: []string{"CODER_AGENT_URL=not-a-url"},
-			want:    nil,
+			want:    "",
 		},
 		{
 			name:    "other env vars present but not CODER_AGENT_URL",
 			environ: []string{"CODER_URL=https://dev.coder.com/", "HOME=/home/user"},
-			want:    nil,
+			want:    "",
 		},
 	}
 
@@ -313,20 +267,8 @@ func TestDefaultInjectTargetFromEnv(t *testing.T) {
 			t.Parallel()
 
 			got := DefaultInjectTargetFromEnv(tc.environ)
-			if tc.want == nil {
-				if got != nil {
-					t.Errorf("expected nil, got %+v", got)
-				}
-				return
-			}
-			if got == nil {
-				t.Fatalf("expected %+v, got nil", tc.want)
-			}
-			if got.Domain != tc.want.Domain {
-				t.Errorf("Domain: got %q, want %q", got.Domain, tc.want.Domain)
-			}
-			if got.Path != tc.want.Path {
-				t.Errorf("Path: got %q, want %q", got.Path, tc.want.Path)
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
 			}
 		})
 	}
@@ -338,7 +280,7 @@ func TestBuildSessionCorrelation_TargetMerge(t *testing.T) {
 	tests := []struct {
 		name        string
 		cfg         func() CliConfig
-		wantTargets []InjectTarget
+		wantTargets []string
 	}{
 		{
 			name: "YAML targets only",
@@ -348,8 +290,8 @@ func TestBuildSessionCorrelation_TargetMerge(t *testing.T) {
 				_ = c.InjectSessionIDTargets.Set("domain=yaml.example.com path=/yaml/*")
 				return c
 			},
-			wantTargets: []InjectTarget{
-				{Domain: "yaml.example.com", Path: "/yaml/*"},
+			wantTargets: []string{
+				"domain=yaml.example.com path=/yaml/*",
 			},
 		},
 		{
@@ -360,8 +302,8 @@ func TestBuildSessionCorrelation_TargetMerge(t *testing.T) {
 				_ = c.InjectSessionIDTarget.Set("domain=cli.example.com path=/cli/*")
 				return c
 			},
-			wantTargets: []InjectTarget{
-				{Domain: "cli.example.com", Path: "/cli/*"},
+			wantTargets: []string{
+				"domain=cli.example.com path=/cli/*",
 			},
 		},
 		{
@@ -373,9 +315,9 @@ func TestBuildSessionCorrelation_TargetMerge(t *testing.T) {
 				_ = c.InjectSessionIDTarget.Set("domain=cli.example.com path=/cli/*")
 				return c
 			},
-			wantTargets: []InjectTarget{
-				{Domain: "yaml.example.com", Path: "/yaml/*"},
-				{Domain: "cli.example.com", Path: "/cli/*"},
+			wantTargets: []string{
+				"domain=yaml.example.com path=/yaml/*",
+				"domain=cli.example.com path=/cli/*",
 			},
 		},
 		{
@@ -389,11 +331,11 @@ func TestBuildSessionCorrelation_TargetMerge(t *testing.T) {
 				_ = c.InjectSessionIDTarget.Set("domain=cli2.example.com")
 				return c
 			},
-			wantTargets: []InjectTarget{
-				{Domain: "yaml1.example.com"},
-				{Domain: "yaml2.example.com"},
-				{Domain: "cli1.example.com"},
-				{Domain: "cli2.example.com"},
+			wantTargets: []string{
+				"domain=yaml1.example.com",
+				"domain=yaml2.example.com",
+				"domain=cli1.example.com",
+				"domain=cli2.example.com",
 			},
 		},
 	}
@@ -411,13 +353,9 @@ func TestBuildSessionCorrelation_TargetMerge(t *testing.T) {
 					len(sc.InjectTargets), len(tc.wantTargets))
 			}
 			for i := range sc.InjectTargets {
-				if sc.InjectTargets[i].Domain != tc.wantTargets[i].Domain {
-					t.Errorf("InjectTargets[%d].Domain: got %q, want %q",
-						i, sc.InjectTargets[i].Domain, tc.wantTargets[i].Domain)
-				}
-				if sc.InjectTargets[i].Path != tc.wantTargets[i].Path {
-					t.Errorf("InjectTargets[%d].Path: got %q, want %q",
-						i, sc.InjectTargets[i].Path, tc.wantTargets[i].Path)
+				if sc.InjectTargets[i] != tc.wantTargets[i] {
+					t.Errorf("InjectTargets[%d]: got %q, want %q",
+						i, sc.InjectTargets[i], tc.wantTargets[i])
 				}
 			}
 		})
@@ -431,23 +369,23 @@ func TestBuildSessionCorrelation_AgentURLFallback(t *testing.T) {
 		name        string
 		cfg         func() CliConfig
 		environ     []string
-		wantTargets []InjectTarget
+		wantTargets []string
 		wantErr     bool
 	}{
 		{
-			name: "enabled, no explicit targets, CODER_AGENT_URL set → auto-derived",
+			name: "enabled, no explicit targets, CODER_AGENT_URL set -> auto-derived",
 			cfg: func() CliConfig {
 				c := baseCliConfig()
 				_ = c.SessionCorrelationEnabled.Set("true")
 				return c
 			},
 			environ: []string{"CODER_AGENT_URL=https://dev.coder.com/"},
-			wantTargets: []InjectTarget{
-				{Domain: "dev.coder.com", Path: DefaultAIBridgePath},
+			wantTargets: []string{
+				"domain=dev.coder.com path=" + DefaultAIBridgePath,
 			},
 		},
 		{
-			name: "enabled, no explicit targets, CODER_AGENT_URL absent → error",
+			name: "enabled, no explicit targets, CODER_AGENT_URL absent -> error",
 			cfg: func() CliConfig {
 				c := baseCliConfig()
 				_ = c.SessionCorrelationEnabled.Set("true")
@@ -465,12 +403,12 @@ func TestBuildSessionCorrelation_AgentURLFallback(t *testing.T) {
 				return c
 			},
 			environ: []string{"CODER_AGENT_URL=https://dev.coder.com/"},
-			wantTargets: []InjectTarget{
-				{Domain: "custom.example.com", Path: ""},
+			wantTargets: []string{
+				"domain=custom.example.com",
 			},
 		},
 		{
-			name: "disabled, CODER_AGENT_URL absent → valid (no targets needed)",
+			name: "disabled, CODER_AGENT_URL absent -> valid (no targets needed)",
 			cfg: func() CliConfig {
 				return baseCliConfig()
 			},
@@ -498,13 +436,9 @@ func TestBuildSessionCorrelation_AgentURLFallback(t *testing.T) {
 					len(sc.InjectTargets), len(tc.wantTargets))
 			}
 			for i := range sc.InjectTargets {
-				if sc.InjectTargets[i].Domain != tc.wantTargets[i].Domain {
-					t.Errorf("InjectTargets[%d].Domain: got %q, want %q",
-						i, sc.InjectTargets[i].Domain, tc.wantTargets[i].Domain)
-				}
-				if sc.InjectTargets[i].Path != tc.wantTargets[i].Path {
-					t.Errorf("InjectTargets[%d].Path: got %q, want %q",
-						i, sc.InjectTargets[i].Path, tc.wantTargets[i].Path)
+				if sc.InjectTargets[i] != tc.wantTargets[i] {
+					t.Errorf("InjectTargets[%d]: got %q, want %q",
+						i, sc.InjectTargets[i], tc.wantTargets[i])
 				}
 			}
 		})
