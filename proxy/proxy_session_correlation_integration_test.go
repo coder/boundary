@@ -55,17 +55,17 @@ func (m *multiRequestCapturingBackend) headersAt(i int) http.Header {
 // counter. Tests build one via newSessionCorrelationIntegrationSetup
 // and tear it down with stop.
 type sessionCorrelationIntegrationSetup struct {
-	pt           *ProxyTest
-	auditor      *capturingAuditor
-	seq          *audit.SequenceCounter
-	llmBackend   *multiRequestCapturingBackend
-	otherBackend *multiRequestCapturingBackend
+	pt            *ProxyTest
+	auditor       *capturingAuditor
+	seq           *audit.SequenceCounter
+	injectBackend *multiRequestCapturingBackend
+	otherBackend  *multiRequestCapturingBackend
 }
 
 func (s *sessionCorrelationIntegrationSetup) stop() {
 	s.pt.Stop()
-	if s.llmBackend != nil {
-		s.llmBackend.close()
+	if s.injectBackend != nil {
+		s.injectBackend.close()
 	}
 	if s.otherBackend != nil {
 		s.otherBackend.close()
@@ -74,17 +74,16 @@ func (s *sessionCorrelationIntegrationSetup) stop() {
 
 // newSessionCorrelationIntegrationSetup builds a proxy that allows
 // traffic to two httptest backends: one that matches an inject target
-// (simulating an LLM provider) and one that does not (simulating a
-// generic allowed domain like github.com). Both backends capture all
-// received request headers. A capturingAuditor records every audit
-// event for later inspection.
+// and one that does not (simulating a generic allowed domain like
+// github.com). Both backends capture all received request headers.
+// A capturingAuditor records every audit event for later inspection.
 func newSessionCorrelationIntegrationSetup(t *testing.T, sessionID string) *sessionCorrelationIntegrationSetup {
 	t.Helper()
 
-	llm := newMultiRequestCapturingBackend()
+	inject := newMultiRequestCapturingBackend()
 	other := newMultiRequestCapturingBackend()
 
-	llmURL, err := url.Parse(llm.server.URL)
+	injectURL, err := url.Parse(inject.server.URL)
 	require.NoError(t, err)
 
 	otherURL, err := url.Parse(other.server.URL)
@@ -94,18 +93,18 @@ func newSessionCorrelationIntegrationSetup(t *testing.T, sessionID string) *sess
 	seq := &audit.SequenceCounter{}
 
 	// Both httptest backends resolve to 127.0.0.1, so a domain-only
-	// inject target would match both. We use a path glob on the LLM
-	// paths (/v1/*) to limit header injection to LLM requests.
+	// inject target would match both. We use a path glob on the
+	// inject-target paths (/v1/*) to limit header injection.
 	pt := NewProxyTest(t,
 		WithCertManager(t.TempDir()),
 		// Allow both backends.
-		WithAllowedDomain(llmURL.Hostname()),
+		WithAllowedDomain(injectURL.Hostname()),
 		WithAllowedDomain(otherURL.Hostname()),
-		// Only requests matching the LLM path receive headers.
+		// Only requests matching the inject-target path receive headers.
 		WithSessionCorrelation(config.SessionCorrelationConfig{
 			Enabled: true,
 			InjectTargets: []config.InjectTarget{{
-				Domain: llmURL.Hostname(),
+				Domain: injectURL.Hostname(),
 				Path:   "/v1/*",
 			}},
 		}),
@@ -114,15 +113,13 @@ func newSessionCorrelationIntegrationSetup(t *testing.T, sessionID string) *sess
 	).Start()
 
 	return &sessionCorrelationIntegrationSetup{
-		pt:           pt,
-		auditor:      aud,
-		seq:          seq,
-		llmBackend:   llm,
-		otherBackend: other,
+		pt:            pt,
+		auditor:       aud,
+		seq:           seq,
+		injectBackend: inject,
+		otherBackend:  other,
 	}
 }
-
-// ---------- Integration Tests ----------
 
 // TestIntegration_LLMRequestAuditAndHeadersAgree verifies the core
 // correlation invariant: when an allowed request hits an inject target,
@@ -133,7 +130,7 @@ func TestIntegration_LLMRequestAuditAndHeadersAgree(t *testing.T) {
 	s := newSessionCorrelationIntegrationSetup(t, sessionID)
 	defer s.stop()
 
-	resp, err := s.pt.proxyClient.Get(s.llmBackend.server.URL + "/v1/messages")
+	resp, err := s.pt.proxyClient.Get(s.injectBackend.server.URL + "/v1/messages")
 	require.NoError(t, err)
 	defer resp.Body.Close() //nolint:errcheck
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -146,15 +143,15 @@ func TestIntegration_LLMRequestAuditAndHeadersAgree(t *testing.T) {
 	assert.Equal(t, int32(0), events[0].SequenceNumber)
 
 	// Forwarded headers.
-	require.Equal(t, 1, s.llmBackend.requestCount())
-	hdr := s.llmBackend.headersAt(0)
-	assert.Equal(t, sessionID, hdr.Get(config.SessionIDHeaderName))
-	assert.Equal(t, "0", hdr.Get(config.SequenceNumberHeaderName))
+	require.Equal(t, 1, s.injectBackend.requestCount())
+	header := s.injectBackend.headersAt(0)
+	assert.Equal(t, sessionID, header.Get(config.SessionIDHeaderName))
+	assert.Equal(t, "0", header.Get(config.SequenceNumberHeaderName))
 
 	// The two must agree.
 	assert.Equal(t,
 		strconv.Itoa(int(events[0].SequenceNumber)),
-		hdr.Get(config.SequenceNumberHeaderName),
+		header.Get(config.SequenceNumberHeaderName),
 		"audit event and forwarded header must carry the same sequence number",
 	)
 }
@@ -181,10 +178,10 @@ func TestIntegration_NonLLMRequestAuditedWithoutHeaders(t *testing.T) {
 
 	// No correlation headers on the backend.
 	require.Equal(t, 1, s.otherBackend.requestCount())
-	hdr := s.otherBackend.headersAt(0)
-	assert.Empty(t, hdr.Get(config.SessionIDHeaderName),
+	header := s.otherBackend.headersAt(0)
+	assert.Empty(t, header.Get(config.SessionIDHeaderName),
 		"non-inject-target requests must not carry session ID header")
-	assert.Empty(t, hdr.Get(config.SequenceNumberHeaderName),
+	assert.Empty(t, header.Get(config.SequenceNumberHeaderName),
 		"non-inject-target requests must not carry sequence number header")
 }
 
@@ -194,8 +191,8 @@ func TestIntegration_NonLLMRequestAuditedWithoutHeaders(t *testing.T) {
 func TestIntegration_DeniedRequestAuditedNeverForwarded(t *testing.T) {
 	// Create a setup with a custom deny-all proxy, but keep the same
 	// pattern of shared sequence counter and auditor.
-	llm := newMultiRequestCapturingBackend()
-	defer llm.close()
+	backend := newMultiRequestCapturingBackend()
+	defer backend.close()
 
 	aud := &capturingAuditor{}
 
@@ -211,7 +208,7 @@ func TestIntegration_DeniedRequestAuditedNeverForwarded(t *testing.T) {
 	).Start()
 	defer pt.Stop()
 
-	resp, err := pt.proxyClient.Get(llm.server.URL + "/exfil")
+	resp, err := pt.proxyClient.Get(backend.server.URL + "/exfil")
 	require.NoError(t, err)
 	defer resp.Body.Close() //nolint:errcheck
 	require.Equal(t, http.StatusForbidden, resp.StatusCode)
@@ -224,7 +221,7 @@ func TestIntegration_DeniedRequestAuditedNeverForwarded(t *testing.T) {
 	assert.Equal(t, int32(0), events[0].SequenceNumber)
 
 	// Backend never hit.
-	assert.Equal(t, 0, llm.requestCount(),
+	assert.Equal(t, 0, backend.requestCount(),
 		"denied requests must not be forwarded to the backend")
 }
 
@@ -238,14 +235,14 @@ func TestIntegration_DeniedRequestAuditedNeverForwarded(t *testing.T) {
 func TestIntegration_MixedRequestsSequenceOrdering(t *testing.T) {
 	const sessionID = "mixed-test-session"
 
-	// Two allowed backends (LLM and "github"), one denied domain.
-	llm := newMultiRequestCapturingBackend()
-	defer llm.close()
+	// Two allowed backends (inject target and "github"), one denied domain.
+	inject := newMultiRequestCapturingBackend()
+	defer inject.close()
 
 	other := newMultiRequestCapturingBackend()
 	defer other.close()
 
-	llmURL, err := url.Parse(llm.server.URL)
+	injectURL, err := url.Parse(inject.server.URL)
 	require.NoError(t, err)
 
 	otherURL, err := url.Parse(other.server.URL)
@@ -255,13 +252,13 @@ func TestIntegration_MixedRequestsSequenceOrdering(t *testing.T) {
 
 	pt := NewProxyTest(t,
 		WithCertManager(t.TempDir()),
-		WithAllowedDomain(llmURL.Hostname()),
+		WithAllowedDomain(injectURL.Hostname()),
 		WithAllowedDomain(otherURL.Hostname()),
-		// Only LLM is an inject target.
+		// Only the inject backend is an inject target.
 		WithSessionCorrelation(config.SessionCorrelationConfig{
 			Enabled: true,
 			InjectTargets: []config.InjectTarget{{
-				Domain: llmURL.Hostname(),
+				Domain: injectURL.Hostname(),
 				Path:   "/v1/*",
 			}},
 		}),
@@ -270,13 +267,13 @@ func TestIntegration_MixedRequestsSequenceOrdering(t *testing.T) {
 	).Start()
 	defer pt.Stop()
 
-	// Request 0: LLM (allowed, inject target).
-	resp, err := pt.proxyClient.Get(llm.server.URL + "/v1/messages")
+	// Request 0: inject target (allowed, headers injected).
+	resp, err := pt.proxyClient.Get(inject.server.URL + "/v1/messages")
 	require.NoError(t, err)
 	resp.Body.Close() //nolint:errcheck
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// Request 1: non-LLM (allowed, no inject).
+	// Request 1: non-inject-target (allowed, no headers).
 	resp, err = pt.proxyClient.Get(other.server.URL + "/coder/coder")
 	require.NoError(t, err)
 	resp.Body.Close() //nolint:errcheck
@@ -288,8 +285,8 @@ func TestIntegration_MixedRequestsSequenceOrdering(t *testing.T) {
 	resp.Body.Close() //nolint:errcheck
 	require.Equal(t, http.StatusForbidden, resp.StatusCode)
 
-	// Request 3: LLM again.
-	resp, err = pt.proxyClient.Get(llm.server.URL + "/v1/messages")
+	// Request 3: inject target again.
+	resp, err = pt.proxyClient.Get(inject.server.URL + "/v1/messages")
 	require.NoError(t, err)
 	resp.Body.Close() //nolint:errcheck
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -308,53 +305,54 @@ func TestIntegration_MixedRequestsSequenceOrdering(t *testing.T) {
 			"event %d: wrong allowed flag", i)
 	}
 
-	// -- Verify LLM backend headers --
-	require.Equal(t, 2, llm.requestCount(),
-		"LLM backend should have received exactly two requests")
+	// -- Verify inject-target backend headers --
+	require.Equal(t, 2, inject.requestCount(),
+		"inject-target backend should have received exactly two requests")
 
-	firstLLMHdr := llm.headersAt(0)
-	assert.Equal(t, sessionID, firstLLMHdr.Get(config.SessionIDHeaderName))
-	assert.Equal(t, "0", firstLLMHdr.Get(config.SequenceNumberHeaderName),
-		"first LLM request must have sequence 0")
+	firstInjectHeader := inject.headersAt(0)
+	assert.Equal(t, sessionID, firstInjectHeader.Get(config.SessionIDHeaderName))
+	assert.Equal(t, "0", firstInjectHeader.Get(config.SequenceNumberHeaderName),
+		"first inject-target request must have sequence 0")
 
-	secondLLMHdr := llm.headersAt(1)
-	assert.Equal(t, sessionID, secondLLMHdr.Get(config.SessionIDHeaderName))
-	assert.Equal(t, "3", secondLLMHdr.Get(config.SequenceNumberHeaderName),
-		"second LLM request must have sequence 3")
+	secondInjectHeader := inject.headersAt(1)
+	assert.Equal(t, sessionID, secondInjectHeader.Get(config.SessionIDHeaderName))
+	assert.Equal(t, "3", secondInjectHeader.Get(config.SequenceNumberHeaderName),
+		"second inject-target request must have sequence 3")
 
-	// -- Verify non-LLM backend has no correlation headers --
+	// -- Verify non-inject-target backend has no correlation headers --
 	require.Equal(t, 1, other.requestCount())
-	otherHdr := other.headersAt(0)
-	assert.Empty(t, otherHdr.Get(config.SessionIDHeaderName))
-	assert.Empty(t, otherHdr.Get(config.SequenceNumberHeaderName))
+	otherHeader := other.headersAt(0)
+	assert.Empty(t, otherHeader.Get(config.SessionIDHeaderName))
+	assert.Empty(t, otherHeader.Get(config.SequenceNumberHeaderName))
 
 	// -- Verify the gap reveals intermediate activity --
-	// The gap between the two LLM sequence numbers (0 and 3) means
-	// that sequence numbers 1 and 2 were consumed by non-LLM
-	// activity, matching audit events 1 (non-LLM allowed) and 2
-	// (denied).
-	firstLLMSeq := events[0].SequenceNumber
-	secondLLMSeq := events[3].SequenceNumber
-	gap := secondLLMSeq - firstLLMSeq - 1
+	// The gap between the two inject-target sequence numbers (0 and 3)
+	// means that sequence numbers 1 and 2 were consumed by
+	// non-inject-target activity, matching audit events 1
+	// (non-inject-target allowed) and 2 (denied).
+	firstInjectSeq := events[0].SequenceNumber
+	secondInjectSeq := events[3].SequenceNumber
+	gap := secondInjectSeq - firstInjectSeq - 1
 	assert.Equal(t, int32(2), gap,
-		"gap between LLM requests should reveal 2 intermediate events")
+		"gap between inject-target requests should reveal 2 intermediate events")
 }
 
-// TestIntegration_SequenceGapRevealsAgenticLoop sends two LLM requests
-// with several non-LLM requests in between, simulating an agentic loop
-// where the model triggers tool-use HTTP calls between prompts. The
-// test verifies that the gap in LLM sequence numbers precisely
-// reflects the count of intermediate boundary events.
+// TestIntegration_SequenceGapRevealsAgenticLoop sends two inject-target
+// requests with several non-inject-target requests in between,
+// simulating an agentic loop where the model triggers tool-use HTTP
+// calls between prompts. The test verifies that the gap in
+// inject-target sequence numbers precisely reflects the count of
+// intermediate boundary events.
 func TestIntegration_SequenceGapRevealsAgenticLoop(t *testing.T) {
 	const sessionID = "agentic-loop-session"
 
-	llm := newMultiRequestCapturingBackend()
-	defer llm.close()
+	inject := newMultiRequestCapturingBackend()
+	defer inject.close()
 
 	other := newMultiRequestCapturingBackend()
 	defer other.close()
 
-	llmURL, err := url.Parse(llm.server.URL)
+	injectURL, err := url.Parse(inject.server.URL)
 	require.NoError(t, err)
 
 	otherURL, err := url.Parse(other.server.URL)
@@ -364,12 +362,12 @@ func TestIntegration_SequenceGapRevealsAgenticLoop(t *testing.T) {
 
 	pt := NewProxyTest(t,
 		WithCertManager(t.TempDir()),
-		WithAllowedDomain(llmURL.Hostname()),
+		WithAllowedDomain(injectURL.Hostname()),
 		WithAllowedDomain(otherURL.Hostname()),
 		WithSessionCorrelation(config.SessionCorrelationConfig{
 			Enabled: true,
 			InjectTargets: []config.InjectTarget{{
-				Domain: llmURL.Hostname(),
+				Domain: injectURL.Hostname(),
 				Path:   "/v1/*",
 			}},
 		}),
@@ -378,8 +376,8 @@ func TestIntegration_SequenceGapRevealsAgenticLoop(t *testing.T) {
 	).Start()
 	defer pt.Stop()
 
-	// First LLM prompt (seq 0).
-	resp, err := pt.proxyClient.Get(llm.server.URL + "/v1/messages")
+	// First inject-target request (seq 0).
+	resp, err := pt.proxyClient.Get(inject.server.URL + "/v1/messages")
 	require.NoError(t, err)
 	resp.Body.Close() //nolint:errcheck
 
@@ -390,24 +388,24 @@ func TestIntegration_SequenceGapRevealsAgenticLoop(t *testing.T) {
 		resp.Body.Close() //nolint:errcheck
 	}
 
-	// Second LLM prompt (seq 4).
-	resp, err = pt.proxyClient.Get(llm.server.URL + "/v1/messages")
+	// Second inject-target request (seq 4).
+	resp, err = pt.proxyClient.Get(inject.server.URL + "/v1/messages")
 	require.NoError(t, err)
 	resp.Body.Close() //nolint:errcheck
 
-	// Verify LLM sequence headers.
-	require.Equal(t, 2, llm.requestCount())
-	assert.Equal(t, "0", llm.headersAt(0).Get(config.SequenceNumberHeaderName))
-	assert.Equal(t, "4", llm.headersAt(1).Get(config.SequenceNumberHeaderName))
+	// Verify inject-target sequence headers.
+	require.Equal(t, 2, inject.requestCount())
+	assert.Equal(t, "0", inject.headersAt(0).Get(config.SequenceNumberHeaderName))
+	assert.Equal(t, "4", inject.headersAt(1).Get(config.SequenceNumberHeaderName))
 
 	// The gap between sequence numbers 0 and 4 is 3, matching the
 	// three tool-use requests in between.
 	events := aud.getRequests()
 	require.Len(t, events, 5)
 
-	firstLLMSeq := events[0].SequenceNumber
-	secondLLMSeq := events[4].SequenceNumber
-	gap := secondLLMSeq - firstLLMSeq - 1
+	firstInjectSeq := events[0].SequenceNumber
+	secondInjectSeq := events[4].SequenceNumber
+	gap := secondInjectSeq - firstInjectSeq - 1
 	assert.Equal(t, int32(3), gap,
 		"gap between prompts should equal number of tool-use requests")
 
@@ -428,7 +426,7 @@ func TestIntegration_SpoofedHeadersOverwrittenWithCorrectSequence(t *testing.T) 
 	s := newSessionCorrelationIntegrationSetup(t, sessionID)
 	defer s.stop()
 
-	req, err := http.NewRequest(http.MethodPost, s.llmBackend.server.URL+"/v1/messages", nil)
+	req, err := http.NewRequest(http.MethodPost, s.injectBackend.server.URL+"/v1/messages", nil)
 	require.NoError(t, err)
 	req.Header.Set(config.SessionIDHeaderName, "spoofed-session")
 	req.Header.Set(config.SequenceNumberHeaderName, "9999")
@@ -439,10 +437,10 @@ func TestIntegration_SpoofedHeadersOverwrittenWithCorrectSequence(t *testing.T) 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Backend received real values, not spoofed.
-	require.Equal(t, 1, s.llmBackend.requestCount())
-	hdr := s.llmBackend.headersAt(0)
-	assert.Equal(t, sessionID, hdr.Get(config.SessionIDHeaderName))
-	assert.Equal(t, "0", hdr.Get(config.SequenceNumberHeaderName))
+	require.Equal(t, 1, s.injectBackend.requestCount())
+	header := s.injectBackend.headersAt(0)
+	assert.Equal(t, sessionID, header.Get(config.SessionIDHeaderName))
+	assert.Equal(t, "0", header.Get(config.SequenceNumberHeaderName))
 
 	// Audit event agrees with header.
 	events := s.auditor.getRequests()
@@ -450,7 +448,7 @@ func TestIntegration_SpoofedHeadersOverwrittenWithCorrectSequence(t *testing.T) 
 	require.NotNil(t, events[0].SequenceNumber)
 	assert.Equal(t,
 		strconv.Itoa(int(events[0].SequenceNumber)),
-		hdr.Get(config.SequenceNumberHeaderName),
+		header.Get(config.SequenceNumberHeaderName),
 	)
 }
 
@@ -459,21 +457,21 @@ func TestIntegration_SpoofedHeadersOverwrittenWithCorrectSequence(t *testing.T) 
 // not inject headers and does not pre-allocate sequence numbers (the
 // auditor falls back to its own counter instead).
 func TestIntegration_DisabledCorrelationNoHeadersNoPreallocatedSequence(t *testing.T) {
-	llm := newMultiRequestCapturingBackend()
-	defer llm.close()
+	backend := newMultiRequestCapturingBackend()
+	defer backend.close()
 
-	llmURL, err := url.Parse(llm.server.URL)
+	backendURL, err := url.Parse(backend.server.URL)
 	require.NoError(t, err)
 
 	aud := &capturingAuditor{}
 
 	pt := NewProxyTest(t,
 		WithCertManager(t.TempDir()),
-		WithAllowedDomain(llmURL.Hostname()),
+		WithAllowedDomain(backendURL.Hostname()),
 		// Correlation disabled; no sequence counter.
 		WithSessionCorrelation(config.SessionCorrelationConfig{
 			Enabled:       false,
-			InjectTargets: []config.InjectTarget{{Domain: llmURL.Hostname()}},
+			InjectTargets: []config.InjectTarget{{Domain: backendURL.Hostname()}},
 		}),
 		WithSessionID("should-not-appear"),
 		// Explicitly do NOT set WithSequenceCounter; seqCounter is nil.
@@ -481,16 +479,16 @@ func TestIntegration_DisabledCorrelationNoHeadersNoPreallocatedSequence(t *testi
 	).Start()
 	defer pt.Stop()
 
-	resp, err := pt.proxyClient.Get(llm.server.URL + "/v1/messages")
+	resp, err := pt.proxyClient.Get(backend.server.URL + "/v1/messages")
 	require.NoError(t, err)
 	defer resp.Body.Close() //nolint:errcheck
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// No correlation headers.
-	require.Equal(t, 1, llm.requestCount())
-	hdr := llm.headersAt(0)
-	assert.Empty(t, hdr.Get(config.SessionIDHeaderName))
-	assert.Empty(t, hdr.Get(config.SequenceNumberHeaderName))
+	require.Equal(t, 1, backend.requestCount())
+	header := backend.headersAt(0)
+	assert.Empty(t, header.Get(config.SessionIDHeaderName))
+	assert.Empty(t, header.Get(config.SequenceNumberHeaderName))
 
 	// Audit event recorded but without a pre-allocated sequence
 	// number (nil), because no SequenceCounter was provided.
@@ -516,7 +514,7 @@ func TestIntegration_ConcurrentRequestsUniqueSequenceNumbers(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			resp, err := s.pt.proxyClient.Get(s.llmBackend.server.URL + "/v1/messages")
+			resp, err := s.pt.proxyClient.Get(s.injectBackend.server.URL + "/v1/messages")
 			assert.NoError(t, err)
 			if resp != nil {
 				resp.Body.Close() //nolint:errcheck
@@ -546,11 +544,11 @@ func TestIntegration_ConcurrentRequestsUniqueSequenceNumbers(t *testing.T) {
 	}
 
 	// Every header should also carry a matching sequence number.
-	require.Equal(t, numRequests, s.llmBackend.requestCount())
+	require.Equal(t, numRequests, s.injectBackend.requestCount())
 	headerSeqs := make(map[string]bool, numRequests)
 	for i := 0; i < numRequests; i++ {
-		hdr := s.llmBackend.headersAt(i)
-		seqStr := hdr.Get(config.SequenceNumberHeaderName)
+		header := s.injectBackend.headersAt(i)
+		seqStr := header.Get(config.SequenceNumberHeaderName)
 		assert.NotEmpty(t, seqStr, "request %d: sequence header must be set", i)
 		headerSeqs[seqStr] = true
 	}
