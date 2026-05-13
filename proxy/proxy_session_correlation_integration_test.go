@@ -55,11 +55,16 @@ func (m *multiRequestCapturingBackend) headersAt(i int) http.Header {
 // counter. Tests build one via newSessionCorrelationIntegrationSetup
 // and tear it down with stop.
 type sessionCorrelationIntegrationSetup struct {
-	pt            *ProxyTest
-	auditor       *capturingAuditor
-	seq           *audit.SequenceCounter
+	pt      *ProxyTest
+	auditor *capturingAuditor
+	seq     *audit.SequenceCounter
+	// llmBackend expects headers to be injected as these requests are
+	// expected to be seen by the AI Gateway and then correlated back
+	// to the audit event
 	injectBackend *multiRequestCapturingBackend
-	otherBackend  *multiRequestCapturingBackend
+	// otherBackend does not expect headers to be injected as these
+	// requests should not be routed through the AI Gateway.
+	otherBackend *multiRequestCapturingBackend
 }
 
 func (s *sessionCorrelationIntegrationSetup) stop() {
@@ -135,7 +140,6 @@ func TestIntegration_LLMRequestAuditAndHeadersAgree(t *testing.T) {
 	defer resp.Body.Close() //nolint:errcheck
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// Audit event.
 	events := s.auditor.getRequests()
 	require.Len(t, events, 1)
 	require.True(t, events[0].Allowed)
@@ -148,7 +152,6 @@ func TestIntegration_LLMRequestAuditAndHeadersAgree(t *testing.T) {
 	assert.Equal(t, sessionID, header.Get(config.SessionIDHeaderName))
 	assert.Equal(t, "0", header.Get(config.SequenceNumberHeaderName))
 
-	// The two must agree.
 	assert.Equal(t,
 		strconv.Itoa(int(events[0].SequenceNumber)),
 		header.Get(config.SequenceNumberHeaderName),
