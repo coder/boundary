@@ -25,12 +25,12 @@ import (
 
 // Server handles HTTP and HTTPS requests with rule-based filtering
 type Server struct {
-	ruleEngine         rulesengine.Engine
-	auditor            audit.Auditor
-	logger             *slog.Logger
-	tlsConfig          *tls.Config
-	httpPort           int
-	started            atomic.Bool
+	ruleEngine       rulesengine.Engine
+	auditor          audit.Auditor
+	logger           *slog.Logger
+	tlsConfig        *tls.Config
+	httpPort         int
+	started          atomic.Bool
 	injectEngine     *rulesengine.Engine // nil when session correlation is disabled
 	sessionID        string
 	seqCounter       audit.SequenceCounter
@@ -70,16 +70,16 @@ type Config struct {
 // NewProxyServer creates a new proxy server instance
 func NewProxyServer(config Config) *Server {
 	return &Server{
-		ruleEngine:         config.RuleEngine,
-		auditor:            config.Auditor,
-		logger:             config.Logger,
-		tlsConfig:          config.TLSConfig,
-		httpPort:           config.HTTPPort,
-		pprofEnabled:       config.PprofEnabled,
-		pprofPort:          config.PprofPort,
+		ruleEngine:       config.RuleEngine,
+		auditor:          config.Auditor,
+		logger:           config.Logger,
+		tlsConfig:        config.TLSConfig,
+		httpPort:         config.HTTPPort,
+		pprofEnabled:     config.PprofEnabled,
+		pprofPort:        config.PprofPort,
 		injectEngine:     config.InjectEngine,
 		sessionID:        config.SessionID,
-		forwardTransport:   config.ForwardTransport,
+		forwardTransport: config.ForwardTransport,
 	}
 }
 
