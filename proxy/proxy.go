@@ -19,17 +19,22 @@ import (
 	"time"
 
 	"github.com/coder/boundary/audit"
+	"github.com/coder/boundary/config"
 	"github.com/coder/boundary/rulesengine"
 )
 
 // Server handles HTTP and HTTPS requests with rule-based filtering
 type Server struct {
-	ruleEngine rulesengine.Engine
-	auditor    audit.Auditor
-	logger     *slog.Logger
-	tlsConfig  *tls.Config
-	httpPort   int
-	started    atomic.Bool
+	ruleEngine       rulesengine.Engine
+	auditor          audit.Auditor
+	logger           *slog.Logger
+	tlsConfig        *tls.Config
+	httpPort         int
+	started          atomic.Bool
+	injectEngine     *rulesengine.Engine // nil when session correlation is disabled
+	sessionID        string
+	seqCounter       audit.SequenceCounter
+	forwardTransport http.RoundTripper
 
 	listener     net.Listener
 	pprofServer  *http.Server
@@ -46,18 +51,35 @@ type Config struct {
 	TLSConfig    *tls.Config
 	PprofEnabled bool
 	PprofPort    int
+	// SessionCorrelation controls header injection for AI Bridge
+	// correlation. See config.SessionCorrelationConfig for details.
+	SessionCorrelation config.SessionCorrelationConfig
+	// InjectEngine, if non-nil, is used to evaluate whether outgoing
+	// requests match configured inject targets. Built from
+	// SessionCorrelation.InjectTargets using rulesengine.ParseAllowSpecs.
+	InjectEngine *rulesengine.Engine
+	// SessionID is the boundary session UUID injected as a header
+	// on matching requests.
+	SessionID string
+	// ForwardTransport, if non-nil, is used when forwarding requests to
+	// backend servers. Defaults to http.DefaultTransport when nil. Set in
+	// tests to trust self-signed backend certificates.
+	ForwardTransport http.RoundTripper
 }
 
 // NewProxyServer creates a new proxy server instance
 func NewProxyServer(config Config) *Server {
 	return &Server{
-		ruleEngine:   config.RuleEngine,
-		auditor:      config.Auditor,
-		logger:       config.Logger,
-		tlsConfig:    config.TLSConfig,
-		httpPort:     config.HTTPPort,
-		pprofEnabled: config.PprofEnabled,
-		pprofPort:    config.PprofPort,
+		ruleEngine:       config.RuleEngine,
+		auditor:          config.Auditor,
+		logger:           config.Logger,
+		tlsConfig:        config.TLSConfig,
+		httpPort:         config.HTTPPort,
+		pprofEnabled:     config.PprofEnabled,
+		pprofPort:        config.PprofPort,
+		injectEngine:     config.InjectEngine,
+		sessionID:        config.SessionID,
+		forwardTransport: config.ForwardTransport,
 	}
 }
 
@@ -276,12 +298,15 @@ func (p *Server) processHTTPRequest(conn net.Conn, req *http.Request, https bool
 
 	result := p.ruleEngine.Evaluate(req.Method, fullURL)
 
+	seqNum := p.seqCounter.Next()
+
 	p.auditor.AuditRequest(audit.Request{
-		Method:  req.Method,
-		URL:     fullURL,
-		Host:    req.Host,
-		Allowed: result.Allowed,
-		Rule:    result.Rule,
+		Method:         req.Method,
+		URL:            fullURL,
+		Host:           req.Host,
+		Allowed:        result.Allowed,
+		Rule:           result.Rule,
+		SequenceNumber: seqNum,
 	})
 
 	if !result.Allowed {
@@ -290,15 +315,30 @@ func (p *Server) processHTTPRequest(conn net.Conn, req *http.Request, https bool
 	}
 
 	// Forward request to destination
-	p.forwardRequest(conn, req, https)
+	p.forwardRequest(conn, req, https, seqNum)
 }
 
-func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
+// shouldInjectHeaders reports whether the request URL matches any
+// configured inject target. Inject targets are evaluated using the same
+// rulesengine matching as --allow rules so that domain/path semantics
+// are unified. When session correlation is disabled or no targets match
+// it returns false.
+func (p *Server) shouldInjectHeaders(fullURL string) bool {
+	if p.injectEngine == nil {
+		return false
+	}
+	// Inject targets do not restrict by HTTP method, so we pass an empty
+	// method. Rules without a method pattern match all methods.
+	return p.injectEngine.Evaluate("", fullURL).Allowed
+}
+
+func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool, seqNum int32) {
 	// Create HTTP client
 	client := &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse // Don't follow redirects
 		},
+		Transport: p.forwardTransport, // nil → http.DefaultTransport
 	}
 
 	scheme := "http"
@@ -336,6 +376,11 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool) {
 		for _, value := range values {
 			newReq.Header.Add(name, value)
 		}
+	}
+
+	if p.shouldInjectHeaders(targetURL.String()) {
+		newReq.Header.Set(config.SessionIDHeaderName, p.sessionID)
+		newReq.Header.Set(config.SequenceNumberHeaderName, strconv.Itoa(int(seqNum)))
 	}
 
 	// Make request to destination

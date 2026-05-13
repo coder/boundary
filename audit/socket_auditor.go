@@ -36,7 +36,6 @@ type SocketAuditor struct {
 	batchTimerDuration time.Duration
 	socketPath         string
 	sessionID          uuid.UUID
-	seq                *SequenceCounter
 
 	droppedChannelFull atomic.Int64
 	droppedBatchFull   atomic.Int64
@@ -48,7 +47,7 @@ type SocketAuditor struct {
 // NewSocketAuditor creates a new SocketAuditor that sends logs to the agent's
 // boundary log proxy socket after SocketAuditor.Loop is called. The socket path
 // is read from EnvAuditSocketPath, falling back to defaultAuditSocketPath.
-func NewSocketAuditor(logger *slog.Logger, socketPath string, sessionID uuid.UUID, seq *SequenceCounter) *SocketAuditor {
+func NewSocketAuditor(logger *slog.Logger, socketPath string, sessionID uuid.UUID) *SocketAuditor {
 	// This channel buffer size intends to allow enough buffering for bursty
 	// AI agent network requests while a batch is being sent to the workspace
 	// agent.
@@ -64,7 +63,6 @@ func NewSocketAuditor(logger *slog.Logger, socketPath string, sessionID uuid.UUI
 		batchTimerDuration: defaultBatchTimerDuration,
 		socketPath:         socketPath,
 		sessionID:          sessionID,
-		seq:                seq,
 	}
 }
 
@@ -84,7 +82,7 @@ func (s *SocketAuditor) AuditRequest(req Request) {
 	log := &agentproto.BoundaryLog{
 		Allowed:        req.Allowed,
 		Time:           timestamppb.Now(),
-		SequenceNumber: s.seq.Next(),
+		SequenceNumber: req.SequenceNumber,
 		Resource:       &agentproto.BoundaryLog_HttpRequest_{HttpRequest: httpReq},
 	}
 

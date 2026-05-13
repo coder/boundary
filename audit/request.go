@@ -11,4 +11,9 @@ type Request struct {
 	Host    string
 	Allowed bool
 	Rule    string // The rule that matched (if any)
+
+	// SequenceNumber is the sequence number assigned to this audit event
+	// by the proxy. It is monotonically increasing within a session and
+	// is shared with any injected HTTP header so both carry the same value.
+	SequenceNumber int32
 }

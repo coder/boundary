@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"github.com/coder/boundary/rulesengine"
 )
 
 // Header names and paths for session correlation.
@@ -27,14 +29,6 @@ const (
 	CoderAgentURLEnv = "CODER_AGENT_URL"
 )
 
-// InjectTarget represents a parsed target for session correlation header
-// injection. Requests matching the domain (and optional path glob) will
-// receive the session ID and sequence number headers.
-type InjectTarget struct {
-	Domain string
-	Path   string
-}
-
 // SessionCorrelationConfig holds configuration for session correlation
 // header injection. When enabled, boundary injects its session ID and
 // sequence number as custom headers on matching outbound requests so
@@ -45,63 +39,22 @@ type SessionCorrelationConfig struct {
 	// Deployments without AI Bridge in front should set this to false.
 	Enabled bool
 
-	// InjectTargets is the list of domain/path patterns that should
-	// receive session correlation headers.
-	InjectTargets []InjectTarget
+	// InjectTargets is the list of raw rule specs (same syntax as --allow)
+	// that should receive session correlation headers. Each string uses the
+	// rulesengine "domain=... path=..." format so that inject target
+	// matching is identical to allow-rule matching.
+	InjectTargets []string
 }
 
-// ParseInjectTarget parses a string of the form "domain=... path=..."
-// into an InjectTarget. The domain key is required; path is optional.
-func ParseInjectTarget(raw string) (InjectTarget, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return InjectTarget{}, fmt.Errorf("inject target must not be empty")
-	}
-
-	var target InjectTarget
-	seen := make(map[string]bool)
-	for _, part := range strings.Fields(raw) {
-		key, value, ok := strings.Cut(part, "=")
-		if !ok {
-			return InjectTarget{}, fmt.Errorf(
-				"inject target: malformed key-value pair %q, expected key=value", part,
-			)
-		}
-		if seen[key] {
-			return InjectTarget{}, fmt.Errorf(
-				"inject target: duplicate key %q (use separate flags for multiple targets)", key,
-			)
-		}
-		seen[key] = true
-		switch key {
-		case "domain":
-			if value == "" {
-				return InjectTarget{}, fmt.Errorf("inject target: domain must not be empty")
-			}
-			target.Domain = value
-		case "path":
-			target.Path = value
-		default:
-			return InjectTarget{}, fmt.Errorf("inject target: unknown key %q", key)
-		}
-	}
-
-	if target.Domain == "" {
-		return InjectTarget{}, fmt.Errorf("inject target: domain is required")
-	}
-
-	return target, nil
-}
-
-// DefaultInjectTargetFromEnv derives an InjectTarget from the CODER_AGENT_URL
-// variable in the provided environment slice. It returns nil if the variable is
-// absent, empty, or not a valid URL with a host. The derived target uses
-// DefaultAIBridgePath as the path glob so that all AI Bridge traffic on the
-// control-plane host is matched.
+// DefaultInjectTargetFromEnv derives an inject target rule string from the
+// CODER_AGENT_URL variable in the provided environment slice. It returns ""
+// if the variable is absent, empty, or not a valid URL with a host. The
+// derived target uses DefaultAIBridgePath as the path glob so that all AI
+// Bridge traffic on the control-plane host is matched.
 //
 // The environ parameter is accepted rather than reading os.Environ directly so
 // that callers (and tests) can supply an arbitrary environment.
-func DefaultInjectTargetFromEnv(environ []string) *InjectTarget {
+func DefaultInjectTargetFromEnv(environ []string) string {
 	var raw string
 	for _, e := range environ {
 		k, v, ok := strings.Cut(e, "=")
@@ -111,23 +64,22 @@ func DefaultInjectTargetFromEnv(environ []string) *InjectTarget {
 		}
 	}
 	if raw == "" {
-		return nil
+		return ""
 	}
 
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" {
-		return nil
+		return ""
 	}
 
-	return &InjectTarget{
-		Domain: u.Hostname(),
-		Path:   DefaultAIBridgePath,
-	}
+	return fmt.Sprintf("domain=%s path=%s", u.Hostname(), DefaultAIBridgePath)
 }
 
 // ValidateSessionCorrelation checks that the session correlation config
-// is internally consistent. It returns an error describing the first
-// problem found, or nil if the config is valid.
+// is internally consistent. When enabled it verifies that at least one
+// inject target is configured and that every target string is a valid
+// rulesengine rule. It returns an error describing the first problem
+// found, or nil if the config is valid.
 func ValidateSessionCorrelation(cfg SessionCorrelationConfig) error {
 	if !cfg.Enabled {
 		return nil
@@ -137,6 +89,27 @@ func ValidateSessionCorrelation(cfg SessionCorrelationConfig) error {
 		return fmt.Errorf(
 			"session correlation is enabled but no inject targets are configured",
 		)
+	}
+
+	// Reject empty target strings before passing to the parser.
+	for _, t := range cfg.InjectTargets {
+		if strings.TrimSpace(t) == "" {
+			return fmt.Errorf("inject target: must not be empty")
+		}
+	}
+
+	// Validate each target parses as a rulesengine rule.
+	rules, err := rulesengine.ParseAllowSpecs(cfg.InjectTargets)
+	if err != nil {
+		return fmt.Errorf("inject target: %w", err)
+	}
+
+	// Inject targets must specify a domain; path-only rules are not
+	// meaningful for header injection.
+	for i, r := range rules {
+		if r.HostPattern == nil {
+			return fmt.Errorf("inject target %q: domain is required", cfg.InjectTargets[i])
+		}
 	}
 
 	return nil

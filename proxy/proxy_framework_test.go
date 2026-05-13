@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/coder/boundary/audit"
+	"github.com/coder/boundary/config"
 	"github.com/coder/boundary/rulesengine"
 	boundary_tls "github.com/coder/boundary/tls"
 	"github.com/stretchr/testify/require"
@@ -32,16 +33,19 @@ func (m *mockAuditor) AuditRequest(req audit.Request) {
 
 // ProxyTest is a high-level test framework for proxy tests
 type ProxyTest struct {
-	t              *testing.T
-	server         *Server
-	client         *http.Client
-	proxyClient    *http.Client
-	port           int
-	useCertManager bool
-	configDir      string
-	startupDelay   time.Duration
-	allowedRules   []string
-	auditor        audit.Auditor
+	t                  *testing.T
+	server             *Server
+	client             *http.Client
+	proxyClient        *http.Client
+	port               int
+	useCertManager     bool
+	configDir          string
+	startupDelay       time.Duration
+	allowedRules       []string
+	auditor            audit.Auditor
+	sessionCorrelation config.SessionCorrelationConfig
+	sessionID          string
+	forwardTransport   http.RoundTripper
 }
 
 // ProxyTestOption is a function that configures ProxyTest
@@ -109,6 +113,30 @@ func WithAuditor(auditor audit.Auditor) ProxyTestOption {
 	}
 }
 
+// WithSessionCorrelation sets the session correlation config for the
+// proxy under test.
+func WithSessionCorrelation(sc config.SessionCorrelationConfig) ProxyTestOption {
+	return func(pt *ProxyTest) {
+		pt.sessionCorrelation = sc
+	}
+}
+
+// WithSessionID sets the boundary session ID for the proxy under test.
+func WithSessionID(id string) ProxyTestOption {
+	return func(pt *ProxyTest) {
+		pt.sessionID = id
+	}
+}
+
+// WithForwardTransport sets the http.RoundTripper the proxy uses when
+// forwarding requests to backends. Use in tests to trust self-signed
+// backend certificates (e.g. those from httptest.NewTLSServer).
+func WithForwardTransport(transport http.RoundTripper) ProxyTestOption {
+	return func(pt *ProxyTest) {
+		pt.forwardTransport = transport
+	}
+}
+
 // Start starts the proxy server
 func (pt *ProxyTest) Start() *ProxyTest {
 	pt.t.Helper()
@@ -152,12 +180,25 @@ func (pt *ProxyTest) Start() *ProxyTest {
 		}
 	}
 
+	// Build inject engine from session correlation targets.
+	var injectEngine *rulesengine.Engine
+	if pt.sessionCorrelation.Enabled && len(pt.sessionCorrelation.InjectTargets) > 0 {
+		injectRules, err := rulesengine.ParseAllowSpecs(pt.sessionCorrelation.InjectTargets)
+		require.NoError(pt.t, err, "Failed to parse inject target rules")
+		eng := rulesengine.NewRuleEngine(injectRules, logger)
+		injectEngine = &eng
+	}
+
 	pt.server = NewProxyServer(Config{
-		HTTPPort:   pt.port,
-		RuleEngine: ruleEngine,
-		Auditor:    auditor,
-		Logger:     logger,
-		TLSConfig:  tlsConfig,
+		HTTPPort:           pt.port,
+		RuleEngine:         ruleEngine,
+		Auditor:            auditor,
+		Logger:             logger,
+		TLSConfig:          tlsConfig,
+		SessionCorrelation: pt.sessionCorrelation,
+		InjectEngine:       injectEngine,
+		SessionID:          pt.sessionID,
+		ForwardTransport:   pt.forwardTransport,
 	})
 
 	err = pt.server.Start()
