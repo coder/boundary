@@ -108,10 +108,7 @@ func newCorrelationTestEnv(t *testing.T, sessionID string) *correlationTestEnv {
 		// Only requests matching the inject-target path receive headers.
 		WithSessionCorrelation(config.SessionCorrelationConfig{
 			Enabled: true,
-			InjectTargets: []config.InjectTarget{{
-				Domain: injectURL.Hostname(),
-				Path:   "/v1/*",
-			}},
+			InjectTargets: []string{"domain=" + injectURL.Hostname() + " path=/v1/*"},
 		}),
 		WithSessionID(sessionID),
 		WithAuditor(aud),
@@ -204,7 +201,7 @@ func TestIntegration_DeniedRequestAuditedNeverForwarded(t *testing.T) {
 		// No allowed domains: deny everything.
 		WithSessionCorrelation(config.SessionCorrelationConfig{
 			Enabled:       true,
-			InjectTargets: []config.InjectTarget{{Domain: "anything.example.com"}},
+			InjectTargets: []string{"domain=anything.example.com"},
 		}),
 		WithSessionID("test-session"),
 		WithAuditor(aud),
@@ -260,10 +257,7 @@ func TestIntegration_MixedRequestsSequenceOrdering(t *testing.T) {
 		// Only the inject backend is an inject target.
 		WithSessionCorrelation(config.SessionCorrelationConfig{
 			Enabled: true,
-			InjectTargets: []config.InjectTarget{{
-				Domain: injectURL.Hostname(),
-				Path:   "/v1/*",
-			}},
+			InjectTargets: []string{"domain=" + injectURL.Hostname() + " path=/v1/*"},
 		}),
 		WithSessionID(sessionID),
 		WithAuditor(aud),
@@ -369,10 +363,7 @@ func TestIntegration_SequenceGapRevealsAgenticLoop(t *testing.T) {
 		WithAllowedDomain(otherURL.Hostname()),
 		WithSessionCorrelation(config.SessionCorrelationConfig{
 			Enabled: true,
-			InjectTargets: []config.InjectTarget{{
-				Domain: injectURL.Hostname(),
-				Path:   "/v1/*",
-			}},
+			InjectTargets: []string{"domain=" + injectURL.Hostname() + " path=/v1/*"},
 		}),
 		WithSessionID(sessionID),
 		WithAuditor(aud),
@@ -475,7 +466,7 @@ func TestIntegration_DisabledCorrelationNoHeaders(t *testing.T) {
 		WithAllowedDomain(backendURL.Hostname()),
 		WithSessionCorrelation(config.SessionCorrelationConfig{
 			Enabled:       false,
-			InjectTargets: []config.InjectTarget{{Domain: backendURL.Hostname()}},
+			InjectTargets: []string{"domain=" + backendURL.Hostname()},
 		}),
 		WithSessionID("should-not-appear"),
 		WithAuditor(aud),
