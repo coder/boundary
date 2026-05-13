@@ -107,7 +107,7 @@ func newCorrelationTestEnv(t *testing.T, sessionID string) *correlationTestEnv {
 		WithAllowedDomain(otherURL.Hostname()),
 		// Only requests matching the inject-target path receive headers.
 		WithSessionCorrelation(config.SessionCorrelationConfig{
-			Enabled: true,
+			Enabled:       true,
 			InjectTargets: []string{"domain=" + injectURL.Hostname() + " path=/v1/*"},
 		}),
 		WithSessionID(sessionID),
@@ -256,7 +256,7 @@ func TestIntegration_MixedRequestsSequenceOrdering(t *testing.T) {
 		WithAllowedDomain(otherURL.Hostname()),
 		// Only the inject backend is an inject target.
 		WithSessionCorrelation(config.SessionCorrelationConfig{
-			Enabled: true,
+			Enabled:       true,
 			InjectTargets: []string{"domain=" + injectURL.Hostname() + " path=/v1/*"},
 		}),
 		WithSessionID(sessionID),
@@ -362,7 +362,7 @@ func TestIntegration_SequenceGapRevealsAgenticLoop(t *testing.T) {
 		WithAllowedDomain(injectURL.Hostname()),
 		WithAllowedDomain(otherURL.Hostname()),
 		WithSessionCorrelation(config.SessionCorrelationConfig{
-			Enabled: true,
+			Enabled:       true,
 			InjectTargets: []string{"domain=" + injectURL.Hostname() + " path=/v1/*"},
 		}),
 		WithSessionID(sessionID),
