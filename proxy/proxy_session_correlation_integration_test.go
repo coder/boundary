@@ -15,6 +15,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// doGet is a test helper that creates a context-aware GET request and
+// executes it. The context is derived from the test so that in-flight
+// requests are cancelled when the test finishes.
+func doGet(t *testing.T, client *http.Client, url string) (*http.Response, error) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	return client.Do(req)
+}
+
 // multiRequestCapturingBackend records the headers from every request it
 // receives, not just the last one. This is needed by integration tests
 // that send multiple requests to the same backend and want to verify
@@ -133,8 +145,11 @@ func TestIntegration_LLMRequestAuditAndHeadersAgree(t *testing.T) {
 	s := newCorrelationTestEnv(t, sessionID)
 	defer s.stop()
 
+	// Precondition: no audit events exist before the request.
+	require.Empty(t, s.auditor.getRequests(), "no audit events should exist before the request")
+
 	// When: a single request is sent to the inject-target backend.
-	resp, err := s.pt.proxyClient.Get(s.injectBackend.server.URL + "/v1/messages")
+	resp, err := doGet(t, s.pt.proxyClient, s.injectBackend.server.URL+"/v1/messages")
 	require.NoError(t, err)
 	defer resp.Body.Close() //nolint:errcheck
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -143,7 +158,6 @@ func TestIntegration_LLMRequestAuditAndHeadersAgree(t *testing.T) {
 	events := s.auditor.getRequests()
 	require.Len(t, events, 1)
 	require.True(t, events[0].Allowed)
-	require.NotNil(t, events[0].SequenceNumber)
 	assert.Equal(t, int32(0), events[0].SequenceNumber)
 
 	// Then: the forwarded request carries the session ID and sequence number headers.
@@ -170,7 +184,7 @@ func TestIntegration_NonLLMRequestAuditedWithoutHeaders(t *testing.T) {
 	defer s.stop()
 
 	// When: a request is sent to the non-inject-target backend.
-	resp, err := s.pt.proxyClient.Get(s.otherBackend.server.URL + "/pulls")
+	resp, err := doGet(t, s.pt.proxyClient, s.otherBackend.server.URL+"/pulls")
 	require.NoError(t, err)
 	defer resp.Body.Close() //nolint:errcheck
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -179,7 +193,6 @@ func TestIntegration_NonLLMRequestAuditedWithoutHeaders(t *testing.T) {
 	events := s.auditor.getRequests()
 	require.Len(t, events, 1)
 	require.True(t, events[0].Allowed)
-	require.NotNil(t, events[0].SequenceNumber)
 	assert.Equal(t, int32(0), events[0].SequenceNumber)
 
 	// Then: no correlation headers are present on the forwarded request.
@@ -213,7 +226,7 @@ func TestIntegration_DeniedRequestAuditedNeverForwarded(t *testing.T) {
 	defer pt.Stop()
 
 	// When: a request is sent to a domain that is not allowed.
-	resp, err := pt.proxyClient.Get(backend.server.URL + "/exfil")
+	resp, err := doGet(t, pt.proxyClient, backend.server.URL+"/exfil")
 	require.NoError(t, err)
 	defer resp.Body.Close() //nolint:errcheck
 	require.Equal(t, http.StatusForbidden, resp.StatusCode)
@@ -222,7 +235,6 @@ func TestIntegration_DeniedRequestAuditedNeverForwarded(t *testing.T) {
 	events := aud.getRequests()
 	require.Len(t, events, 1)
 	require.False(t, events[0].Allowed)
-	require.NotNil(t, events[0].SequenceNumber)
 	assert.Equal(t, int32(0), events[0].SequenceNumber)
 
 	// Then: the backend never receives the request.
@@ -270,22 +282,22 @@ func TestIntegration_MixedRequestsSequenceOrdering(t *testing.T) {
 
 	// When: an inject-target, non-inject-target, denied, and inject-target
 	// request are sent in sequence.
-	resp, err := pt.proxyClient.Get(inject.server.URL + "/v1/messages")
+	resp, err := doGet(t, pt.proxyClient, inject.server.URL+"/v1/messages")
 	require.NoError(t, err)
 	resp.Body.Close() //nolint:errcheck
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	resp, err = pt.proxyClient.Get(other.server.URL + "/coder/coder")
+	resp, err = doGet(t, pt.proxyClient, other.server.URL+"/coder/coder")
 	require.NoError(t, err)
 	resp.Body.Close() //nolint:errcheck
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	resp, err = pt.proxyClient.Get("http://evil.example.com/exfil")
+	resp, err = doGet(t, pt.proxyClient, "http://evil.example.com/exfil")
 	require.NoError(t, err)
 	resp.Body.Close() //nolint:errcheck
 	require.Equal(t, http.StatusForbidden, resp.StatusCode)
 
-	resp, err = pt.proxyClient.Get(inject.server.URL + "/v1/messages")
+	resp, err = doGet(t, pt.proxyClient, inject.server.URL+"/v1/messages")
 	require.NoError(t, err)
 	resp.Body.Close() //nolint:errcheck
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -298,7 +310,6 @@ func TestIntegration_MixedRequestsSequenceOrdering(t *testing.T) {
 	expectedSeq := []int32{0, 1, 2, 3}
 	expectedAllowed := []bool{true, true, false, true}
 	for i, ev := range events {
-		require.NotNil(t, ev.SequenceNumber, "event %d: sequence number must be set", i)
 		assert.Equal(t, expectedSeq[i], ev.SequenceNumber,
 			"event %d: wrong sequence number", i)
 		assert.Equal(t, expectedAllowed[i], ev.Allowed,
@@ -375,19 +386,22 @@ func TestIntegration_SequenceGapRevealsAgenticLoop(t *testing.T) {
 	// When: an inject-target request, three tool-use requests to the
 	// non-inject-target backend, and another inject-target request are
 	// sent in sequence.
-	resp, err := pt.proxyClient.Get(inject.server.URL + "/v1/messages")
+	resp, err := doGet(t, pt.proxyClient, inject.server.URL+"/v1/messages")
 	require.NoError(t, err)
 	resp.Body.Close() //nolint:errcheck
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	for _, p := range []string{"/coder/coder", "/coder/coder/issues", "/coder/coder/pulls"} {
-		resp, err = pt.proxyClient.Get(other.server.URL + p)
+		resp, err = doGet(t, pt.proxyClient, other.server.URL+p)
 		require.NoError(t, err)
 		resp.Body.Close() //nolint:errcheck
+		require.Equal(t, http.StatusOK, resp.StatusCode)
 	}
 
-	resp, err = pt.proxyClient.Get(inject.server.URL + "/v1/messages")
+	resp, err = doGet(t, pt.proxyClient, inject.server.URL+"/v1/messages")
 	require.NoError(t, err)
 	resp.Body.Close() //nolint:errcheck
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Then: the inject-target headers show a gap from sequence 0 to 4.
 	require.Equal(t, 2, inject.requestCount())
@@ -406,7 +420,6 @@ func TestIntegration_SequenceGapRevealsAgenticLoop(t *testing.T) {
 
 	// Then: the intermediate audit events correspond to the tool-use requests.
 	for i := 1; i <= 3; i++ {
-		require.NotNil(t, events[i].SequenceNumber)
 		assert.Equal(t, int32(i), events[i].SequenceNumber)
 		assert.True(t, events[i].Allowed)
 	}
@@ -423,7 +436,7 @@ func TestIntegration_SpoofedHeadersOverwrittenWithCorrectSequence(t *testing.T) 
 	defer s.stop()
 
 	// When: a request is sent with spoofed correlation headers.
-	req, err := http.NewRequest(http.MethodPost, s.injectBackend.server.URL+"/v1/messages", nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, s.injectBackend.server.URL+"/v1/messages", nil)
 	require.NoError(t, err)
 	req.Header.Set(config.SessionIDHeaderName, "spoofed-session")
 	req.Header.Set(config.SequenceNumberHeaderName, "9999")
@@ -442,7 +455,6 @@ func TestIntegration_SpoofedHeadersOverwrittenWithCorrectSequence(t *testing.T) 
 	// Then: the audit event agrees with the forwarded header.
 	events := s.auditor.getRequests()
 	require.Len(t, events, 1)
-	require.NotNil(t, events[0].SequenceNumber)
 	assert.Equal(t,
 		strconv.Itoa(int(events[0].SequenceNumber)),
 		header.Get(config.SequenceNumberHeaderName),
@@ -478,7 +490,7 @@ func TestIntegration_DisabledCorrelationNoHeaders(t *testing.T) {
 	defer pt.Stop()
 
 	// When: a request is sent that would match an inject target.
-	resp, err := pt.proxyClient.Get(backend.server.URL + "/v1/messages")
+	resp, err := doGet(t, pt.proxyClient, backend.server.URL+"/v1/messages")
 	require.NoError(t, err)
 	defer resp.Body.Close() //nolint:errcheck
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -515,7 +527,7 @@ func TestIntegration_ConcurrentRequestsUniqueSequenceNumbers(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			resp, err := s.pt.proxyClient.Get(s.injectBackend.server.URL + "/v1/messages")
+			resp, err := doGet(t, s.pt.proxyClient, s.injectBackend.server.URL+"/v1/messages")
 			assert.NoError(t, err)
 			if resp != nil {
 				resp.Body.Close() //nolint:errcheck
@@ -531,8 +543,6 @@ func TestIntegration_ConcurrentRequestsUniqueSequenceNumbers(t *testing.T) {
 	// Then: each audit event has a unique sequence number.
 	seen := make(map[int32]bool, numRequests)
 	for i, ev := range events {
-		require.NotNil(t, ev.SequenceNumber,
-			"event %d: sequence number must not be nil", i)
 		assert.False(t, seen[ev.SequenceNumber],
 			"event %d: duplicate sequence number %d", i, ev.SequenceNumber)
 		seen[ev.SequenceNumber] = true
