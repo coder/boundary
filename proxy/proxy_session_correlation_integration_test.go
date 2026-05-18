@@ -15,18 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// doGet is a test helper that creates a context-aware GET request and
-// executes it. The context is derived from the test so that in-flight
-// requests are cancelled when the test finishes.
-func doGet(t *testing.T, client *http.Client, url string) (*http.Response, error) {
-	t.Helper()
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	return client.Do(req)
-}
-
 // multiRequestCapturingBackend records the headers from every request it
 // receives, not just the last one. This is needed by integration tests
 // that send multiple requests to the same backend and want to verify
@@ -149,10 +137,7 @@ func TestIntegration_LLMRequestAuditAndHeadersAgree(t *testing.T) {
 	require.Empty(t, s.auditor.getRequests(), "no audit events should exist before the request")
 
 	// When: a single request is sent to the inject-target backend.
-	resp, err := doGet(t, s.pt.proxyClient, s.injectBackend.server.URL+"/v1/messages")
-	require.NoError(t, err)
-	defer resp.Body.Close() //nolint:errcheck
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	s.pt.ExpectGetViaProxy(s.injectBackend.server.URL+"/v1/messages", http.StatusOK)
 
 	// Then: the audit event records the correct sequence number.
 	events := s.auditor.getRequests()
@@ -184,10 +169,7 @@ func TestIntegration_NonLLMRequestAuditedWithoutHeaders(t *testing.T) {
 	defer s.stop()
 
 	// When: a request is sent to the non-inject-target backend.
-	resp, err := doGet(t, s.pt.proxyClient, s.otherBackend.server.URL+"/pulls")
-	require.NoError(t, err)
-	defer resp.Body.Close() //nolint:errcheck
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	s.pt.ExpectGetViaProxy(s.otherBackend.server.URL+"/pulls", http.StatusOK)
 
 	// Then: an audit event is recorded with a sequence number.
 	events := s.auditor.getRequests()
@@ -226,10 +208,7 @@ func TestIntegration_DeniedRequestAuditedNeverForwarded(t *testing.T) {
 	defer pt.Stop()
 
 	// When: a request is sent to a domain that is not allowed.
-	resp, err := doGet(t, pt.proxyClient, backend.server.URL+"/exfil")
-	require.NoError(t, err)
-	defer resp.Body.Close() //nolint:errcheck
-	require.Equal(t, http.StatusForbidden, resp.StatusCode)
+	pt.ExpectGetViaProxy(backend.server.URL+"/exfil", http.StatusForbidden)
 
 	// Then: an audit event is recorded with the denied flag and a sequence number.
 	events := aud.getRequests()
@@ -282,25 +261,10 @@ func TestIntegration_MixedRequestsSequenceOrdering(t *testing.T) {
 
 	// When: an inject-target, non-inject-target, denied, and inject-target
 	// request are sent in sequence.
-	resp, err := doGet(t, pt.proxyClient, inject.server.URL+"/v1/messages")
-	require.NoError(t, err)
-	resp.Body.Close() //nolint:errcheck
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	resp, err = doGet(t, pt.proxyClient, other.server.URL+"/coder/coder")
-	require.NoError(t, err)
-	resp.Body.Close() //nolint:errcheck
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	resp, err = doGet(t, pt.proxyClient, "http://evil.example.com/exfil")
-	require.NoError(t, err)
-	resp.Body.Close() //nolint:errcheck
-	require.Equal(t, http.StatusForbidden, resp.StatusCode)
-
-	resp, err = doGet(t, pt.proxyClient, inject.server.URL+"/v1/messages")
-	require.NoError(t, err)
-	resp.Body.Close() //nolint:errcheck
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	pt.ExpectGetViaProxy(inject.server.URL+"/v1/messages", http.StatusOK)
+	pt.ExpectGetViaProxy(other.server.URL+"/coder/coder", http.StatusOK)
+	pt.ExpectGetViaProxy("http://evil.example.com/exfil", http.StatusForbidden)
+	pt.ExpectGetViaProxy(inject.server.URL+"/v1/messages", http.StatusOK)
 
 	// Then: all four requests produce audit events with monotonically
 	// increasing sequence numbers.
@@ -386,22 +350,13 @@ func TestIntegration_SequenceGapRevealsAgenticLoop(t *testing.T) {
 	// When: an inject-target request, three tool-use requests to the
 	// non-inject-target backend, and another inject-target request are
 	// sent in sequence.
-	resp, err := doGet(t, pt.proxyClient, inject.server.URL+"/v1/messages")
-	require.NoError(t, err)
-	resp.Body.Close() //nolint:errcheck
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	pt.ExpectGetViaProxy(inject.server.URL+"/v1/messages", http.StatusOK)
 
 	for _, p := range []string{"/coder/coder", "/coder/coder/issues", "/coder/coder/pulls"} {
-		resp, err = doGet(t, pt.proxyClient, other.server.URL+p)
-		require.NoError(t, err)
-		resp.Body.Close() //nolint:errcheck
-		require.Equal(t, http.StatusOK, resp.StatusCode)
+		pt.ExpectGetViaProxy(other.server.URL+p, http.StatusOK)
 	}
 
-	resp, err = doGet(t, pt.proxyClient, inject.server.URL+"/v1/messages")
-	require.NoError(t, err)
-	resp.Body.Close() //nolint:errcheck
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	pt.ExpectGetViaProxy(inject.server.URL+"/v1/messages", http.StatusOK)
 
 	// Then: the inject-target headers show a gap from sequence 0 to 4.
 	require.Equal(t, 2, inject.requestCount())
@@ -490,10 +445,7 @@ func TestIntegration_DisabledCorrelationNoHeaders(t *testing.T) {
 	defer pt.Stop()
 
 	// When: a request is sent that would match an inject target.
-	resp, err := doGet(t, pt.proxyClient, backend.server.URL+"/v1/messages")
-	require.NoError(t, err)
-	defer resp.Body.Close() //nolint:errcheck
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	pt.ExpectGetViaProxy(backend.server.URL+"/v1/messages", http.StatusOK)
 
 	// Then: no correlation headers are injected on the forwarded request.
 	require.Equal(t, 1, backend.requestCount())
@@ -527,7 +479,9 @@ func TestIntegration_ConcurrentRequestsUniqueSequenceNumbers(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			resp, err := doGet(t, s.pt.proxyClient, s.injectBackend.server.URL+"/v1/messages")
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, s.injectBackend.server.URL+"/v1/messages", nil)
+			assert.NoError(t, err)
+			resp, err := s.pt.proxyClient.Do(req)
 			assert.NoError(t, err)
 			if resp != nil {
 				resp.Body.Close() //nolint:errcheck

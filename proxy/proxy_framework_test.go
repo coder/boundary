@@ -317,6 +317,20 @@ func (pt *ProxyTest) ExpectDenyViaProxy(targetURL string) {
 	require.Contains(pt.t, string(body), "Request Blocked by Boundary", "Expected request to be blocked")
 }
 
+// ExpectGetViaProxy makes a context-bound GET request through the proxy
+// and fails the test immediately if the transport errors or the
+// response status does not match wantStatus. The response body is
+// drained and closed before returning.
+func (pt *ProxyTest) ExpectGetViaProxy(targetURL string, wantStatus int) {
+	pt.t.Helper()
+	req, err := http.NewRequestWithContext(pt.t.Context(), http.MethodGet, targetURL, nil)
+	require.NoError(pt.t, err)
+	resp, err := pt.proxyClient.Do(req)
+	require.NoError(pt.t, err)
+	defer resp.Body.Close() //nolint:errcheck
+	require.Equal(pt.t, wantStatus, resp.StatusCode)
+}
+
 // ExpectAllowedViaProxy makes a request through the proxy using proxy transport (implicit CONNECT for HTTPS)
 // and expects it to be allowed with the given response body
 func (pt *ProxyTest) ExpectAllowedViaProxy(targetURL, expectedBody string) {
