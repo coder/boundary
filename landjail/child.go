@@ -61,15 +61,12 @@ func RunChild(logger *slog.Logger, config config.AppConfig) error {
 	// Run the command - this will block until it completes
 	err = cmd.Run()
 	if err != nil {
-		// Check if this is a normal exit with non-zero status code
 		if exitError, ok := err.(*exec.ExitError); ok {
-			exitCode := exitError.ExitCode()
-			logger.Debug("Command exited with non-zero status", "exit_code", exitCode)
-			return fmt.Errorf("command exited with code %d", exitCode)
+			logger.Debug("Command exited with non-zero status", "exit_code", exitError.ExitCode())
+		} else {
+			logger.Error("Command execution failed", "error", err)
 		}
-		// This is an unexpected error
-		logger.Error("Command execution failed", "error", err)
-		return fmt.Errorf("command execution failed: %v", err)
+		return err
 	}
 
 	logger.Debug("Command completed successfully")

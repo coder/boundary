@@ -2,8 +2,10 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/coder/boundary/config"
@@ -241,7 +243,19 @@ func BaseCommand(version string) *serpent.Command {
 			}
 			logger.Debug("Application config", "config", appConfigInJSON)
 
-			return run.Run(inv.Context(), logger, appConfig)
+			err = run.Run(inv.Context(), logger, appConfig)
+
+			// If the child process exited with a non-zero code, exit
+			// with the same code directly. All cleanup (proxy, etc.)
+			// has already happened inside Run(). Exiting here ensures
+			// the correct code is propagated regardless of how the
+			// calling framework handles errors (standalone binary or
+			// embedded as a coder subcommand).
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) {
+				os.Exit(exitErr.ExitCode())
+			}
+			return err
 		},
 	}
 }

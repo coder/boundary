@@ -71,9 +71,12 @@ func (b *NSJailManager) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	// childErr receives the result of RunChildProcess so we can
+	// propagate the child's exit code to our caller.
+	childErr := make(chan error, 1)
 	go func() {
 		defer cancel()
-		b.RunChildProcess(os.Args)
+		childErr <- b.RunChildProcess(os.Args)
 	}()
 
 	// Setup signal handling BEFORE any setup
@@ -90,23 +93,32 @@ func (b *NSJailManager) Run(ctx context.Context) error {
 		b.logger.Info("Command completed, shutting down...")
 	}
 
-	return nil
+	// Drain the child result if available. In the ctx.Done path the
+	// error is already buffered. In the signal path the child may still
+	// be running; return nil so deferred cleanup (iptables, proxy) can
+	// proceed before the process exits.
+	select {
+	case err := <-childErr:
+		return err
+	default:
+		return nil
+	}
 }
 
-func (b *NSJailManager) RunChildProcess(command []string) {
+func (b *NSJailManager) RunChildProcess(command []string) error {
 	cmd := b.jailer.Command(command)
 
 	b.logger.Debug("Executing command in boundary", "command", strings.Join(os.Args, " "))
 	err := cmd.Start()
 	if err != nil {
 		b.logger.Error("Command failed to start", "error", err)
-		return
+		return err
 	}
 
 	err = b.jailer.ConfigureHostNsCommunication(cmd.Process.Pid)
 	if err != nil {
 		b.logger.Error("configuration after command execution failed", "error", err)
-		return
+		return err
 	}
 
 	b.logger.Debug("waiting on a child process to finish")
@@ -121,9 +133,10 @@ func (b *NSJailManager) RunChildProcess(command []string) {
 			// This is an unexpected error (not just a non-zero exit)
 			b.logger.Error("Command execution failed", "error", err)
 		}
-		return
+		return err
 	}
 	b.logger.Debug("Command completed successfully")
+	return nil
 }
 
 func (b *NSJailManager) setupHostAndStartProxy() error {

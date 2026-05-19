@@ -67,12 +67,12 @@ func (b *LandJail) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	// childErr receives the result of RunChildProcess so we can
+	// propagate the child's exit code to our caller.
+	childErr := make(chan error, 1)
 	go func() {
 		defer cancel()
-		err := b.RunChildProcess(os.Args)
-		if err != nil {
-			b.logger.Error("Failed to run child process", "error", err)
-		}
+		childErr <- b.RunChildProcess(os.Args)
 	}()
 
 	// Setup signal handling BEFORE any setup
@@ -89,7 +89,16 @@ func (b *LandJail) Run(ctx context.Context) error {
 		b.logger.Info("Command completed, shutting down...")
 	}
 
-	return nil
+	// Drain the child result if available. In the ctx.Done path the
+	// error is already buffered. In the signal path the child may still
+	// be running; return nil so deferred cleanup (iptables, proxy) can
+	// proceed before the process exits.
+	select {
+	case err := <-childErr:
+		return err
+	default:
+		return nil
+	}
 }
 
 func (b *LandJail) RunChildProcess(command []string) error {
