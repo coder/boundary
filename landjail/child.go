@@ -63,10 +63,10 @@ func RunChild(logger *slog.Logger, config config.AppConfig) error {
 	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
 			logger.Debug("Command exited with non-zero status", "exit_code", exitError.ExitCode())
-		} else {
-			logger.Error("Command execution failed", "error", err)
+			return fmt.Errorf("command exited with code %d: %w", exitError.ExitCode(), err)
 		}
-		return err
+		logger.Error("Command execution failed", "error", err)
+		return fmt.Errorf("command execution failed: %w", err)
 	}
 
 	logger.Debug("Command completed successfully")
