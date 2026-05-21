@@ -92,19 +92,12 @@ func RunChild(logger *slog.Logger, cfg config.AppConfig) error {
 	}
 	err = cmd.Run()
 	if err != nil {
-		// Check if this is a normal exit with non-zero status code
 		if exitError, ok := err.(*exec.ExitError); ok {
-			exitCode := exitError.ExitCode()
-			// Log at debug level for non-zero exits (normal behavior)
-			logger.Debug("Command exited with non-zero status", "exit_code", exitCode)
-			// Exit with the same code as the command - don't log as error
-			// This is normal behavior (commands can exit with any code)
-			os.Exit(exitCode)
+			logger.Debug("Command exited with non-zero status", "exit_code", exitError.ExitCode())
+			return fmt.Errorf("command exited with code %d: %w", exitError.ExitCode(), err)
 		}
-		// This is an unexpected error (not just a non-zero exit)
-		// Only log actual errors like "command not found" or "permission denied"
 		logger.Error("Command execution failed", "error", err)
-		return err
+		return fmt.Errorf("command execution failed: %w", err)
 	}
 
 	// Command exited successfully
