@@ -15,7 +15,7 @@ Boundary has three moving parts:
 ```text
 user shell
    |
-   | boundary --allow "domain=github.com" [separator] command args...
+   | boundary --allow "domain=github.com" -- command args...
    v
 boundary parent process
    |

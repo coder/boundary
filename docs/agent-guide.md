@@ -2,60 +2,11 @@
 
 This guide gives autonomous agents the context needed to change `github.com/coder/boundary` safely. It is intentionally consolidated so agents can load one detailed handbook after reading the root `AGENTS.md`. For a human-facing system overview, read `docs/architecture.md`.
 
-## Repository map
+## Architecture and runtime
 
-| Path | Purpose |
-|------|---------|
-| `cmd/boundary/main.go` | Binary entrypoint. Creates the CLI command and exits with errors. |
-| `cli/` | Serpent CLI, flags, environment variables, YAML config loading, privilege gate. |
-| `config/` | App config, user info, session correlation config, header names. |
-| `run/` | Platform dispatch. Linux runs a jail backend, non-Linux returns unsupported. |
-| `proxy/` | HTTP and HTTPS filtering proxy, CONNECT support, TLS detection, audit, session correlation. |
-| `rulesengine/` | Allow-rule parser and matcher. Default-deny policy. |
-| `audit/` | Log auditor, socket auditor, multi-auditor, sequence counter. |
-| `tls/` | Local CA creation/loading and per-host certificate generation. |
-| `nsjail_manager/` | Default Linux namespace backend. Parent and child process orchestration. |
-| `nsjail_manager/nsjail/` | Low-level veth, iptables, dummy DNS, env, and command runner code. |
-| `landjail/` | Landlock backend using proxy env vars rather than transparent iptables routing. |
-| `privilege/` | Linux privilege escalation through `sudo` and `setpriv`; non-Linux stubs. |
-| `dnsdummy/` | Dummy DNS server used to prevent DNS exfiltration in namespace mode. |
-| `log/` | slog setup to stderr or files. |
-| `e2e_tests/` | Linux sudo tests that can mutate host networking. |
-| `.github/workflows/` | CI, build, and release workflows. |
-| `docs/architecture.md` | Human-facing overview of how Boundary works. |
+See [docs/architecture.md](architecture.md) for the repository map, high-level model, startup flow, parent/child process model, policy model, proxy model, backend details, TLS, audit logging, session correlation, and security limitations.
 
-## Architecture overview
-
-Boundary runs a target command in a restricted environment and sends its HTTP and HTTPS traffic through a local filtering proxy. Requests are evaluated against allow rules. Anything that does not match an allow rule is denied.
-
-Core concepts:
-
-- Default deny: no rule means no outbound HTTP or HTTPS request is allowed.
-- Parent process: sets up proxying, audit, TLS, and jail infrastructure.
-- Child process: runs inside the selected jail backend and executes the target command.
-- Proxy: parses requests, evaluates allow rules, audits decisions, forwards allowed traffic, and blocks denied traffic.
-- Auditor: logs every request decision to stderr and optionally to the Coder workspace-agent socket.
-- TLS manager: creates a local CA and per-host certificates so HTTPS can be inspected.
-
-Boundary has two jail backends:
-
-- `nsjail`: default. Uses Linux network namespaces, veth pairs, iptables NAT and REDIRECT rules, and optional user namespaces.
-- `landjail`: uses Landlock network restrictions. It relies on proxy environment variables instead of transparent iptables redirection.
-
-## Runtime flow
-
-High-level flow:
-
-1. `cmd/boundary/main.go` calls `cli.NewCommand(version)`.
-2. `cli/cli.go` parses flags, environment variables, and optional YAML config into `config.CliConfig`.
-3. `config.NewAppConfigFromCliConfig` builds `config.AppConfig` and validates session-correlation config.
-4. If jail type is `nsjail`, `privilege.EnsurePrivileges()` re-execs through `sudo` and `setpriv` when needed.
-5. `run.Run` generates a boundary session UUID and dispatches to `nsjail_manager.Run` or `landjail.Run`.
-6. The selected backend decides whether the current process is a parent or child by checking `CHILD=true`.
-7. The parent parses allow rules, builds the rule engine, sets up auditors, creates TLS config, starts the proxy, then starts the child process.
-8. The child applies jail-specific network setup and runs the target command.
-9. The proxy evaluates each HTTP or HTTPS request and audits the result.
-10. The parent stops the proxy and cleans up host resources when the target command exits or a signal is received.
+The rest of this guide focuses on agent-specific workflow, change guidance, testing, and troubleshooting.
 
 ## CLI and config
 
@@ -87,30 +38,7 @@ When changing CLI flags:
 
 ## Rules engine
 
-`rulesengine/` parses and evaluates allow rules.
-
-Rule grammar uses key-value tokens:
-
-```text
-method=GET,POST domain=github.com path=/api/*
-```
-
-Supported keys:
-
-- `method`: one or more HTTP token values, comma-separated. `*` matches all methods.
-- `domain`: hostname pattern. `*` can be a full label.
-- `path`: one or more path patterns, comma-separated.
-
-Important matching semantics:
-
-- No matching allow rule means denied.
-- `domain=github.com` matches only `github.com`.
-- `domain=github.com` does not match `api.github.com`.
-- `domain=*.github.com` matches subdomains like `api.github.com`.
-- `domain=*.github.com` does not match the base domain `github.com`.
-- To allow both a base domain and its subdomains, use two rules.
-- Path wildcards are segment-based. A wildcard must be the entire segment.
-- A path pattern ending in `*` can match additional path segments.
+See the Policy model section in [docs/architecture.md](architecture.md) for the allow-rule grammar and matching semantics.
 
 When changing rule parsing or matching:
 
@@ -121,31 +49,9 @@ When changing rule parsing or matching:
 
 ## Proxy
 
-`proxy/` contains the filtering proxy. It handles both transparent proxy traffic and explicit HTTP proxy traffic.
+See the Proxy model section in [docs/architecture.md](architecture.md) for HTTP, HTTPS, and CONNECT request paths and forwarding/blocking behavior.
 
-Main files:
-
-- `proxy/proxy.go`: server lifecycle, TLS detection, HTTP and HTTPS processing, forwarding, block responses.
-- `proxy/connect.go`: HTTP CONNECT tunnel support.
-- `proxy/*_test.go`: proxy tests and framework.
-
-Request handling paths:
-
-1. Transparent HTTP: connection is not TLS, request is read directly, then evaluated.
-2. Transparent HTTPS: first byte looks like TLS, boundary terminates TLS with a generated certificate, reads the HTTP request, then evaluates it.
-3. Explicit HTTP proxy: client sends an absolute URL in the HTTP request.
-4. Explicit HTTPS proxy: client sends CONNECT, boundary establishes a TLS tunnel, then reads HTTP requests inside the tunnel.
-
-Important proxy behavior:
-
-- Every request is audited before allow or deny handling completes.
-- Audit sequence numbers are per proxy server instance and come from `audit.SequenceCounter`.
-- Denied requests get a 403 response with suggested allow rules.
-- Allowed requests are forwarded with a new upstream request.
-- For GET and HEAD, forwarded request bodies are set to nil.
-- Upstream responses are read fully so `Content-Length` can be set explicitly.
-- Responses are normalized to HTTP/1.1 before writing back to the downstream client.
-- Optional session-correlation headers are injected only when the request URL matches configured inject targets.
+Key files: `proxy/proxy.go`, `proxy/connect.go`, `proxy/*_test.go`.
 
 When changing proxy behavior:
 
@@ -157,25 +63,9 @@ When changing proxy behavior:
 
 ## Audit
 
-`audit/` provides request auditing.
+See the Audit logging section in [docs/architecture.md](architecture.md) for the audit model.
 
-Key types:
-
-- `audit.Request`: request decision payload.
-- `audit.Auditor`: interface implemented by all auditors.
-- `audit.LogAuditor`: writes structured logs through slog.
-- `audit.SocketAuditor`: batches and forwards logs to the Coder workspace-agent socket.
-- `audit.MultiAuditor`: fans out to multiple auditors.
-- `audit.SequenceCounter`: atomic counter for per-request sequence numbers.
-
-Important behavior:
-
-- `SetupAuditor` always includes the log auditor.
-- Socket forwarding is skipped when audit logs are disabled, the socket path is empty, or the socket does not exist.
-- Socket auditor queues logs, batches them, retries connection failures, and reports drops.
-- Allowed audit entries include the matching rule.
-- Denied audit entries do not include a rule.
-- Sequence numbers start at zero.
+Key types: `audit.Request`, `audit.Auditor`, `audit.LogAuditor`, `audit.SocketAuditor`, `audit.MultiAuditor`, `audit.SequenceCounter`.
 
 When changing audit behavior:
 
@@ -185,14 +75,7 @@ When changing audit behavior:
 
 ## TLS
 
-`tls/` generates and loads certificates used for TLS interception.
-
-Key behavior:
-
-- A local CA is stored in the user's boundary config directory.
-- Existing CA files are reused when possible.
-- Per-host server certificates are generated on demand.
-- The CA path is injected into child process environments so tools can trust boundary's generated certificates.
+See the TLS and certificate trust section in [docs/architecture.md](architecture.md) for the CA and certificate model.
 
 When changing TLS behavior:
 
@@ -203,36 +86,7 @@ When changing TLS behavior:
 
 ## nsjail backend
 
-`nsjail_manager/` is the default backend.
-
-Parent flow:
-
-1. Parse allow rules.
-2. Build rule engine.
-3. Set up audit.
-4. Set up TLS and write CA certificate.
-5. Create `nsjail.LinuxJail`.
-6. Start the proxy.
-7. Launch a child boundary process with `CHILD=true`.
-8. Configure host-to-namespace communication after child PID exists.
-9. Wait for child exit or signal.
-10. Stop proxy and clean up iptables and veth state.
-
-Child flow:
-
-1. Wait for the jail-side veth interface.
-2. Configure namespace networking.
-3. Start dummy DNS and redirect DNS unless `--use-real-dns` is enabled.
-4. Run the target command.
-
-Low-level networking behavior:
-
-- Host-side address: `192.168.100.1/24`.
-- Jail-side address: `192.168.100.2/24`.
-- Fixed subnet: `192.168.100.0/24`.
-- TCP traffic from the jail is redirected to the local HTTP proxy with iptables.
-- Non-TCP forwarding rules allow return traffic for non-TCP flows.
-- Dummy DNS prevents DNS exfiltration by redirecting DNS to local dummy responses.
+See the nsjail backend section in [docs/architecture.md](architecture.md) for the namespace, veth, iptables, and DNS model.
 
 High-risk details:
 
@@ -244,15 +98,7 @@ High-risk details:
 
 ## landjail backend
 
-`landjail/` uses Linux Landlock network restrictions.
-
-Differences from nsjail:
-
-- It does not set up transparent iptables routing.
-- It sets `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy`, and `https_proxy` for the child.
-- It clears `NO_PROXY` and `no_proxy` so clients do not bypass boundary.
-- It configures CA-related environment variables for common clients.
-- It restricts TCP connect to the proxy port.
+See the landjail backend section in [docs/architecture.md](architecture.md) for the Landlock and proxy-env model.
 
 When changing landjail:
 
@@ -263,14 +109,7 @@ When changing landjail:
 
 ## Privilege model
 
-`privilege/` handles Linux privilege escalation for the default nsjail backend.
-
-Behavior:
-
-- If needed, boundary re-execs through `sudo` and `setpriv`.
-- It keeps the original user's UID/GID where possible.
-- It adds ambient and inheritable capabilities required for network namespace and iptables work.
-- Non-Linux builds use stubs.
+See the Startup flow section in [docs/architecture.md](architecture.md) for how privilege escalation fits into the runtime.
 
 When changing privilege code:
 
