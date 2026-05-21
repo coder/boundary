@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -36,6 +37,8 @@ func newMultiRequestCapturingBackend() *multiRequestCapturingBackend {
 	return mcb
 }
 
+var errHeaderIndexOutOfRange = errors.New("headersAt: index out of range")
+
 func (m *multiRequestCapturingBackend) close() { m.server.Close() }
 
 func (m *multiRequestCapturingBackend) requestCount() int {
@@ -44,10 +47,13 @@ func (m *multiRequestCapturingBackend) requestCount() int {
 	return len(m.all)
 }
 
-func (m *multiRequestCapturingBackend) headersAt(i int) http.Header {
+func (m *multiRequestCapturingBackend) headersAt(i int) (http.Header, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.all[i].Clone()
+	if i < 0 || i >= len(m.all) {
+		return nil, errHeaderIndexOutOfRange
+	}
+	return m.all[i].Clone(), nil
 }
 
 // correlationTestEnv holds the shared objects for a session-correlation
@@ -147,7 +153,8 @@ func TestIntegration_LLMRequestAuditAndHeadersAgree(t *testing.T) {
 
 	// Then: the forwarded request carries the session ID and sequence number headers.
 	require.Equal(t, 1, s.injectBackend.requestCount())
-	header := s.injectBackend.headersAt(0)
+	header, err := s.injectBackend.headersAt(0)
+	require.NoError(t, err)
 	assert.Equal(t, sessionID, header.Get(config.SessionIDHeaderName))
 	assert.Equal(t, "0", header.Get(config.SequenceNumberHeaderName))
 
@@ -179,7 +186,8 @@ func TestIntegration_NonLLMRequestAuditedWithoutHeaders(t *testing.T) {
 
 	// Then: no correlation headers are present on the forwarded request.
 	require.Equal(t, 1, s.otherBackend.requestCount())
-	header := s.otherBackend.headersAt(0)
+	header, err := s.otherBackend.headersAt(0)
+	require.NoError(t, err)
 	assert.Empty(t, header.Get(config.SessionIDHeaderName),
 		"non-inject-target requests must not carry session ID header")
 	assert.Empty(t, header.Get(config.SequenceNumberHeaderName),
@@ -285,19 +293,22 @@ func TestIntegration_MixedRequestsSequenceOrdering(t *testing.T) {
 	require.Equal(t, 2, inject.requestCount(),
 		"inject-target backend should have received exactly two requests")
 
-	firstInjectHeader := inject.headersAt(0)
+	firstInjectHeader, err := inject.headersAt(0)
+	require.NoError(t, err)
 	assert.Equal(t, sessionID, firstInjectHeader.Get(config.SessionIDHeaderName))
 	assert.Equal(t, "0", firstInjectHeader.Get(config.SequenceNumberHeaderName),
 		"first inject-target request must have sequence 0")
 
-	secondInjectHeader := inject.headersAt(1)
+	secondInjectHeader, err := inject.headersAt(1)
+	require.NoError(t, err)
 	assert.Equal(t, sessionID, secondInjectHeader.Get(config.SessionIDHeaderName))
 	assert.Equal(t, "3", secondInjectHeader.Get(config.SequenceNumberHeaderName),
 		"second inject-target request must have sequence 3")
 
 	// Then: the non-inject-target backend receives no correlation headers.
 	require.Equal(t, 1, other.requestCount())
-	otherHeader := other.headersAt(0)
+	otherHeader, err := other.headersAt(0)
+	require.NoError(t, err)
 	assert.Empty(t, otherHeader.Get(config.SessionIDHeaderName))
 	assert.Empty(t, otherHeader.Get(config.SequenceNumberHeaderName))
 
@@ -360,8 +371,12 @@ func TestIntegration_SequenceGapRevealsAgenticLoop(t *testing.T) {
 
 	// Then: the inject-target headers show a gap from sequence 0 to 4.
 	require.Equal(t, 2, inject.requestCount())
-	assert.Equal(t, "0", inject.headersAt(0).Get(config.SequenceNumberHeaderName))
-	assert.Equal(t, "4", inject.headersAt(1).Get(config.SequenceNumberHeaderName))
+	firstHeader, err := inject.headersAt(0)
+	require.NoError(t, err)
+	assert.Equal(t, "0", firstHeader.Get(config.SequenceNumberHeaderName))
+	secondHeader, err := inject.headersAt(1)
+	require.NoError(t, err)
+	assert.Equal(t, "4", secondHeader.Get(config.SequenceNumberHeaderName))
 
 	// Then: the gap of 3 matches the three intermediate tool-use requests.
 	events := aud.getRequests()
@@ -403,7 +418,8 @@ func TestIntegration_SpoofedHeadersOverwrittenWithCorrectSequence(t *testing.T) 
 
 	// Then: the backend receives the real values, not the spoofed ones.
 	require.Equal(t, 1, s.injectBackend.requestCount())
-	header := s.injectBackend.headersAt(0)
+	header, err := s.injectBackend.headersAt(0)
+	require.NoError(t, err)
 	assert.Equal(t, sessionID, header.Get(config.SessionIDHeaderName))
 	assert.Equal(t, "0", header.Get(config.SequenceNumberHeaderName))
 
@@ -449,7 +465,8 @@ func TestIntegration_DisabledCorrelationNoHeaders(t *testing.T) {
 
 	// Then: no correlation headers are injected on the forwarded request.
 	require.Equal(t, 1, backend.requestCount())
-	header := backend.headersAt(0)
+	header, err := backend.headersAt(0)
+	require.NoError(t, err)
 	assert.Empty(t, header.Get(config.SessionIDHeaderName),
 		"session ID header must not be injected when correlation is disabled")
 	assert.Empty(t, header.Get(config.SequenceNumberHeaderName),
@@ -512,7 +529,8 @@ func TestIntegration_ConcurrentRequestsUniqueSequenceNumbers(t *testing.T) {
 	require.Equal(t, numRequests, s.injectBackend.requestCount())
 	headerSeqs := make(map[string]bool, numRequests)
 	for i := 0; i < numRequests; i++ {
-		header := s.injectBackend.headersAt(i)
+		header, err := s.injectBackend.headersAt(i)
+		require.NoError(t, err)
 		seqStr := header.Get(config.SequenceNumberHeaderName)
 		assert.NotEmpty(t, seqStr, "request %d: sequence header must be set", i)
 		headerSeqs[seqStr] = true
