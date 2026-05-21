@@ -2,7 +2,7 @@
 
 Boundary is a Linux network isolation tool for monitoring and restricting HTTP and HTTPS requests from child processes. It is security-sensitive code that can mutate host networking during e2e tests.
 
-Start here, then read the relevant sections in [.claude/docs/BOUNDARY_AGENT_GUIDE.md](.claude/docs/BOUNDARY_AGENT_GUIDE.md).
+Start here, read [ARCHITECTURE.md](ARCHITECTURE.md) for the human system overview, then read the relevant agent workflow sections in [.claude/docs/BOUNDARY_AGENT_GUIDE.md](.claude/docs/BOUNDARY_AGENT_GUIDE.md).
 
 ## Non-negotiable rules
 
@@ -30,7 +30,8 @@ Start here, then read the relevant sections in [.claude/docs/BOUNDARY_AGENT_GUID
 
 ## Read before editing
 
-- Repository map and architecture: [.claude/docs/BOUNDARY_AGENT_GUIDE.md#repository-map](.claude/docs/BOUNDARY_AGENT_GUIDE.md#repository-map)
+- Human architecture overview: [ARCHITECTURE.md](ARCHITECTURE.md)
+- Repository map and agent architecture notes: [.claude/docs/BOUNDARY_AGENT_GUIDE.md#repository-map](.claude/docs/BOUNDARY_AGENT_GUIDE.md#repository-map)
 - Runtime flow: [.claude/docs/BOUNDARY_AGENT_GUIDE.md#runtime-flow](.claude/docs/BOUNDARY_AGENT_GUIDE.md#runtime-flow)
 - CLI and config: [.claude/docs/BOUNDARY_AGENT_GUIDE.md#cli-and-config](.claude/docs/BOUNDARY_AGENT_GUIDE.md#cli-and-config)
 - Rules engine: [.claude/docs/BOUNDARY_AGENT_GUIDE.md#rules-engine](.claude/docs/BOUNDARY_AGENT_GUIDE.md#rules-engine)

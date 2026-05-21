@@ -1,6 +1,6 @@
 # Boundary agent guide
 
-This guide gives autonomous agents the context needed to change `github.com/coder/boundary` safely. It is intentionally consolidated so agents can load one detailed handbook after reading the root `AGENTS.md`.
+This guide gives autonomous agents the context needed to change `github.com/coder/boundary` safely. It is intentionally consolidated so agents can load one detailed handbook after reading the root `AGENTS.md`. For a human-facing system overview, read [`ARCHITECTURE.md`](../../ARCHITECTURE.md).
 
 ## Repository map
 
@@ -22,6 +22,7 @@ This guide gives autonomous agents the context needed to change `github.com/code
 | `log/` | slog setup to stderr or files. |
 | `e2e_tests/` | Linux sudo tests that can mutate host networking. |
 | `.github/workflows/` | CI, build, and release workflows. |
+| `ARCHITECTURE.md` | Human-facing overview of how Boundary works. |
 
 ## Architecture overview
 
