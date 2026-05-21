@@ -1,6 +1,6 @@
 # Boundary agent guide
 
-This guide gives autonomous agents the context needed to change `github.com/coder/boundary` safely. It is intentionally consolidated so agents can load one detailed handbook after reading the root `AGENTS.md`. For a human-facing system overview, read [architecture.md](architecture.md).
+This guide gives autonomous agents the context needed to change `github.com/coder/boundary` safely. It is intentionally consolidated so agents can load one detailed handbook after reading the root `AGENTS.md`. For a human-facing system overview, read `docs/architecture.md`.
 
 ## Repository map
 

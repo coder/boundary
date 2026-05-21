@@ -4,14 +4,14 @@ Boundary is a Linux network isolation tool for monitoring and restricting HTTP a
 
 ## Canonical docs
 
-- Human architecture overview: [docs/architecture.md](docs/architecture.md)
-- Agent workflow guide: [docs/agent-guide.md](docs/agent-guide.md)
-- E2E test safety guide: [docs/e2e-tests.md](docs/e2e-tests.md)
+- Human architecture overview: `docs/architecture.md`
+- Agent workflow guide: `docs/agent-guide.md`
+- E2E test safety guide: `docs/e2e-tests.md`
 
 ## Non-negotiable rules
 
-- Read [docs/agent-guide.md](docs/agent-guide.md) before making non-trivial changes.
-- Read [docs/e2e-tests.md](docs/e2e-tests.md) before running or changing e2e tests.
+- Read `docs/agent-guide.md` before making non-trivial changes.
+- Read `docs/e2e-tests.md` before running or changing e2e tests.
 - Use `make unit-test` for normal validation. Do not assume `make test` exists.
 - Ask before changing privilege escalation, iptables rules, certificate trust behavior, release workflow semantics, or the allow-rule grammar.
 

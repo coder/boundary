@@ -281,7 +281,7 @@ E2E tests require Linux and sudo:
 make e2e-test
 ```
 
-Read [e2e-tests.md](e2e-tests.md) before running or changing e2e tests.
+Read `docs/e2e-tests.md` before running or changing e2e tests.
 
 ## Diagrams and related work
 
