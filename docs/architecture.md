@@ -44,10 +44,12 @@ boundary proxy
 | `proxy/` | HTTP and HTTPS proxy, transparent TLS detection, CONNECT support, forwarding, blocking, auditing, and session-correlation header injection. |
 | `audit/` | Structured stderr audit logging and optional Coder workspace-agent socket forwarding. |
 | `tls/` | Local CA management and per-host certificate generation for HTTPS interception. |
-| `nsjail_manager/` | Default jail backend using Linux network namespaces, veth pairs, iptables, and dummy DNS. |
+| `nsjail_manager/` | Default jail backend. Parent/child orchestration, proxy setup, and cleanup. |
+| `nsjail_manager/nsjail/` | Low-level Linux namespace networking: veth, iptables, dummy DNS, env, and command runner. |
 | `landjail/` | Alternative jail backend using Landlock restrictions and proxy environment variables. |
 | `privilege/` | Linux privilege escalation through `sudo` and `setpriv` for the default backend. |
 | `dnsdummy/` | DNS server used by the namespace backend to prevent DNS exfiltration. |
+| `log/` | slog setup for stderr and file logging. |
 | `e2e_tests/` | Linux integration tests that require sudo and can mutate host networking. |
 
 ## Startup flow
@@ -114,10 +116,11 @@ Important matching rules:
 
 - `domain=github.com` matches only `github.com`.
 - `domain=github.com` does not match `api.github.com`.
-- `domain=*.github.com` matches subdomains such as `api.github.com`.
+- `domain=*.github.com` matches subdomains such as `api.github.com` and deeper subdomains such as `v1.api.github.com`.
 - `domain=*.github.com` does not match `github.com`.
 - To allow a base domain and its subdomains, configure both patterns.
 - Path wildcards are segment-based. A wildcard must be a whole path segment.
+- A trailing `*` segment matches multiple remaining segments: `path=/api/*` matches `/api/v1/users`.
 
 The engine returns both the allow or deny decision and the matching rule, if one matched. Audit logs include the matched rule for allowed requests.
 
@@ -150,7 +153,7 @@ For allowed requests, the proxy creates a new upstream request, copies appropria
 
 For denied requests, the proxy returns HTTP 403 with a short message and example allow rules.
 
-Every request is audited before the allow or deny handling completes.
+Every HTTP request that reaches the proxy is audited before the allow or deny handling completes. CONNECT handshake requests themselves are not audited; only the HTTP requests inside the resulting tunnel are audited.
 
 ## nsjail backend
 

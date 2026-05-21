@@ -191,7 +191,7 @@ When changing CI or releases:
 
 ### `make test` fails with no rule
 
-Use `make unit-test` for regular tests. The current Makefile does not define `test`.
+Use `make unit-test` for regular tests. The current Makefile does not define a `test` target. Note that `make ci` also depends on `test`, so it will fail for the same reason; use individual targets instead.
 
 ### E2E tests fail with DNS issues
 
