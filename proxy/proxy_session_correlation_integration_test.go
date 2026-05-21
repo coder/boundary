@@ -74,7 +74,9 @@ type correlationTestEnv struct {
 }
 
 func (s *correlationTestEnv) stop() {
-	s.pt.Stop()
+	if s.pt != nil {
+		s.pt.Stop()
+	}
 	if s.injectBackend != nil {
 		s.injectBackend.close()
 	}
