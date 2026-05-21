@@ -15,10 +15,8 @@ Boundary is a Linux network isolation tool for monitoring and restricting HTTP a
 - Use `make unit-test` for normal validation. Do not assume `make test` exists.
 - Ask before changing privilege escalation, iptables rules, certificate trust behavior, release workflow semantics, or the allow-rule grammar.
 
-## Compatibility links
+## Entrypoints
 
 - `CLAUDE.md` points to this file for Claude-style agent runtimes.
-- `ARCHITECTURE.md` points to `docs/architecture.md` for existing links.
-- `.claude/docs/BOUNDARY_AGENT_GUIDE.md` points to `docs/agent-guide.md`.
-- `.agents/docs` points to `.claude/docs` for agent runtimes that look under `.agents`.
+- `.agents/docs` points to `docs/` for agent runtimes that look under `.agents`.
 - `e2e_tests/AGENTS.md` points to `docs/e2e-tests.md`.
