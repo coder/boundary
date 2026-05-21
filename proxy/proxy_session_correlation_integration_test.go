@@ -137,7 +137,7 @@ func newCorrelationTestEnv(t *testing.T, sessionID string) *correlationTestEnv {
 // the forwarded header.
 func TestIntegration_LLMRequestAuditAndHeadersAgree(t *testing.T) {
 	// Given: a proxy with session correlation enabled and an inject-target backend.
-	const sessionID = "e5f6a7b8-0000-0000-0000-000000000000"
+	const sessionID = "e5f6a7b8-c9d0-4e1f-8a2b-3c4d5e6f7a8b"
 	s := newCorrelationTestEnv(t, sessionID)
 	defer s.stop()
 
