@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"log/slog"
 	"math/big"
@@ -184,6 +185,192 @@ func TestGenerateServerCertificateIncludesIPAddressSAN(t *testing.T) {
 	require.Len(t, leaf.IPAddresses, 1)
 	require.True(t, leaf.IPAddresses[0].Equal(net.ParseIP("127.0.0.1")))
 	require.NoError(t, leaf.VerifyHostname("127.0.0.1"))
+}
+
+func TestGenerateServerCertificateIPv6(t *testing.T) {
+	t.Parallel()
+
+	cm := newTestCertificateManager(t, t.TempDir())
+
+	serverCert, err := cm.generateServerCertificate("::1")
+	require.NoError(t, err)
+
+	leaf := readTLSCertificate(t, serverCert)
+	require.Len(t, leaf.IPAddresses, 1)
+	require.True(t, leaf.IPAddresses[0].Equal(net.ParseIP("::1")))
+}
+
+func TestGenerateServerCertificateHostnameHasNoIPSAN(t *testing.T) {
+	t.Parallel()
+
+	cm := newTestCertificateManager(t, t.TempDir())
+
+	serverCert, err := cm.generateServerCertificate("api.example.com")
+	require.NoError(t, err)
+
+	leaf := readTLSCertificate(t, serverCert)
+	require.Empty(t, leaf.IPAddresses)
+	require.Contains(t, leaf.DNSNames, "api.example.com")
+}
+
+func TestGenerateServerCertificateValidityAndKeyUsage(t *testing.T) {
+	t.Parallel()
+
+	cm := newTestCertificateManager(t, t.TempDir())
+
+	before := time.Now()
+	serverCert, err := cm.generateServerCertificate("usage.example.com")
+	require.NoError(t, err)
+
+	leaf := readTLSCertificate(t, serverCert)
+
+	// Server cert validity is 24 hours.
+	require.WithinDuration(t, before, leaf.NotBefore, 5*time.Second)
+	require.WithinDuration(t, before.Add(24*time.Hour), leaf.NotAfter, 5*time.Second)
+
+	require.Equal(t, x509.KeyUsageKeyEncipherment|x509.KeyUsageDigitalSignature, leaf.KeyUsage)
+	require.Contains(t, leaf.ExtKeyUsage, x509.ExtKeyUsageServerAuth)
+	require.False(t, leaf.IsCA)
+}
+
+func TestGetCertificateConcurrentDifferentHostnames(t *testing.T) {
+	t.Parallel()
+
+	cm := newTestCertificateManager(t, t.TempDir())
+
+	const workers = 16
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+
+	for i := range workers {
+		hostname := fmt.Sprintf("host-%d.example.com", i)
+		wg.Go(func() {
+			_, err := cm.getCertificate(&cryptotls.ClientHelloInfo{ServerName: hostname})
+			if err != nil {
+				errs <- err
+			}
+		})
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	require.Len(t, cm.certCache, workers)
+}
+
+func TestLoadExistingCACorruptedKeyPEM(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, config.CAKeyName), []byte("not-pem"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, config.CACertName), []byte("not-pem"), 0o644))
+
+	// Should fall through to generating a fresh CA.
+	cm := newTestCertificateManager(t, dir)
+	require.True(t, cm.caCert.IsCA)
+}
+
+func TestLoadExistingCAMissingCertFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	// Write only a valid key file, no cert.
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	keyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(key),
+	})
+	require.NoError(t, os.WriteFile(filepath.Join(dir, config.CAKeyName), keyPEM, 0o600))
+
+	cm := newTestCertificateManager(t, dir)
+	require.NotNil(t, cm.caCert)
+	require.True(t, cm.caCert.IsCA)
+}
+
+func TestLoadExistingCACorruptedCertPEM(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	// Write a valid key but invalid cert.
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	keyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(key),
+	})
+	require.NoError(t, os.WriteFile(filepath.Join(dir, config.CAKeyName), keyPEM, 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, config.CACertName), []byte("not-pem"), 0o644))
+
+	cm := newTestCertificateManager(t, dir)
+	require.True(t, cm.caCert.IsCA)
+}
+
+func TestCAFilePermissions(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	_ = newTestCertificateManager(t, dir)
+
+	keyInfo, err := os.Stat(filepath.Join(dir, config.CAKeyName))
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), keyInfo.Mode().Perm(),
+		"CA private key must be readable only by owner")
+
+	certInfo, err := os.Stat(filepath.Join(dir, config.CACertName))
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o644), certInfo.Mode().Perm(),
+		"CA certificate should be world-readable")
+}
+
+func TestCACreatesNestedConfigDirectory(t *testing.T) {
+	t.Parallel()
+
+	dir := filepath.Join(t.TempDir(), "nested", "deep", "config")
+	cm := newTestCertificateManager(t, dir)
+	require.NotNil(t, cm)
+
+	info, err := os.Stat(dir)
+	require.NoError(t, err)
+	require.True(t, info.IsDir())
+}
+
+func TestCACertificateProperties(t *testing.T) {
+	t.Parallel()
+
+	cm := newTestCertificateManager(t, t.TempDir())
+
+	require.True(t, cm.caCert.IsCA)
+	require.True(t, cm.caCert.BasicConstraintsValid)
+	require.Equal(t, []string{"coder"}, cm.caCert.Subject.Organization)
+
+	expectedUsage := x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign
+	require.Equal(t, expectedUsage, cm.caCert.KeyUsage)
+	require.Contains(t, cm.caCert.ExtKeyUsage, x509.ExtKeyUsageServerAuth)
+}
+
+func TestGetCACertPEM(t *testing.T) {
+	t.Parallel()
+
+	cm := newTestCertificateManager(t, t.TempDir())
+
+	pemData, err := cm.getCACertPEM()
+	require.NoError(t, err)
+	require.NotEmpty(t, pemData)
+
+	block, _ := pem.Decode(pemData)
+	require.NotNil(t, block)
+	require.Equal(t, "CERTIFICATE", block.Type)
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	require.NoError(t, err)
+	require.Equal(t, cm.caCert.Raw, cert.Raw)
 }
 
 func newTestCertificateManager(t *testing.T, dir string) *CertificateManager {
