@@ -184,7 +184,7 @@ make lint           # Lint code
 
 ## Architecture
 
-For detailed information about how `boundary` works internally, see [ARCHITECTURE.md](ARCHITECTURE.md).
+For detailed information about how `boundary` works internally, see [docs/architecture.md](docs/architecture.md).
 
 ## License
 
