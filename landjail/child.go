@@ -9,34 +9,29 @@ import (
 	"github.com/coder/boundary/config"
 	"github.com/coder/boundary/util"
 	"github.com/landlock-lsm/go-landlock/landlock"
+	ll "github.com/landlock-lsm/go-landlock/landlock/syscall"
 )
 
 type LandlockConfig struct {
 	// TODO(yevhenii):
-	// - should it be able to bind to any port?
 	// - should it be able to connect to any port on localhost?
-	// BindTCPPorts    []int
 	ConnectTCPPorts []int
 }
 
 func ApplyLandlockRestrictions(logger *slog.Logger, cfg LandlockConfig) error {
-	// Get the Landlock version which works for Kernel 6.7+
-	llCfg := landlock.V4
+	// Restrict connect only. Including bind_tcp in handled rights without
+	// explicit allow rules denies all binds (breaks local servers).
+	llCfg := landlock.MustConfig(landlock.AccessNetSet(ll.AccessNetConnectTCP))
 
-	// Collect our rules
 	var netRules []landlock.Rule
-
-	// Add rules for TCP connections
 	for _, port := range cfg.ConnectTCPPorts {
 		logger.Debug("Adding TCP connect port", "port", port)
 		netRules = append(netRules, landlock.ConnectTCP(uint16(port)))
 	}
 
-	err := llCfg.RestrictNet(netRules...)
-	if err != nil {
+	if err := llCfg.RestrictNet(netRules...); err != nil {
 		return fmt.Errorf("failed to apply Landlock network restrictions: %w", err)
 	}
-
 	return nil
 }
 
