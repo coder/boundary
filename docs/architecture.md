@@ -200,7 +200,7 @@ Unlike `nsjail`, it does not rely on transparent iptables redirection. Instead, 
 
 It also clears `NO_PROXY` and `no_proxy` so the target command cannot bypass Boundary through proxy bypass lists.
 
-Landlock restricts the child so it can connect only to the Boundary proxy port. This means the backend depends on clients honoring proxy environment variables. A client that ignores those variables will generally fail to connect rather than bypass Boundary.
+Landlock restricts the child so it can connect only to the Boundary proxy port. Binding/listening on TCP ports is allowed (any port) so local servers inside the jail still work. This means the backend depends on clients honoring proxy environment variables. A client that ignores those variables will generally fail to connect rather than bypass Boundary.
 
 ## TLS and certificate trust
 
