@@ -39,6 +39,10 @@ func NewCommand(version string) *serpent.Command {
   # Use allowlist from config file with additional CLI allow rules
   boundary --allow "domain=example.com" -- curl https://example.com
 
+  # Forward allowed requests through a corporate proxy
+  boundary --upstream-proxy http://proxy.corp:3128 \
+    --allow "domain=github.com" -- curl https://github.com
+
   # Block everything by default (implicit)
 
   # Enable session correlation inside a Coder workspace
@@ -121,6 +125,13 @@ func BaseCommand(version string) *serpent.Command {
 				Default:     "8080",
 				Value:       &cliConfig.ProxyPort,
 				YAML:        "proxy_port",
+			},
+			{
+				Flag:        config.UpstreamProxyFlag,
+				Env:         config.UpstreamProxyEnv,
+				Description: "Forward allowed requests through this upstream HTTP(S) proxy URL.",
+				Value:       &cliConfig.UpstreamProxy,
+				YAML:        "upstream_proxy",
 			},
 			{
 				Flag:        "pprof",

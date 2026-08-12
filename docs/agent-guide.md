@@ -24,6 +24,7 @@ Important CLI behavior:
 - `--allow` is repeatable and CLI-only.
 - YAML `allowlist` is merged with CLI `--allow` rules.
 - `--jail-type` defaults to `nsjail`.
+- `--upstream-proxy` configures Boundary's outbound forwarding transport for corporate proxies. Do not point child proxy environment variables at this proxy.
 - `--use-real-dns` intentionally permits DNS exfiltration. Do not enable it by accident.
 - `--disable-audit-logs` disables workspace-agent socket forwarding. It does not remove stderr logging.
 - `--enable-session-correlation` requires configured inject targets or a valid fallback from `CODER_AGENT_URL`.

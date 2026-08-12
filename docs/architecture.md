@@ -151,6 +151,8 @@ When a client uses Boundary as an explicit HTTP proxy for HTTPS, it sends a CONN
 
 For allowed requests, the proxy creates a new upstream request, copies appropriate headers, optionally injects session-correlation headers, and writes the upstream response back to the client.
 
+If `upstream_proxy` / `--upstream-proxy` is configured, the proxy forwards allowed requests through that upstream HTTP(S) proxy after policy evaluation and audit. The confined child process still sends traffic to Boundary first; the upstream proxy is a Boundary outbound transport setting, not a child `HTTP_PROXY` setting.
+
 For denied requests, the proxy returns HTTP 403 with a short message and example allow rules.
 
 Every HTTP request that reaches the proxy is audited before the allow or deny handling completes. CONNECT handshake requests themselves are not audited; only the HTTP requests inside the resulting tunnel are audited.

@@ -37,17 +37,26 @@ func NewLandJail(
 		return nil, fmt.Errorf("build inject engine: %w", err)
 	}
 
+	forwardTransport, err := proxy.NewForwardTransport(config.UpstreamProxy)
+	if err != nil {
+		return nil, fmt.Errorf("build upstream proxy transport: %w", err)
+	}
+	if config.UpstreamProxy != "" {
+		logger.Info("Using upstream proxy", "upstream_proxy", proxy.RedactProxyURL(config.UpstreamProxy))
+	}
+
 	// Create proxy server
 	proxyServer := proxy.NewProxyServer(proxy.Config{
-		HTTPPort:     int(config.ProxyPort),
-		RuleEngine:   ruleEngine,
-		Auditor:      auditor,
-		Logger:       logger,
-		TLSConfig:    tlsConfig,
-		PprofEnabled: config.PprofEnabled,
-		PprofPort:    int(config.PprofPort),
-		InjectEngine: injectEngine,
-		SessionID:    config.SessionID.String(),
+		HTTPPort:         int(config.ProxyPort),
+		RuleEngine:       ruleEngine,
+		Auditor:          auditor,
+		Logger:           logger,
+		TLSConfig:        tlsConfig,
+		PprofEnabled:     config.PprofEnabled,
+		PprofPort:        int(config.PprofPort),
+		InjectEngine:     injectEngine,
+		SessionID:        config.SessionID.String(),
+		ForwardTransport: forwardTransport,
 	})
 
 	return &LandJail{
@@ -80,7 +89,7 @@ func (b *LandJail) Run(ctx context.Context) error {
 	childErr := make(chan error, 1)
 	go func() {
 		defer cancel()
-		childErr <- b.RunChildProcess(os.Args)
+		childErr <- b.RunChildProcess(config.StripUpstreamProxyArgs(os.Args))
 	}()
 
 	// Setup signal handling BEFORE any setup
@@ -112,7 +121,7 @@ func (b *LandJail) Run(ctx context.Context) error {
 func (b *LandJail) RunChildProcess(command []string) error {
 	childCmd := b.getChildCommand(command)
 
-	b.logger.Debug("Executing command in boundary", "command", strings.Join(os.Args, " "))
+	b.logger.Debug("Executing command in boundary", "command", strings.Join(command, " "))
 	err := childCmd.Start()
 	if err != nil {
 		b.logger.Error("Command failed to start", "error", err)

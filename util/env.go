@@ -2,6 +2,33 @@ package util
 
 import "strings"
 
+// RemoveEnvs returns a copy of base without entries matching keys.
+func RemoveEnvs(base []string, keys ...string) []string {
+	if len(keys) == 0 {
+		return append([]string(nil), base...)
+	}
+
+	remove := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		remove[key] = struct{}{}
+	}
+
+	filtered := make([]string, 0, len(base))
+	for _, env := range base {
+		key, _, ok := strings.Cut(env, "=")
+		if !ok {
+			filtered = append(filtered, env)
+			continue
+		}
+		if _, ok := remove[key]; ok {
+			continue
+		}
+		filtered = append(filtered, env)
+	}
+
+	return filtered
+}
+
 func MergeEnvs(base []string, extra map[string]string) []string {
 	envMap := make(map[string]string)
 	for _, env := range base {

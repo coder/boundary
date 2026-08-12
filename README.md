@@ -161,6 +161,7 @@ boundary [flags] -- command [args...]
  --log-level <LEVEL>              Set log level (error, warn, info, debug). Default: warn
  --log-dir <DIR>                  Directory to write logs to (default: stderr)
  --proxy-port <PORT>              HTTP proxy port (default: 8080)
+ --upstream-proxy <URL>           Forward allowed requests through an upstream HTTP(S) proxy
  --pprof                          Enable pprof profiling server
  --pprof-port <PORT>              pprof server port (default: 6060)
  --disable-audit-logs             Disable sending audit logs to the workspace agent
@@ -168,7 +169,14 @@ boundary [flags] -- command [args...]
  -h, --help                       Print help
 ```
 
-Environment variables: `BOUNDARY_CONFIG`, `BOUNDARY_ALLOW`, `BOUNDARY_LOG_LEVEL`, `BOUNDARY_LOG_DIR`, `PROXY_PORT`, `BOUNDARY_PPROF`, `BOUNDARY_PPROF_PORT`, `DISABLE_AUDIT_LOGS`, `CODER_AGENT_BOUNDARY_LOG_PROXY_SOCKET_PATH`
+Environment variables: `BOUNDARY_CONFIG`, `BOUNDARY_ALLOW`, `BOUNDARY_LOG_LEVEL`, `BOUNDARY_LOG_DIR`, `PROXY_PORT`, `BOUNDARY_UPSTREAM_PROXY`, `BOUNDARY_PPROF`, `BOUNDARY_PPROF_PORT`, `DISABLE_AUDIT_LOGS`, `CODER_AGENT_BOUNDARY_LOG_PROXY_SOCKET_PATH`
+
+When `--upstream-proxy` is set, Boundary still evaluates allow rules and writes audit logs before forwarding allowed requests through the upstream proxy:
+
+```bash
+boundary --upstream-proxy http://proxy.corp:3128 \
+  --allow "domain=github.com" -- curl https://github.com
+```
 
 ## Development
 
