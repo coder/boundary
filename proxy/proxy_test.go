@@ -1,7 +1,11 @@
 package proxy
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // TestProxyServerBasicHTTP tests basic HTTP request handling
@@ -61,5 +65,46 @@ func TestProxyServerBasicHTTPS(t *testing.T) {
 
 	t.Run("BlockedHTTPSRequest", func(t *testing.T) {
 		pt.ExpectDeny("https://localhost:8080/", "example.com")
+	})
+}
+
+// The proxy serves one request per connection and then closes it, so both the
+// forwarded and the blocked response have to say so. Without the signal a
+// client that pools sockets reuses one the proxy has already closed.
+func TestProxyResponsesSignalConnectionClose(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer backend.Close()
+
+	pt := NewProxyTest(t, WithAllowedDomain("127.0.0.1")).Start()
+	defer pt.Stop()
+
+	t.Run("allowed request", func(t *testing.T) {
+		resp, err := pt.proxyClient.Get(backend.URL)
+		require.NoError(t, err)
+		defer resp.Body.Close() //nolint:errcheck
+
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.True(t, resp.Close, "response must tell the client the connection is closing")
+	})
+
+	t.Run("blocked request", func(t *testing.T) {
+		blocked := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer blocked.Close()
+
+		req, err := http.NewRequest(http.MethodGet, blocked.URL, nil)
+		require.NoError(t, err)
+		req.Host = "example.com"
+
+		resp, err := pt.proxyClient.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close() //nolint:errcheck
+
+		require.Equal(t, http.StatusForbidden, resp.StatusCode)
+		require.True(t, resp.Close, "blocked response must tell the client the connection is closing")
 	})
 }
