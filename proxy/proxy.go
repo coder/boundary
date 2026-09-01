@@ -440,6 +440,12 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool, se
 	resp.ProtoMajor = 1
 	resp.ProtoMinor = 1
 
+	// We serve one request per connection and close it in the caller's defer,
+	// so the client has to be told, or a pooled socket is reused after we are
+	// gone (RFC 9112 section 9.6).
+	resp.Header.Del("Connection")
+	resp.Close = true
+
 	// Copy response back to client
 	err = resp.Write(conn)
 	if err != nil {
@@ -492,6 +498,7 @@ For more help: https://github.com/coder/boundary
 
 	resp.Body = io.NopCloser(strings.NewReader(body))
 	resp.ContentLength = int64(len(body))
+	resp.Close = true
 
 	// Copy response back to client
 	err := resp.Write(conn)
