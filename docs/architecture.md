@@ -153,6 +153,10 @@ For allowed requests, the proxy creates a new upstream request, copies appropria
 
 For denied requests, the proxy returns HTTP 403 with a short message and example allow rules.
 
+### Protocol upgrades
+
+A request that carries `Upgrade` and `Connection: Upgrade` (WebSocket, DERP, and similar) is evaluated and audited like any other request. When it is allowed, the proxy dials the upstream itself, relays the handshake with those headers intact, and, on `101 Switching Protocols`, copies bytes in both directions until either side closes. Any other upstream status is returned to the client as a normal response. Only the handshake is audited; the stream that follows is not inspected. This is what lets long-lived clients such as the Coder workspace agent run inside the jail.
+
 Every HTTP request that reaches the proxy is audited before the allow or deny handling completes. CONNECT handshake requests themselves are not audited; only the HTTP requests inside the resulting tunnel are audited.
 
 ## nsjail backend

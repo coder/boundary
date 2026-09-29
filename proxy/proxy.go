@@ -244,13 +244,14 @@ func (p *Server) isTLSConnection(conn net.Conn) (net.Conn, bool, error) {
 func (p *Server) handleHTTPConnection(conn net.Conn) {
 	defer func() {
 		err := conn.Close()
-		if err != nil {
+		if err != nil && !errors.Is(err, net.ErrClosed) {
 			p.logger.Error("Failed to close connection", "error", err)
 		}
 	}()
 
 	// Read HTTP request
-	req, err := http.ReadRequest(bufio.NewReader(conn))
+	reader := bufio.NewReader(conn)
+	req, err := http.ReadRequest(reader)
 	if err != nil {
 		p.logger.Error("Failed to read HTTP request", "error", err)
 		return
@@ -262,7 +263,7 @@ func (p *Server) handleHTTPConnection(conn net.Conn) {
 	}
 
 	p.logger.Debug("🌐 HTTP Request", "method", req.Method, "url", req.URL.String())
-	p.processHTTPRequest(conn, req, false)
+	p.processHTTPRequest(conn, reader, req, false)
 }
 
 func (p *Server) handleTLSConnection(conn net.Conn) {
@@ -271,7 +272,7 @@ func (p *Server) handleTLSConnection(conn net.Conn) {
 
 	defer func() {
 		err := tlsConn.Close()
-		if err != nil {
+		if err != nil && !errors.Is(err, net.ErrClosed) {
 			p.logger.Error("Failed to close TLS connection", "error", err)
 		}
 	}()
@@ -285,17 +286,23 @@ func (p *Server) handleTLSConnection(conn net.Conn) {
 	p.logger.Debug("✅ TLS handshake successful")
 
 	// Read HTTP request over TLS
-	req, err := http.ReadRequest(bufio.NewReader(tlsConn))
+	reader := bufio.NewReader(tlsConn)
+	req, err := http.ReadRequest(reader)
 	if err != nil {
 		p.logger.Error("Failed to read HTTPS request", "error", err)
 		return
 	}
 
 	p.logger.Debug("🔒 HTTPS Request", "method", req.Method, "url", req.URL.String())
-	p.processHTTPRequest(tlsConn, req, true)
+	p.processHTTPRequest(tlsConn, reader, req, true)
 }
 
-func (p *Server) processHTTPRequest(conn net.Conn, req *http.Request, https bool) {
+// processHTTPRequest evaluates one request against the policy, audits the
+// decision, and either blocks it or forwards it. clientReader is the
+// buffered reader the request was parsed from; it may already hold bytes
+// the client sent after the request headers, which matters for protocol
+// upgrades.
+func (p *Server) processHTTPRequest(conn net.Conn, clientReader *bufio.Reader, req *http.Request, https bool) {
 	p.logger.Debug("   Host", "host", req.Host)
 	p.logger.Debug("   User-Agent", "user-agent", req.Header.Get("User-Agent"))
 
@@ -330,8 +337,177 @@ func (p *Server) processHTTPRequest(conn net.Conn, req *http.Request, https bool
 		return
 	}
 
+	// Protocol upgrades (WebSocket, DERP) become a bidirectional byte
+	// stream after the handshake, which the request/response forwarder
+	// below cannot carry.
+	if isUpgradeRequest(req) {
+		p.forwardUpgrade(conn, clientReader, req, https, seqNum)
+		return
+	}
+
 	// Forward request to destination
 	p.forwardRequest(conn, req, https, seqNum)
+}
+
+// isUpgradeRequest reports whether req asks the server to switch protocols
+// (RFC 9110 section 7.8): it carries an Upgrade header and lists "upgrade"
+// in Connection.
+func isUpgradeRequest(req *http.Request) bool {
+	if req.Header.Get("Upgrade") == "" {
+		return false
+	}
+	for _, v := range req.Header.Values("Connection") {
+		for _, token := range strings.Split(v, ",") {
+			if strings.EqualFold(strings.TrimSpace(token), "upgrade") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// upstreamTLSConfig returns the TLS config for a direct connection to an
+// upstream server. It reuses the forward transport's TLS settings when
+// one is configured, so tests can trust self-signed backends the same way
+// they do for ordinary requests.
+func (p *Server) upstreamTLSConfig(serverName string) *tls.Config {
+	var cfg *tls.Config
+	if t, ok := p.forwardTransport.(*http.Transport); ok && t.TLSClientConfig != nil {
+		cfg = t.TLSClientConfig.Clone()
+	} else {
+		cfg = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+	cfg.ServerName = serverName
+	// The client speaks HTTP/1.1 to us; keep the upstream on HTTP/1.1 so
+	// the handshake and the upgraded stream can be relayed byte for byte.
+	cfg.NextProtos = []string{"http/1.1"}
+	return cfg
+}
+
+// forwardUpgrade relays a protocol upgrade. It dials the upstream itself,
+// writes the handshake request with its Connection and Upgrade headers
+// intact, and reads the response. On 101 Switching Protocols it returns
+// the response to the client and copies bytes in both directions until
+// either side closes. Any other status is returned to the client as a
+// normal response. Only the handshake is audited; the stream that follows
+// is opaque to the policy engine.
+func (p *Server) forwardUpgrade(conn net.Conn, clientReader *bufio.Reader, req *http.Request, https bool, seqNum int32) {
+	host := req.Host
+	if _, _, err := net.SplitHostPort(host); err != nil {
+		if https {
+			host = net.JoinHostPort(host, "443")
+		} else {
+			host = net.JoinHostPort(host, "80")
+		}
+	}
+	serverName, _, _ := net.SplitHostPort(host)
+
+	upstream, err := net.DialTimeout("tcp", host, 30*time.Second)
+	if err != nil {
+		p.logger.Error("Failed to dial upstream for upgrade", "host", host, "error", err)
+		p.writeUpgradeFailure(conn, req, http.StatusBadGateway)
+		return
+	}
+	defer func() {
+		if err := upstream.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			p.logger.Debug("Failed to close upstream connection", "error", err)
+		}
+	}()
+	if https {
+		tlsUpstream := tls.Client(upstream, p.upstreamTLSConfig(serverName))
+		if err := tlsUpstream.Handshake(); err != nil {
+			p.logger.Error("TLS handshake with upstream failed for upgrade", "host", host, "error", err)
+			p.writeUpgradeFailure(conn, req, http.StatusBadGateway)
+			return
+		}
+		upstream = tlsUpstream
+	}
+
+	scheme := "http"
+	if https {
+		scheme = "https"
+	}
+	outReq := req.Clone(context.Background())
+	outReq.URL = &url.URL{
+		Scheme:   scheme,
+		Host:     req.Host,
+		Path:     req.URL.Path,
+		RawPath:  req.URL.RawPath,
+		RawQuery: req.URL.RawQuery,
+	}
+	outReq.RequestURI = ""
+	outReq.Header.Del("Proxy-Connection")
+	if p.shouldInjectHeaders(outReq.URL.String()) {
+		outReq.Header.Set(config.SessionIDHeaderName, p.sessionID)
+		outReq.Header.Set(config.SequenceNumberHeaderName, strconv.Itoa(int(seqNum)))
+	}
+	if err := outReq.Write(upstream); err != nil {
+		p.logger.Error("Failed to write upgrade request to upstream", "host", host, "error", err)
+		p.writeUpgradeFailure(conn, req, http.StatusBadGateway)
+		return
+	}
+
+	upstreamReader := bufio.NewReader(upstream)
+	resp, err := http.ReadResponse(upstreamReader, outReq)
+	if err != nil {
+		p.logger.Error("Failed to read upgrade response from upstream", "host", host, "error", err)
+		p.writeUpgradeFailure(conn, req, http.StatusBadGateway)
+		return
+	}
+
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		// The server declined the upgrade; hand its answer back as-is.
+		p.logger.Debug("Upstream declined upgrade", "host", host, "status", resp.Status)
+		defer resp.Body.Close() //nolint:errcheck
+		resp.Proto = "HTTP/1.1"
+		resp.ProtoMajor = 1
+		resp.ProtoMinor = 1
+		if err := resp.Write(conn); err != nil {
+			p.logger.Error("Failed to write declined upgrade response", "host", host, "error", err)
+		}
+		return
+	}
+
+	if err := resp.Write(conn); err != nil {
+		p.logger.Error("Failed to write 101 response to client", "host", host, "error", err)
+		return
+	}
+	p.logger.Debug("Upgrade established, relaying stream", "host", host, "protocol", resp.Header.Get("Upgrade"))
+
+	done := make(chan struct{}, 2)
+	go func() {
+		_, _ = io.Copy(upstream, clientReader)
+		done <- struct{}{}
+	}()
+	go func() {
+		_, _ = io.Copy(conn, upstreamReader)
+		done <- struct{}{}
+	}()
+	// When either direction ends, close both sides so the other copy
+	// returns; the deferred close and the caller's close handle cleanup.
+	<-done
+	_ = upstream.Close()
+	_ = conn.Close()
+	<-done
+	p.logger.Debug("Upgrade stream closed", "host", host)
+}
+
+// writeUpgradeFailure answers the client when the upstream could not be
+// reached or did not answer the handshake.
+func (p *Server) writeUpgradeFailure(conn net.Conn, req *http.Request, status int) {
+	resp := &http.Response{
+		StatusCode:    status,
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Header:        make(http.Header),
+		Body:          io.NopCloser(strings.NewReader(http.StatusText(status))),
+		ContentLength: int64(len(http.StatusText(status))),
+		Request:       req,
+	}
+	resp.Header.Set("Content-Type", "text/plain")
+	if err := resp.Write(conn); err != nil {
+		p.logger.Error("Failed to write upgrade failure response", "error", err)
+	}
 }
 
 // shouldInjectHeaders reports whether the request URL matches any

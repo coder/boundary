@@ -153,6 +153,6 @@ func (p *Server) handleCONNECTTunnel(conn net.Conn) {
 		p.logger.Debug("🔒 HTTP Request in CONNECT tunnel", "method", req.Method, "url", req.URL.String(), "target", req.Host)
 
 		// Process this request - check if allowed and forward to target
-		p.processHTTPRequest(tlsConn, req, true)
+		p.processHTTPRequest(tlsConn, reader, req, true)
 	}
 }
