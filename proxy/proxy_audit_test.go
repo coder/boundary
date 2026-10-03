@@ -166,6 +166,7 @@ func TestAuditURLIsFullyFormed_HTTPS(t *testing.T) {
 		WithCertManager(t.TempDir()),
 		WithAllowedDomain("dev.coder.com"),
 		WithAuditor(auditor),
+		WithFakeUpstream(fakePublicHosts()),
 	).Start()
 	defer pt.Stop()
 
