@@ -120,13 +120,7 @@ func (p *Server) Start() error {
 			return fmt.Errorf("failed to listen on port %v for pprof server: %v", p.pprofPort, err)
 		}
 
-		go func() {
-			p.logger.Info("Serving pprof on existing listener", "port", p.pprofPort)
-			if err := p.pprofServer.Serve(ln); err != nil && errors.Is(err, http.ErrServerClosed) {
-				p.logger.Error("pprof server error", "error", err)
-			}
-		}()
-
+		go p.servePprof(ln)
 	}
 
 	var err error
@@ -156,6 +150,16 @@ func (p *Server) Start() error {
 	}()
 
 	return nil
+}
+
+// servePprof serves pprof on ln until the pprof server is shut down. Serve
+// always returns a non-nil error, and http.ErrServerClosed is the expected
+// result of Stop, so only other errors are logged.
+func (p *Server) servePprof(ln net.Listener) {
+	p.logger.Info("Serving pprof on existing listener", "port", p.pprofPort)
+	if err := p.pprofServer.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		p.logger.Error("pprof server error", "error", err)
+	}
 }
 
 // Stops proxy server

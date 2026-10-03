@@ -1,7 +1,14 @@
 package proxy
 
 import (
+	"bytes"
+	"context"
+	"log/slog"
+	"net"
+	"net/http"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // TestProxyServerBasicHTTP tests basic HTTP request handling
@@ -61,5 +68,46 @@ func TestProxyServerBasicHTTPS(t *testing.T) {
 
 	t.Run("BlockedHTTPSRequest", func(t *testing.T) {
 		pt.ExpectDeny("https://localhost:8080/", "example.com")
+	})
+}
+
+// TestServePprofLogsOnlyUnexpectedErrors verifies that a normal pprof
+// shutdown is not reported as an error, while a real serve failure is.
+func TestServePprofLogsOnlyUnexpectedErrors(t *testing.T) {
+	newServer := func(logs *bytes.Buffer) *Server {
+		return &Server{
+			logger:      slog.New(slog.NewTextHandler(logs, nil)),
+			pprofServer: &http.Server{},
+		}
+	}
+
+	t.Run("ShutdownIsNotAnError", func(t *testing.T) {
+		var logs bytes.Buffer
+		p := newServer(&logs)
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+
+		done := make(chan struct{})
+		go func() {
+			p.servePprof(ln)
+			close(done)
+		}()
+		require.NoError(t, p.pprofServer.Shutdown(context.Background()))
+		<-done
+
+		require.NotContains(t, logs.String(), "pprof server error")
+	})
+
+	t.Run("ServeFailureIsLogged", func(t *testing.T) {
+		var logs bytes.Buffer
+		p := newServer(&logs)
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+		// Serve fails immediately on a closed listener.
+		require.NoError(t, ln.Close())
+
+		p.servePprof(ln)
+
+		require.Contains(t, logs.String(), "pprof server error")
 	})
 }
