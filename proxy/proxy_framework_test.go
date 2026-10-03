@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bufio"
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -133,6 +134,61 @@ func WithSessionID(id string) ProxyTestOption {
 // backend certificates (e.g. those from httptest.NewTLSServer).
 func WithForwardTransport(transport http.RoundTripper) ProxyTestOption {
 	return func(pt *ProxyTest) {
+		pt.forwardTransport = transport
+	}
+}
+
+// Canned upstream responses.
+const (
+	devCoderAPIResponse = "{\"message\":\"👋\"}\n"
+	todoResponse        = `{
+  "userId": 1,
+  "id": 1,
+  "title": "delectus aut autem",
+  "completed": false
+}`
+)
+
+// fakePublicHosts serves canned responses for the public hosts that proxy
+// tests allow, so the tests do not depend on those hosts being reachable or
+// unchanged. Use it with WithFakeUpstream.
+func fakePublicHosts() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Host == "dev.coder.com" && r.URL.Path == "/api/v2":
+			_, _ = io.WriteString(w, devCoderAPIResponse)
+		case r.Host == "jsonplaceholder.typicode.com" && r.URL.Path == "/todos/1":
+			_, _ = io.WriteString(w, todoResponse)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// WithFakeUpstream makes the proxy forward allowed requests to local test
+// servers running handler instead of the internet. Requests for port 443
+// reach a TLS server, and all others reach a plain HTTP server. The handler
+// sees the original Host header.
+func WithFakeUpstream(handler http.Handler) ProxyTestOption {
+	return func(pt *ProxyTest) {
+		plain := httptest.NewServer(handler)
+		secure := httptest.NewTLSServer(handler)
+		pt.t.Cleanup(plain.Close)
+		pt.t.Cleanup(secure.Close)
+
+		transport := secure.Client().Transport.(*http.Transport).Clone()
+		// The httptest certificate is valid for example.com rather than for
+		// the hosts that tests request.
+		transport.TLSClientConfig.ServerName = "example.com"
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			target := plain.Listener.Addr().String()
+			if _, port, err := net.SplitHostPort(addr); err == nil && port == "443" {
+				target = secure.Listener.Addr().String()
+			}
+			var dialer net.Dialer
+			return dialer.DialContext(ctx, network, target)
+		}
+		pt.t.Cleanup(transport.CloseIdleConnections)
 		pt.forwardTransport = transport
 	}
 }
