@@ -380,6 +380,7 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool, se
 	newReq, err := http.NewRequest(req.Method, targetURL.String(), body)
 	if err != nil {
 		p.logger.Error("can't create http request", "error", err)
+		p.writeBadGatewayResponse(conn, req, err)
 		return
 	}
 
@@ -403,6 +404,7 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool, se
 	resp, err := client.Do(newReq)
 	if err != nil {
 		p.logger.Error("Failed to forward HTTPS request", "error", err)
+		p.writeBadGatewayResponse(conn, req, err)
 		return
 	}
 
@@ -418,6 +420,8 @@ func (p *Server) forwardRequest(conn net.Conn, req *http.Request, https bool, se
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		p.logger.Error("can't read response body", "error", err)
+		_ = resp.Body.Close()
+		p.writeBadGatewayResponse(conn, req, err)
 		return
 	}
 	resp.Header.Add("Content-Length", strconv.Itoa(len(bodyBytes)))
@@ -501,6 +505,30 @@ For more help: https://github.com/coder/boundary
 	}
 
 	p.logger.Debug("Successfully wrote to connection")
+}
+
+// writeBadGatewayResponse tells the client that an allowed request could not
+// be forwarded. Every request needs a response: in a CONNECT tunnel the
+// client would otherwise wait for one while the proxy waits for the next
+// request.
+func (p *Server) writeBadGatewayResponse(conn net.Conn, req *http.Request, forwardErr error) {
+	body := fmt.Sprintf("Boundary could not forward the request to %s: %v\n", req.Host, forwardErr)
+
+	resp := &http.Response{
+		Status:        "502 Bad Gateway",
+		StatusCode:    http.StatusBadGateway,
+		Proto:         "HTTP/1.1",
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Header:        make(http.Header),
+		Body:          io.NopCloser(strings.NewReader(body)),
+		ContentLength: int64(len(body)),
+	}
+	resp.Header.Set("Content-Type", "text/plain")
+
+	if err := resp.Write(conn); err != nil {
+		p.logger.Error("Failed to write bad gateway response", "error", err)
+	}
 }
 
 // connectionWrapper lets us "unread" the peeked byte
