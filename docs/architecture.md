@@ -119,6 +119,7 @@ Important matching rules:
 - `domain=*.github.com` matches subdomains such as `api.github.com` and deeper subdomains such as `v1.api.github.com`.
 - `domain=*.github.com` does not match `github.com`.
 - To allow a base domain and its subdomains, configure both patterns.
+- Domain matching ignores ASCII case and one trailing dot on the request host: `domain=github.com` matches `GitHub.com` and `github.com.`. Paths and methods stay case-sensitive.
 - Path wildcards are segment-based. A wildcard must be a whole path segment.
 - A trailing `*` segment matches multiple remaining segments: `path=/api/*` matches `/api/v1/users`.
 
