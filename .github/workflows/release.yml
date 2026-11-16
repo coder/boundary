@@ -66,6 +66,8 @@ jobs:
         retention-days: 7
 
   release:
+    permissions:
+      contents: write
     name: Create Release
     needs: build
     runs-on: ubuntu-latest
