@@ -3,6 +3,7 @@ package rulesengine
 import (
 	"log/slog"
 	neturl "net/url"
+	"slices"
 	"strings"
 )
 
@@ -82,7 +83,13 @@ func (re *Engine) matches(r Rule, method, url string) bool {
 		// - "*.github.com" matches ONLY subdomains like "api.github.com" (not the base domain)
 		// - To allow both, specify: "github.com, *.github.com"
 
-		labels := strings.Split(parsedUrl.Hostname(), ".")
+		labels := strings.Split(normalizeHostname(parsedUrl.Hostname()), ".")
+
+		// An empty label is not a valid DNS name and must not satisfy `*`.
+		if slices.Contains(labels, "") {
+			re.logger.Debug("rule does not match", "reason", "empty host label", "rule", r.Raw, "method", method, "url", url)
+			return false
+		}
 
 		// If the host pattern is longer than the actual host, it's definitely not a match
 		if len(r.HostPattern) > len(labels) {
@@ -94,7 +101,7 @@ func (re *Engine) matches(r Rule, method, url string) bool {
 		// "example.com" or "*.example.com" - match from the end (allowing subdomains)
 		for i, lp := range r.HostPattern {
 			labelIndex := len(labels) - len(r.HostPattern) + i
-			if string(lp) != labels[labelIndex] && lp != "*" {
+			if toLowerASCII(lp) != labels[labelIndex] && lp != "*" {
 				re.logger.Debug("rule does not match", "reason", "host pattern label mismatch", "rule", r.Raw, "method", method, "url", url, "expected", string(lp), "actual", labels[labelIndex])
 				return false
 			}
@@ -153,4 +160,24 @@ func (re *Engine) matches(r Rule, method, url string) bool {
 
 	re.logger.Debug("rule matches", "reason", "all patterns matched", "rule", r.Raw, "method", method, "url", url)
 	return true
+}
+
+// normalizeHostname puts a request hostname in the form used for matching:
+// one trailing dot removed, since "github.com." and "github.com" are the same
+// DNS name, and ASCII letters lowercased.
+func normalizeHostname(host string) string {
+	return toLowerASCII(strings.TrimSuffix(host, "."))
+}
+
+// toLowerASCII lowercases only ASCII letters. DNS names compare
+// case-insensitively for ASCII only (RFC 4343). strings.ToLower would also
+// fold non-ASCII characters, such as U+212A KELVIN SIGN to "k", letting a
+// rule match a host that resolves to a different name.
+func toLowerASCII(s string) string {
+	return strings.Map(func(r rune) rune {
+		if 'A' <= r && r <= 'Z' {
+			return r + ('a' - 'A')
+		}
+		return r
+	}, s)
 }
