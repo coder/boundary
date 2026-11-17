@@ -2,13 +2,18 @@ package audit
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/coder/coder/v2/agent/boundarylogproxy/codec"
 )
 
 type mockAuditor struct {
@@ -27,10 +32,12 @@ func TestSetupAuditor_DisabledAuditLogs(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	ctx := context.Background()
 
-	auditor, err := SetupAuditor(ctx, logger, true, "", uuid.New(), "")
+	auditor, closeAuditor, err := SetupAuditor(ctx, logger, true, "", uuid.New(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	// Without a socket auditor there is nothing to flush.
+	closeAuditor()
 
 	multi, ok := auditor.(*MultiAuditor)
 	if !ok {
@@ -52,7 +59,7 @@ func TestSetupAuditor_EmptySocketPath(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	ctx := context.Background()
 
-	_, err := SetupAuditor(ctx, logger, false, "", uuid.New(), "")
+	_, _, err := SetupAuditor(ctx, logger, false, "", uuid.New(), "")
 	if err == nil {
 		t.Fatal("expected error for empty socket path, got nil")
 	}
@@ -64,7 +71,7 @@ func TestSetupAuditor_SocketDoesNotExist(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	ctx := context.Background()
 
-	auditor, err := SetupAuditor(ctx, logger, false, "/nonexistent/socket/path", uuid.New(), "")
+	auditor, _, err := SetupAuditor(ctx, logger, false, "/nonexistent/socket/path", uuid.New(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -102,7 +109,7 @@ func TestSetupAuditor_SocketExists(t *testing.T) {
 		t.Fatalf("failed to close temp file: %v", err)
 	}
 
-	auditor, err := SetupAuditor(ctx, logger, false, socketPath, uuid.New(), "claude")
+	auditor, _, err := SetupAuditor(ctx, logger, false, socketPath, uuid.New(), "claude")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -140,5 +147,96 @@ func TestMultiAuditor_AuditRequest(t *testing.T) {
 	}
 	if !called2 {
 		t.Error("expected second auditor to be called")
+	}
+}
+
+// TestSetupAuditor_CloseSendsQueuedLogs covers a wrapped command that exits
+// right after a request: the log is still queued for the next batch, and
+// close must send it to the workspace agent before returning.
+func TestSetupAuditor_CloseSendsQueuedLogs(t *testing.T) {
+	t.Parallel()
+
+	socketPath := filepath.Join(t.TempDir(), "agent.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("failed to listen on unix socket: %v", err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			accepted <- conn
+		}
+	}()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	auditor, closeAuditor, err := SetupAuditor(t.Context(), logger, false, socketPath, uuid.New(), "claude")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// One request does not fill a batch, so without close it would wait for
+	// the batch timer.
+	auditor.AuditRequest(Request{Method: "GET", URL: "https://example.com/last", Allowed: true})
+	closeAuditor()
+
+	var conn net.Conn
+	select {
+	case conn = <-accepted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for the auditor to connect")
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	// Close returns only after the batch is written, so it is already in the
+	// socket buffer. The deadline only bounds the failure case.
+	if err := conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatalf("failed to set read deadline: %v", err)
+	}
+	msg, _, err := codec.ReadMessage(conn, make([]byte, 1<<10))
+	if err != nil {
+		t.Fatalf("expected the queued log to be sent before close returned: %v", err)
+	}
+	boundaryMsg, ok := msg.(*codec.BoundaryMessage)
+	if !ok {
+		t.Fatalf("expected *codec.BoundaryMessage, got %T", msg)
+	}
+	logs := boundaryMsg.GetLogs().GetLogs()
+	if len(logs) != 1 {
+		t.Fatalf("expected 1 log, got %d", len(logs))
+	}
+	if got := logs[0].GetHttpRequest().GetUrl(); got != "https://example.com/last" {
+		t.Errorf("expected URL https://example.com/last, got %s", got)
+	}
+}
+
+// TestRunSocketAuditor_StopIsBoundedByContext verifies that an unresponsive
+// workspace agent cannot block stop past its context deadline.
+func TestRunSocketAuditor_StopIsBoundedByContext(t *testing.T) {
+	t.Parallel()
+
+	unblockDial := make(chan struct{})
+	auditor := setupSocketAuditor(t)
+	auditor.dial = func() (net.Conn, error) {
+		<-unblockDial
+		return nil, errors.New("agent not responding")
+	}
+
+	stop := runSocketAuditor(t.Context(), auditor)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	if err := stop(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected context.DeadlineExceeded, got %v", err)
+	}
+
+	// Once the agent responds, the loop finishes and stop returns nil.
+	close(unblockDial)
+	waitCtx, waitCancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer waitCancel()
+	if err := stop(waitCtx); err != nil {
+		t.Fatalf("expected the loop to finish, got %v", err)
 	}
 }

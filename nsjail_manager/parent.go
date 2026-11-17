@@ -28,10 +28,13 @@ func RunParent(ctx context.Context, logger *slog.Logger, config config.AppConfig
 	ruleEngine := rulesengine.NewRuleEngine(allowRules, logger)
 
 	// Create auditor
-	auditor, err := audit.SetupAuditor(ctx, logger, config.DisableAuditLogs, config.LogProxySocketPath, config.SessionID, config.ConfinedProcessName)
+	auditor, closeAuditor, err := audit.SetupAuditor(ctx, logger, config.DisableAuditLogs, config.LogProxySocketPath, config.SessionID, config.ConfinedProcessName)
 	if err != nil {
 		return fmt.Errorf("failed to setup auditor: %v", err)
 	}
+	// Deferred calls run after Run has stopped the proxy, so no audit events
+	// arrive after the final flush.
+	defer closeAuditor()
 
 	// Create TLS certificate manager
 	certManager, err := tls.NewCertificateManager(tls.Config{
