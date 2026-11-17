@@ -71,7 +71,7 @@ func RunChild(logger *slog.Logger, config config.AppConfig) error {
 // Returns environment variables intended to be set on the child process,
 // so they can later be inherited by the target process.
 func getEnvsForTargetProcess(configDir string, caCertPath string, httpProxyPort int) []string {
-	e := os.Environ()
+	e := util.RemoveEnvs(os.Environ(), config.UpstreamProxyEnv)
 
 	proxyAddr := fmt.Sprintf("http://localhost:%d", httpProxyPort)
 	e = util.MergeEnvs(e, map[string]string{
