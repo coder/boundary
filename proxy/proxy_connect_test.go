@@ -13,29 +13,22 @@ func TestProxyServerImplicitCONNECT(t *testing.T) {
 		WithCertManager("/tmp/boundary_connect_test"),
 		WithAllowedDomain("dev.coder.com"),
 		WithAllowedDomain("jsonplaceholder.typicode.com"),
+		WithFakeUpstream(fakePublicHosts()),
 	).
 		Start()
 	defer pt.Stop()
 
 	// Test HTTPS request through proxy transport (automatic CONNECT)
 	t.Run("HTTPSRequestThroughProxyTransport", func(t *testing.T) {
-		expectedResponse := `{"message":"👋"}
-`
 		// Because this is HTTPS, Go will issue CONNECT localhost:8080 → dev.coder.com:443
-		pt.ExpectAllowedViaProxy("https://dev.coder.com/api/v2", expectedResponse)
+		pt.ExpectAllowedViaProxy("https://dev.coder.com/api/v2", devCoderAPIResponse)
 	})
 
 	// Test HTTP request through proxy transport
 	t.Run("HTTPRequestThroughProxyTransport", func(t *testing.T) {
-		expectedResponse := `{
-  "userId": 1,
-  "id": 1,
-  "title": "delectus aut autem",
-  "completed": false
-}`
 		// For HTTP requests, Go will send the request directly to the proxy
 		// The proxy will forward it to the target server
-		pt.ExpectAllowedViaProxy("http://jsonplaceholder.typicode.com/todos/1", expectedResponse)
+		pt.ExpectAllowedViaProxy("http://jsonplaceholder.typicode.com/todos/1", todoResponse)
 	})
 }
 
@@ -45,6 +38,7 @@ func TestMultipleRequestsOverExplicitCONNECT(t *testing.T) {
 		WithCertManager("/tmp/boundary_explicit_connect_test"),
 		WithAllowedDomain("dev.coder.com"),
 		WithAllowedDomain("jsonplaceholder.typicode.com"),
+		WithFakeUpstream(fakePublicHosts()),
 	).
 		Start()
 	defer pt.Stop()
@@ -60,22 +54,14 @@ func TestMultipleRequestsOverExplicitCONNECT(t *testing.T) {
 	t.Run("AllowedRequestToDevCoder", func(t *testing.T) {
 		body1, err := tunnel.sendRequest("dev.coder.com", "/api/v2")
 		require.NoError(t, err, "Failed to send first request")
-		expectedResponse1 := `{"message":"👋"}
-`
-		require.Equal(t, expectedResponse1, string(body1), "First response does not match")
+		require.Equal(t, devCoderAPIResponse, string(body1), "First response does not match")
 	})
 
 	// Positive test: Send second request to a different domain (jsonplaceholder.typicode.com) over the same tunnel
 	t.Run("AllowedRequestToJsonPlaceholder", func(t *testing.T) {
 		body2, err := tunnel.sendRequest("jsonplaceholder.typicode.com", "/todos/1")
 		require.NoError(t, err, "Failed to send second request")
-		expectedResponse2 := `{
-  "userId": 1,
-  "id": 1,
-  "title": "delectus aut autem",
-  "completed": false
-}`
-		require.Equal(t, expectedResponse2, string(body2), "Second response does not match")
+		require.Equal(t, todoResponse, string(body2), "Second response does not match")
 	})
 
 	// Negative test: Try to send request to a blocked domain over the same tunnel
